@@ -4,7 +4,7 @@ A smart AI assistant that helps improve Linear tickets by analyzing issues, fill
 
 ## Features
 
-- Automatically analyzes new tickets for missing information
+- Automatically analyses new tickets for missing information
 - Answers questions about tickets when mentioned
 - Refines tickets with detailed suggestions when requested
 - Integrates directly with Linear as a teammate
