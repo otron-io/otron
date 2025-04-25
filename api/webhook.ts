@@ -2,11 +2,7 @@ import { LinearClient } from "@linear/sdk";
 import { VercelRequest, VercelResponse } from "@vercel/node";
 import { Redis } from "@upstash/redis";
 import crypto from "crypto";
-import {
-  analyzeIssue,
-  getIssueContext,
-  answerUserQuestion,
-} from "../src/ai.js";
+import { getIssueContext, respondToMessage } from "../src/ai.js";
 import { env } from "../src/env.js";
 
 // Initialize Redis client
@@ -109,9 +105,9 @@ async function handleIssueMention(
     // Get the issue
     const issue = await linearClient.issue(issueId);
 
-    // Add a reaction to the ISSUE to show we're processing
+    // Add reaction to the issue
     await linearClient.createReaction({
-      issueId: issue.id, // Add reaction to issue instead of comment
+      issueId: issue.id,
       emoji: "eyes",
     } as any);
 
@@ -123,49 +119,39 @@ async function handleIssueMention(
     const mentionComment = comments.nodes.find(
       (comment) =>
         comment.body.includes(`@${appUserId}`) &&
-        new Date(comment.createdAt) > new Date(Date.now() - 1000 * 60 * 5), // Within last 5 minutes
+        new Date(comment.createdAt) > new Date(Date.now() - 60000),
     );
 
-    let question = "";
-    if (mentionComment) {
-      // Extract question from the comment
-      question = extractQuestion(mentionComment.body, appUserId);
-    }
+    // Extract question from the comment or use the issue title
+    const question = mentionComment
+      ? extractQuestion(mentionComment.body, appUserId)
+      : issue.title;
 
-    // Add a processing reaction to the ISSUE
+    // Add thinking reaction to the issue
     await linearClient.createReaction({
-      issueId: issue.id, // Add to issue, not comment
+      issueId: issue.id,
       emoji: "thinking_face",
     } as any);
 
-    // Process the request
-    let response;
-    if (question && question.toLowerCase().includes("refine")) {
-      // Generate detailed analysis
-      response = await analyzeIssue(context);
-    } else {
-      // Answer the question or provide general analysis
-      response = question
-        ? await answerUserQuestion(question, context)
-        : await analyzeIssue(context);
-    }
+    // Generate a response
+    const response = await respondToMessage(question, context);
 
-    // Reply with the answer
+    // Reply to the comment or create a new one
     await linearClient.createComment({
-      issueId: issue.id,
+      issueId,
       body: response,
       parentId: mentionComment ? mentionComment.id : undefined,
     });
 
-    // Add completion reaction to the ISSUE
+    // Add completion reaction to the issue
     await linearClient.createReaction({
-      issueId: issue.id, // Add to issue, not comment
+      issueId: issue.id,
       emoji: "white_check_mark",
     } as any);
   } catch (error) {
     console.error("Error handling issue mention:", error);
-    // Add error reaction to the issue if possible
     try {
+      // Add error reaction to the issue
       await linearClient.createReaction({
         issueId,
         emoji: "x",
@@ -194,12 +180,6 @@ async function handleCommentMention(
     // Get the comment
     const comment = await linearClient.comment(commentId);
 
-    // Add acknowledgment reaction
-    await linearClient.createReaction({
-      commentId,
-      emoji: "eyes",
-    });
-
     // Get the associated issue
     const issue = await comment.issue;
     if (!issue) {
@@ -207,42 +187,55 @@ async function handleCommentMention(
       return;
     }
 
+    // Add reactions to the issue
+    await linearClient.createReaction({
+      issueId: issue.id,
+      emoji: "eyes",
+    } as any);
+
     // Get context about the issue
     const context = await getIssueContext(issue, linearClient);
 
     // Extract question from the comment
     const question = extractQuestion(comment.body, appUserId);
 
-    // Check for special commands
-    if (question.toLowerCase().includes("refine")) {
-      // Generate issue refinement suggestions
-      const refinement = await analyzeIssue(context);
-
-      // Reply with analysis
-      await linearClient.createComment({
-        issueId: issue.id,
-        body: refinement,
-        parentId: commentId,
-      });
-    } else {
-      // Answer the question
-      const answer = await answerUserQuestion(question, context);
-
-      // Reply to the comment
-      await linearClient.createComment({
-        issueId: issue.id,
-        body: answer,
-        parentId: commentId,
-      });
-    }
-
-    // Add completion reaction
+    // Add thinking reaction to the issue
     await linearClient.createReaction({
-      commentId,
-      emoji: "white_check_mark",
+      issueId: issue.id,
+      emoji: "thinking_face",
+    } as any);
+
+    // Generate response
+    const response = await respondToMessage(question, context);
+
+    // Reply to the comment
+    await linearClient.createComment({
+      issueId: issue.id,
+      body: response,
+      parentId: commentId,
     });
+
+    // Add completion reaction to the issue
+    await linearClient.createReaction({
+      issueId: issue.id,
+      emoji: "white_check_mark",
+    } as any);
   } catch (error) {
     console.error("Error handling comment mention:", error);
+    try {
+      // Get the comment to find the issue
+      const comment = await linearClient.comment(commentId);
+      const issue = await comment.issue;
+      if (issue) {
+        // Add error reaction to the issue
+        await linearClient.createReaction({
+          issueId: issue.id,
+          emoji: "x",
+        } as any);
+      }
+    } catch (e) {
+      console.error("Failed to add error reaction:", e);
+    }
   }
 }
 
@@ -254,17 +247,20 @@ async function handleIssueCreated(
 ) {
   const { notification } = payload;
   const issueId = notification.issueId;
-
   if (!issueId) {
     console.error("No issue ID found in notification");
     return;
   }
-
   try {
     // Get the issue
     const issue = await linearClient.issue(issueId);
 
-    // Add processing reaction to the ISSUE
+    // Skip if issue already has detailed description
+    if (issue.description && issue.description.length > 200) {
+      return;
+    }
+
+    // Add processing reaction to the issue
     await linearClient.createReaction({
       issueId: issue.id,
       emoji: "eyes",
@@ -273,14 +269,17 @@ async function handleIssueCreated(
     // Get context about the issue
     const context = await getIssueContext(issue, linearClient);
 
-    // Add thinking reaction to the ISSUE
+    // Add thinking reaction to the issue
     await linearClient.createReaction({
       issueId: issue.id,
       emoji: "thinking_face",
     } as any);
 
+    // Create a default question for analysis
+    const question = "Please analyze this issue for missing information";
+
     // Analyze the issue
-    const analysis = await analyzeIssue(context);
+    const analysis = await respondToMessage(question, context);
 
     // Only comment if there are issues to address
     if (
@@ -289,11 +288,11 @@ async function handleIssueCreated(
     ) {
       await linearClient.createComment({
         issueId,
-        body: `I've analyzed this issue and noticed it might benefit from some additional information:\n\n${analysis}\n\nReply with "@Context refine" for more detailed guidance.`,
+        body: analysis,
       });
     }
 
-    // Add completion reaction to the ISSUE
+    // Add completion reaction to the issue
     await linearClient.createReaction({
       issueId: issue.id,
       emoji: "white_check_mark",
@@ -348,16 +347,8 @@ async function handleNewComment(
 // Helper to extract the question from a comment
 function extractQuestion(commentBody: string, appUserId: string): string {
   // Remove the mention
-  let text = commentBody
+  return commentBody
     .replace(`@${appUserId}`, "")
     .replace("@Context", "")
     .trim();
-
-  // If there are quotes, extract the content inside
-  const quoteMatch = text.match(/"([^"]*)"/);
-  if (quoteMatch && quoteMatch[1]) {
-    return quoteMatch[1];
-  }
-
-  return text;
 }
