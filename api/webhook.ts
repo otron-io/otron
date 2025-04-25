@@ -17,12 +17,7 @@ const redis = new Redis({
 
 // Verify webhook signature from Linear
 export function verifySignature(signature: string, body: string): boolean {
-  if (!process.env.LINEAR_WEBHOOK_SECRET) {
-    console.error("LINEAR_WEBHOOK_SECRET not set");
-    return false;
-  }
-
-  const hmac = crypto.createHmac("sha256", process.env.LINEAR_WEBHOOK_SECRET);
+  const hmac = crypto.createHmac("sha256", env.WEBHOOK_SIGNING_SECRET);
   hmac.update(body);
   const computedSignature = hmac.digest("hex");
 
