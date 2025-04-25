@@ -21,7 +21,7 @@ export class LinearService {
   public getAuthUrl(): string {
     return `https://linear.app/oauth/authorize?client_id=${this.clientId}&redirect_uri=${encodeURIComponent(
       this.redirectUri,
-    )}&response_type=code&scope=read,write,issues:create,comments:create&actor=app&app:assignable=true&app:mentionable=true`;
+    )}&response_type=code&scope=read,write,issues:create,comments:create,app:assignable,app:mentionable&actor=app`;
   }
 
   public async getAccessToken(code: string): Promise<{
