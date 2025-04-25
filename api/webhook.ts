@@ -1,8 +1,8 @@
 import { FastifyRequest, FastifyReply } from "fastify";
 import createFastify from "fastify";
 import crypto from "crypto";
-import { config } from "../src/config";
-import { LinearService } from "../src/linear";
+import { config } from "../src/config.js";
+import { LinearService } from "../src/linear.js";
 
 const fastify = createFastify();
 
@@ -27,9 +27,9 @@ const linearServices: Record<string, LinearService> = {};
 
 // Initialize Linear service
 const linearService = new LinearService(
-  config.linearClientId,
+  config.linearClientId!,
   config.linearClientSecret,
-  config.redirectUri,
+  config.redirectUri!,
 );
 
 // Verify webhook signature
@@ -39,7 +39,7 @@ function verifyWebhookSignature(request: FastifyRequest) {
     return false;
   }
 
-  const hmac = crypto.createHmac("sha256", config.webhookSigningSecret);
+  const hmac = crypto.createHmac("sha256", config.webhookSigningSecret!);
   hmac.update(JSON.stringify(request.body));
   const computedSignature = hmac.digest("hex");
 

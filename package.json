@@ -3,10 +3,11 @@
   "version": "1.0.0",
   "description": "Linear AI agent that responds with hello world",
   "main": "dist/index.js",
+  "type": "module",
   "scripts": {
     "build": "tsc",
     "start": "node dist/index.js",
-    "dev": "ts-node src/index.ts"
+    "dev": "nodemon --exec tsx src/index.ts"
   },
   "dependencies": {
     "@linear/sdk": "^2.6.0",
@@ -16,7 +17,9 @@
   },
   "devDependencies": {
     "@types/node": "^18.16.0",
+    "nodemon": "^3.1.10",
     "ts-node": "^10.9.1",
+    "tsx": "^4.19.3",
     "typescript": "^5.0.4"
   }
 }

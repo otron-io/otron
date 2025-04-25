@@ -60,7 +60,7 @@ export class LinearService {
       throw new Error("Linear client not initialized");
     }
 
-    const { viewer } = await this.client.viewer;
+    const viewer = await this.client.viewer;
     this.appUserId = viewer.id;
     return this.appUserId;
   }
@@ -70,7 +70,7 @@ export class LinearService {
       throw new Error("Linear client not initialized or app user ID not set");
     }
 
-    await this.client.commentCreate({
+    await this.client.createComment({
       issueId,
       body: "hello, world",
     });
@@ -84,7 +84,7 @@ export class LinearService {
       throw new Error("Linear client not initialized");
     }
 
-    await this.client.commentReactionCreate({
+    await this.client.createReaction({
       commentId,
       emoji,
     });
@@ -106,7 +106,7 @@ export class LinearService {
       throw new Error("Issue not found for comment");
     }
 
-    await this.client.commentCreate({
+    await this.client.createComment({
       issueId: issue.id,
       body: "hello, world",
     });
