@@ -40,7 +40,6 @@ export async function getIssueContext(
 ): Promise<string> {
   // Get related entities
   const team = await issue.team;
-  const teamData = team ? await team.fetch() : null;
 
   // Get comments
   const comments = await issue.comments({ first: 10 });
@@ -60,7 +59,7 @@ export async function getIssueContext(
 ID: ${issue.identifier}
 Title: ${issue.title}
 Description: ${issue.description || "No description provided"}
-Team: ${teamData ? teamData.name : "Unknown"}
+Team: ${team ? team.name : "Unknown"}
 Priority: ${getPriorityText(issue.priority)}
 State: ${issue.state?.name || "Unknown"}
 Labels: ${labels}
