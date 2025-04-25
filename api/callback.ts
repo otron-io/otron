@@ -12,8 +12,8 @@ const linearService = new LinearService(
 
 // Initialize Upstash Redis
 const redis = new Redis({
-  url: "https://prompt-frog-28720.upstash.io",
-  token: "AXAwAAIjcDFhYTVlYTk4MGI2N2U0NTQ3ODg1NzkzMjU3MmFiMWU1YnAxMA",
+  url: env.KV_REST_API_TOKEN,
+  token: env.KV_REST_API_TOKEN,
 });
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
