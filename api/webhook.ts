@@ -174,11 +174,9 @@ async function handleCommentMention(
     return;
   }
 
-  console.log({ commentId });
-
   try {
     // Get the comment
-    const comment = await linearClient.comment(commentId as any);
+    const comment = await linearClient.comment({ id: commentId });
 
     // Get the associated issue
     const issue = await comment.issue;
@@ -218,7 +216,7 @@ async function handleCommentMention(
     console.error("Error handling comment mention:", error);
     try {
       // Get the comment to find the issue
-      const comment = await linearClient.comment(commentId as any);
+      const comment = await linearClient.comment({ id: commentId });
       const issue = await comment.issue;
       if (issue) {
         // Add error reaction to the issue
@@ -313,11 +311,9 @@ async function handleNewComment(
     return;
   }
 
-  console.log({ commentId });
-
   try {
     // Get the comment
-    const comment = await linearClient.comment(commentId as any);
+    const comment = await linearClient.comment({ id: commentId });
 
     // Check if the comment contains a command for our agent
     if (
