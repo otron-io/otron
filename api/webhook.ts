@@ -391,7 +391,7 @@ async function handleIssueAssigned(
     if (!missingInfoQuestions.includes("No critical information is missing")) {
       await linearClient.createComment({
         issueId,
-        body: `To help us implement this issue efficiently, could you please provide some additional context:\n\n${missingInfoQuestions}`,
+        body: missingInfoQuestions,
       });
     }
 
