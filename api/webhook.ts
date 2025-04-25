@@ -113,7 +113,7 @@ async function handleIssueMention(
     await linearClient.createReaction({
       issueId: issue.id,
       emoji: "eyes",
-    } as any);
+    });
 
     // Get context about the issue
     const context = await getIssueContext(issue, linearClient);
@@ -145,7 +145,7 @@ async function handleIssueMention(
     await linearClient.createReaction({
       issueId: issue.id,
       emoji: "white_check_mark",
-    } as any);
+    });
   } catch (error) {
     console.error("Error handling issue mention:", error);
     try {
@@ -153,7 +153,7 @@ async function handleIssueMention(
       await linearClient.createReaction({
         issueId,
         emoji: "x",
-      } as any);
+      });
     } catch (e) {
       console.error("Failed to add error reaction:", e);
     }
@@ -223,7 +223,7 @@ async function handleCommentMention(
         await linearClient.createReaction({
           issueId: issue.id,
           emoji: "x",
-        } as any);
+        });
       }
     } catch (e) {
       console.error("Failed to add error reaction:", e);
@@ -256,7 +256,7 @@ async function handleIssueCreated(
     await linearClient.createReaction({
       issueId: issue.id,
       emoji: "eyes",
-    } as any);
+    });
 
     // Get context about the issue
     const context = await getIssueContext(issue, linearClient);
@@ -282,7 +282,7 @@ async function handleIssueCreated(
     await linearClient.createReaction({
       issueId: issue.id,
       emoji: "white_check_mark",
-    } as any);
+    });
   } catch (error) {
     console.error("Error handling issue created:", error);
     try {
@@ -290,7 +290,7 @@ async function handleIssueCreated(
       await linearClient.createReaction({
         issueId,
         emoji: "x",
-      } as any);
+      });
     } catch (e) {
       console.error("Failed to add error reaction:", e);
     }
@@ -355,7 +355,7 @@ async function handleIssueAssigned(
     await linearClient.createReaction({
       issueId: issue.id,
       emoji: "eyes",
-    } as any);
+    });
 
     // Generate questions about missing critical information
     const missingInfoQuestions = await respondToMessage(
@@ -375,7 +375,7 @@ async function handleIssueAssigned(
     await linearClient.createReaction({
       issueId: issue.id,
       emoji: "white_check_mark",
-    } as any);
+    });
   } catch (error) {
     console.error("Error handling assigned issue:", error);
     try {
@@ -383,7 +383,7 @@ async function handleIssueAssigned(
       await linearClient.createReaction({
         issueId,
         emoji: "x",
-      } as any);
+      });
     } catch (e) {
       console.error("Failed to add error reaction:", e);
     }
