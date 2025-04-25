@@ -7,11 +7,12 @@ import {
   getIssueContext,
   answerUserQuestion,
 } from "../src/ai.js";
+import { env } from "../src/env.js";
 
 // Initialize Redis client
 const redis = new Redis({
-  url: process.env.UPSTASH_REDIS_URL || "",
-  token: process.env.UPSTASH_REDIS_TOKEN || "",
+  url: env.KV_REST_API_TOKEN,
+  token: env.KV_REST_API_TOKEN,
 });
 
 // Verify webhook signature from Linear
