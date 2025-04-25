@@ -12,7 +12,7 @@ const linearService = new LinearService(
 
 // Initialize Upstash Redis
 const redis = new Redis({
-  url: env.KV_REST_API_TOKEN,
+  url: env.KV_REST_API_URL,
   token: env.KV_REST_API_TOKEN,
 });
 
