@@ -189,7 +189,7 @@ async function handleCommentMention(
 
     // Add reactions to the issue
     await linearClient.createReaction({
-      commentId: comment.id,
+      commentId,
       emoji: "eyes",
     });
 
@@ -201,7 +201,7 @@ async function handleCommentMention(
 
     // Add thinking reaction to the issue
     await linearClient.createReaction({
-      commentId: comment.id,
+      commentId,
       emoji: "thinking_face",
     });
 
@@ -212,12 +212,12 @@ async function handleCommentMention(
     await linearClient.createComment({
       issueId: issue.id,
       body: response,
-      parentId: commentId,
+      parentId: notification.parentCommentId || commentId,
     });
 
     // Add completion reaction to the issue
     await linearClient.createReaction({
-      commentId: comment.id,
+      commentId,
       emoji: "white_check_mark",
     });
   } catch (error) {
