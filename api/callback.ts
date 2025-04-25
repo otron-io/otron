@@ -21,19 +21,30 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   if (req.method !== "GET") {
     return res.status(405).json({ error: "Method not allowed" });
   }
+
   const code = req.query.code as string;
   if (!code) {
     return res.status(400).json({ error: "Missing code parameter" });
   }
-  try {
-    const { accessToken, appUserId } = await linearService.getAccessToken(code);
 
-    // Store tokens in Upstash Redis
+  try {
+    const { accessToken, appUserId, organizationId } =
+      await linearService.getAccessToken(code);
+
+    // Store tokens in both formats - organization-specific and global
+    // Organization-specific keys
+    if (organizationId) {
+      await redis.set(`linear:${organizationId}:accessToken`, accessToken);
+      await redis.set(`linear:${organizationId}:appUserId`, appUserId);
+    }
+
+    // Keep storing global keys for backward compatibility
     await redis.set("linearAccessToken", accessToken);
     await redis.set("linearAppUserId", appUserId);
 
     console.log("Access token:", accessToken);
     console.log("App user ID:", appUserId);
+    console.log("Organization ID:", organizationId);
 
     return res.status(200).json({
       success: true,
