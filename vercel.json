@@ -2,9 +2,9 @@
   "version": 2,
   "builds": [{ "src": "api/*.ts", "use": "@vercel/node" }],
   "rewrites": [
-    { "source": "/auth", "destination": "/api/auth.ts" },
+    { "source": "/", "destination": "/api/index.ts" },
+    { "source": "/health", "destination": "/api/health.ts" },
     { "source": "/webhook", "destination": "/api/webhook.ts" },
-    { "source": "/oauth/callback", "destination": "/api/callback.ts" },
-    { "source": "/", "destination": "/api/index.ts" }
+    { "source": "/oauth/callback", "destination": "/api/callback.ts" }
   ]
 }
