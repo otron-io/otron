@@ -86,7 +86,7 @@ export class LinearService {
     try {
       await this.client.createComment({
         issueId,
-        body: "hello, world",
+        body: "Hello, world",
       });
     } catch (error) {
       console.error("Error responding to mention:", error);
@@ -117,7 +117,6 @@ export class LinearService {
     if (!this.client) {
       throw new Error("Linear client not initialized");
     }
-
     try {
       // First get the comment details to get the issue ID
       const comment = await this.client.comment(commentId);
@@ -130,9 +129,11 @@ export class LinearService {
         throw new Error("Issue not found for comment");
       }
 
+      // Create a reply by setting the parentId to the original comment ID
       await this.client.createComment({
         issueId: issue.id,
-        body: "hello, world",
+        body: "Hello, world!",
+        parentId: commentId, // This makes it a reply to the original comment
       });
     } catch (error) {
       console.error("Error responding to comment:", error);
