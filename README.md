@@ -1,3 +1,3 @@
-# Fingertip Linear Agent
+# Linear Agent
 
 https://linear.fingertip.com/auth
