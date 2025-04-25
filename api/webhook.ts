@@ -109,6 +109,12 @@ async function handleIssueMention(
     // Get the issue
     const issue = await linearClient.issue(issueId);
 
+    // Add a reaction to the ISSUE to show we're processing
+    await linearClient.createReaction({
+      issueId: issue.id, // Add reaction to issue instead of comment
+      emoji: "eyes",
+    } as any);
+
     // Get context about the issue
     const context = await getIssueContext(issue, linearClient);
 
@@ -117,47 +123,56 @@ async function handleIssueMention(
     const mentionComment = comments.nodes.find(
       (comment) =>
         comment.body.includes(`@${appUserId}`) &&
-        new Date(comment.createdAt) > new Date(Date.now() - 60000),
+        new Date(comment.createdAt) > new Date(Date.now() - 1000 * 60 * 5), // Within last 5 minutes
     );
 
-    if (!mentionComment) {
-      console.error("Could not find mention comment");
-      // Fallback to analyzing the issue
-      const analysis = await analyzeIssue(context);
-
-      await linearClient.createComment({
-        issueId,
-        body: analysis,
-      });
-      return;
+    let question = "";
+    if (mentionComment) {
+      // Extract question from the comment
+      question = extractQuestion(mentionComment.body, appUserId);
     }
 
-    // Add reaction to show we're processing
+    // Add a processing reaction to the ISSUE
     await linearClient.createReaction({
-      commentId: mentionComment.id,
+      issueId: issue.id, // Add to issue, not comment
       emoji: "thinking_face",
-    });
+    } as any);
 
-    // Extract question from the comment
-    const question = extractQuestion(mentionComment.body, appUserId);
+    // Process the request
+    let response;
+    if (question && question.toLowerCase().includes("refine")) {
+      // Generate detailed analysis
+      response = await analyzeIssue(context);
+    } else {
+      // Answer the question or provide general analysis
+      response = question
+        ? await answerUserQuestion(question, context)
+        : await analyzeIssue(context);
+    }
 
-    // Answer the user's question
-    const answer = await answerUserQuestion(question, context);
-
-    // Reply to the comment
+    // Reply with the answer
     await linearClient.createComment({
-      issueId,
-      body: answer,
-      parentId: mentionComment.id, // Reply directly to the comment
+      issueId: issue.id,
+      body: response,
+      parentId: mentionComment ? mentionComment.id : undefined,
     });
 
-    // Add completion reaction
+    // Add completion reaction to the ISSUE
     await linearClient.createReaction({
-      commentId: mentionComment.id,
+      issueId: issue.id, // Add to issue, not comment
       emoji: "white_check_mark",
-    });
+    } as any);
   } catch (error) {
     console.error("Error handling issue mention:", error);
+    // Add error reaction to the issue if possible
+    try {
+      await linearClient.createReaction({
+        issueId,
+        emoji: "x",
+      } as any);
+    } catch (e) {
+      console.error("Failed to add error reaction:", e);
+    }
   }
 }
 
@@ -249,29 +264,51 @@ async function handleIssueCreated(
     // Get the issue
     const issue = await linearClient.issue(issueId);
 
-    // Skip if issue already has detailed description
-    if (issue.description && issue.description.length > 200) {
-      return;
-    }
+    // Add processing reaction to the ISSUE
+    await linearClient.createReaction({
+      issueId: issue.id,
+      emoji: "eyes",
+    } as any);
 
     // Get context about the issue
     const context = await getIssueContext(issue, linearClient);
 
-    // Analyze the issue for missing information
+    // Add thinking reaction to the ISSUE
+    await linearClient.createReaction({
+      issueId: issue.id,
+      emoji: "thinking_face",
+    } as any);
+
+    // Analyze the issue
     const analysis = await analyzeIssue(context);
 
-    // Only comment if there are significant gaps
+    // Only comment if there are issues to address
     if (
-      analysis.includes("Missing") ||
-      analysis.includes("Could be improved")
+      analysis.includes("missing") ||
+      analysis.includes("could be improved")
     ) {
       await linearClient.createComment({
         issueId,
         body: `I've analyzed this issue and noticed it might benefit from some additional information:\n\n${analysis}\n\nReply with "@Context refine" for more detailed guidance.`,
       });
     }
+
+    // Add completion reaction to the ISSUE
+    await linearClient.createReaction({
+      issueId: issue.id,
+      emoji: "white_check_mark",
+    } as any);
   } catch (error) {
     console.error("Error handling issue created:", error);
+    try {
+      // Add error reaction to the issue
+      await linearClient.createReaction({
+        issueId,
+        emoji: "x",
+      } as any);
+    } catch (e) {
+      console.error("Failed to add error reaction:", e);
+    }
   }
 }
 
