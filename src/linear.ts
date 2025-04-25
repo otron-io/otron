@@ -23,7 +23,9 @@ export class LinearService {
     )}&response_type=code&scope=read,write,issues:create,comments:create&actor=app&prompt=consent&app:assignable=true&app:mentionable=true`;
   }
 
-  public async getAccessToken(code: string): Promise<string> {
+  public async getAccessToken(
+    code: string,
+  ): Promise<{ accessToken: string; appUserId: string }> {
     const formData = new URLSearchParams();
     formData.append("client_id", this.clientId);
     formData.append("client_secret", this.clientSecret);
@@ -54,7 +56,16 @@ export class LinearService {
     // Get the app user ID
     await this.fetchAppUserId();
 
-    return this.accessToken;
+    return {
+      accessToken: this.accessToken,
+      appUserId: this.appUserId || "",
+    };
+  }
+
+  public setStoredCredentials(accessToken: string, appUserId: string): void {
+    this.accessToken = accessToken;
+    this.appUserId = appUserId;
+    this.client = new LinearClient({ accessToken: this.accessToken });
   }
 
   private async fetchAppUserId(): Promise<string> {
@@ -64,7 +75,6 @@ export class LinearService {
 
     const viewer = await this.client.viewer;
     this.appUserId = viewer.id;
-
     return this.appUserId;
   }
 
@@ -73,10 +83,15 @@ export class LinearService {
       throw new Error("Linear client not initialized or app user ID not set");
     }
 
-    await this.client.createComment({
-      issueId,
-      body: "hello, world",
-    });
+    try {
+      await this.client.createComment({
+        issueId,
+        body: "hello, world",
+      });
+    } catch (error) {
+      console.error("Error responding to mention:", error);
+      throw error;
+    }
   }
 
   public async addReaction(
@@ -87,10 +102,15 @@ export class LinearService {
       throw new Error("Linear client not initialized");
     }
 
-    await this.client.createReaction({
-      commentId,
-      emoji,
-    });
+    try {
+      await this.client.createReaction({
+        commentId,
+        emoji,
+      });
+    } catch (error) {
+      console.error("Error adding reaction:", error);
+      throw error;
+    }
   }
 
   public async respondToComment(commentId: string): Promise<void> {
@@ -98,20 +118,25 @@ export class LinearService {
       throw new Error("Linear client not initialized");
     }
 
-    // First get the comment details to get the issue ID
-    const comment = await this.client.comment(commentId);
-    if (!comment) {
-      throw new Error("Comment not found");
-    }
+    try {
+      // First get the comment details to get the issue ID
+      const comment = await this.client.comment(commentId);
+      if (!comment) {
+        throw new Error("Comment not found");
+      }
 
-    const issue = await comment.issue;
-    if (!issue) {
-      throw new Error("Issue not found for comment");
-    }
+      const issue = await comment.issue;
+      if (!issue) {
+        throw new Error("Issue not found for comment");
+      }
 
-    await this.client.createComment({
-      issueId: issue.id,
-      body: "hello, world",
-    });
+      await this.client.createComment({
+        issueId: issue.id,
+        body: "hello, world",
+      });
+    } catch (error) {
+      console.error("Error responding to comment:", error);
+      throw error;
+    }
   }
 }

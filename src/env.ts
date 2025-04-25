@@ -8,6 +8,7 @@ export const env = createEnv({
     WEBHOOK_SIGNING_SECRET: z.string().min(1),
     REDIRECT_URI: z.string().url(),
     WEBHOOK_URL: z.string().url(),
+    EDGE_CONFIG: z.string().url(),
   },
   runtimeEnv: process.env,
   emptyStringAsUndefined: true,
