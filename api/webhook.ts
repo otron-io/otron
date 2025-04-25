@@ -1,7 +1,7 @@
-import { LinearClient } from "@linear/sdk";
-import { VercelRequest, VercelResponse } from "@vercel/node";
+import crypto from "node:crypto";
+import { LinearClient, Notification } from "@linear/sdk";
 import { Redis } from "@upstash/redis";
-import crypto from "crypto";
+import type { VercelRequest, VercelResponse } from "@vercel/node";
 import { getIssueContext, respondToMessage } from "../src/ai.js";
 import { env } from "../src/env.js";
 
@@ -93,7 +93,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
 // Handle when the agent is mentioned in an issue
 async function handleIssueMention(
-  payload: any,
+  payload: { notification: { issueId: string } },
   linearClient: LinearClient,
   appUserId: string,
 ) {
@@ -162,7 +162,7 @@ async function handleIssueMention(
 
 // Handle when the agent is mentioned in a comment
 async function handleCommentMention(
-  payload: any,
+  payload: { notification: { commentId: string; parentCommentId?: string } },
   linearClient: LinearClient,
   appUserId: string,
 ) {
@@ -174,9 +174,11 @@ async function handleCommentMention(
     return;
   }
 
+  console.log({ commentId });
+
   try {
     // Get the comment
-    const comment = await linearClient.comment(commentId);
+    const comment = await linearClient.comment(commentId as any);
 
     // Get the associated issue
     const issue = await comment.issue;
@@ -204,7 +206,7 @@ async function handleCommentMention(
     await linearClient.createComment({
       issueId: issue.id,
       body: response,
-      parentId: notification.parentCommentId || commentId,
+      parentId: notification?.parentCommentId || commentId,
     });
 
     // Add completion reaction to the issue
@@ -216,7 +218,7 @@ async function handleCommentMention(
     console.error("Error handling comment mention:", error);
     try {
       // Get the comment to find the issue
-      const comment = await linearClient.comment(commentId);
+      const comment = await linearClient.comment(commentId as any);
       const issue = await comment.issue;
       if (issue) {
         // Add error reaction to the issue
@@ -233,7 +235,7 @@ async function handleCommentMention(
 
 // Handle newly created issues
 async function handleIssueCreated(
-  payload: any,
+  payload: { notification: { issueId: string } },
   linearClient: LinearClient,
   appUserId: string,
 ) {
@@ -299,7 +301,7 @@ async function handleIssueCreated(
 
 // Handle new comments
 async function handleNewComment(
-  payload: any,
+  payload: { notification: { commentId: string } },
   linearClient: LinearClient,
   appUserId: string,
 ) {
@@ -311,9 +313,11 @@ async function handleNewComment(
     return;
   }
 
+  console.log({ commentId });
+
   try {
     // Get the comment
-    const comment = await linearClient.comment(commentId);
+    const comment = await linearClient.comment(commentId as any);
 
     // Check if the comment contains a command for our agent
     if (
@@ -332,7 +336,7 @@ async function handleNewComment(
 
 // Handle when an issue is assigned to the agent
 async function handleIssueAssigned(
-  payload: any,
+  payload: { notification: { issueId: string } },
   linearClient: LinearClient,
   appUserId: string,
 ) {
