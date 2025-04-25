@@ -86,7 +86,7 @@ export class LinearService {
     try {
       await this.client.createComment({
         issueId,
-        body: "Hello, world",
+        body: "Hello, world!",
       });
     } catch (error) {
       console.error("Error responding to mention:", error);
@@ -96,7 +96,7 @@ export class LinearService {
 
   public async addReaction(
     commentId: string,
-    emoji: string = "👋",
+    emoji: string = "wave",
   ): Promise<void> {
     if (!this.client) {
       throw new Error("Linear client not initialized");
