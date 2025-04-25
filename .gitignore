@@ -1,0 +1,52 @@
+# Dependencies
+node_modules/
+.pnp/
+.pnp.js
+
+# Build outputs
+dist/
+build/
+.next/
+out/
+
+# Environment files
+.env
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local
+
+# Debug logs
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+.pnpm-debug.log*
+
+# TypeScript cache
+*.tsbuildinfo
+.tscache/
+
+# Vercel
+.vercel
+
+# Local development
+.DS_Store
+.idea/
+.vscode/
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?
+
+# Cache directories
+.npm
+.eslintcache
+
+# Coverage directories
+coverage/
+.nyc_output/
+
+# Temp directories
+tmp/
+temp/
