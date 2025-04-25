@@ -75,6 +75,10 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
           console.log("Processing new comment");
           await handleNewComment(payload, linearClient, appUserId);
           break;
+        case "issueAssignedToYou":
+          console.log("Processing issue assigned to agent");
+          await handleIssueAssigned(payload, linearClient, appUserId);
+          break;
         default:
           console.log(`Unhandled action: ${payload.action}`);
       }
@@ -341,6 +345,72 @@ async function handleNewComment(
     // Otherwise, we don't need to process this comment
   } catch (error) {
     console.error("Error handling new comment:", error);
+  }
+}
+
+// Handle when an issue is assigned to the agent
+async function handleIssueAssigned(
+  payload: any,
+  linearClient: LinearClient,
+  appUserId: string,
+) {
+  const { notification } = payload;
+  const issueId = notification.issueId;
+
+  if (!issueId) {
+    console.error("No issue ID found in notification");
+    return;
+  }
+
+  try {
+    // Get the issue
+    const issue = await linearClient.issue(issueId);
+
+    // Get context about the issue
+    const context = await getIssueContext(issue, linearClient);
+
+    // Add eyes reaction to the issue
+    await linearClient.createReaction({
+      issueId: issue.id,
+      emoji: "eyes",
+    } as any);
+
+    // Add thinking reaction
+    await linearClient.createReaction({
+      issueId: issue.id,
+      emoji: "thinking_face",
+    } as any);
+
+    // Generate questions about missing critical information
+    const missingInfoQuestions = await respondToMessage(
+      "Based on this issue, what are the most critical pieces of information that are missing and would prevent the development team from implementing it? Only list 1-3 specific questions about the most essential missing details. If no critical information is missing, respond with 'No critical information is missing.'",
+      context,
+    );
+
+    // Only comment if there's missing information
+    if (!missingInfoQuestions.includes("No critical information is missing")) {
+      await linearClient.createComment({
+        issueId,
+        body: `To help us implement this issue efficiently, could you please provide some additional context:\n\n${missingInfoQuestions}`,
+      });
+    }
+
+    // Add completion reaction to the issue
+    await linearClient.createReaction({
+      issueId: issue.id,
+      emoji: "white_check_mark",
+    } as any);
+  } catch (error) {
+    console.error("Error handling assigned issue:", error);
+    try {
+      // Add error reaction to the issue
+      await linearClient.createReaction({
+        issueId,
+        emoji: "x",
+      } as any);
+    } catch (e) {
+      console.error("Failed to add error reaction:", e);
+    }
   }
 }
 
