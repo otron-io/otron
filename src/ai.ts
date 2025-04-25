@@ -2,7 +2,7 @@ import { generateText } from "ai";
 import { openai } from "@ai-sdk/openai";
 import { LinearClient } from "@linear/sdk";
 
-const model = openai("gpt-4o");
+const model = openai("gpt-4.1-mini");
 
 // Function to analyze an issue and identify missing information
 export async function analyzeIssue(issueContext: string): Promise<string> {
