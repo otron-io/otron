@@ -25,7 +25,7 @@ export function verifySignature(signature: string, body: string): boolean {
 }
 
 // Main webhook handler
-export async function handleWebhook(req: VercelRequest, res: VercelResponse) {
+export default async function handler(req: VercelRequest, res: VercelResponse) {
   // Only handle POST requests
   if (req.method !== "POST") {
     return res.status(405).json({ error: "Method not allowed" });
