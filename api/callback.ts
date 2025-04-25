@@ -5,42 +5,42 @@ import { LinearService } from "../src/linear.js";
 
 // Initialize Linear service
 const linearService = new LinearService(
-	env.LINEAR_CLIENT_ID,
-	env.LINEAR_CLIENT_SECRET,
-	env.REDIRECT_URI,
+  env.LINEAR_CLIENT_ID,
+  env.LINEAR_CLIENT_SECRET,
+  env.REDIRECT_URI,
 );
 
 // Initialize Upstash Redis
 const redis = new Redis({
-	url: env.KV_REST_API_URL,
-	token: env.KV_REST_API_TOKEN,
+  url: env.KV_REST_API_URL,
+  token: env.KV_REST_API_TOKEN,
 });
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
-	if (req.method !== "GET") {
-		return res.status(405).json({ error: "Method not allowed" });
-	}
+  if (req.method !== "GET") {
+    return res.status(405).json({ error: "Method not allowed" });
+  }
 
-	const code = req.query.code as string;
-	if (!code) {
-		return res.status(400).json({ error: "Missing code parameter" });
-	}
+  const code = req.query.code as string;
+  if (!code) {
+    return res.status(400).json({ error: "Missing code parameter" });
+  }
 
-	try {
-		const { accessToken, appUserId, organizationId } =
-			await linearService.getAccessToken(code);
+  try {
+    const { accessToken, appUserId, organizationId } =
+      await linearService.getAccessToken(code);
 
-		// Store tokens
-		if (organizationId) {
-			await redis.set(`linear:${organizationId}:accessToken`, accessToken);
-			await redis.set(`linear:${organizationId}:appUserId`, appUserId);
-		}
+    // Store tokens
+    if (organizationId) {
+      await redis.set(`linear:${organizationId}:accessToken`, accessToken);
+      await redis.set(`linear:${organizationId}:appUserId`, appUserId);
+    }
 
-		await redis.set("linearAccessToken", accessToken);
-		await redis.set("linearAppUserId", appUserId);
+    await redis.set("linearAccessToken", accessToken);
+    await redis.set("linearAppUserId", appUserId);
 
-		// Success page with Tailwind
-		return res.status(200).send(`
+    // Success page with Tailwind
+    return res.status(200).send(`
       <!DOCTYPE html>
       <html>
         <head>
@@ -63,11 +63,11 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         </body>
       </html>
     `);
-	} catch (error) {
-		console.error("OAuth error:", error);
+  } catch (error) {
+    console.error("OAuth error:", error);
 
-		// Error page with Tailwind
-		return res.status(500).send(`
+    // Error page with Tailwind
+    return res.status(500).send(`
       <!DOCTYPE html>
       <html>
         <head>
@@ -90,5 +90,5 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         </body>
       </html>
     `);
-	}
+  }
 }
