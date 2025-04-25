@@ -1,8 +1,10 @@
 {
   "version": 2,
-  "builds": [{ "src": "api/webhook.ts", "use": "@vercel/node" }],
+  "builds": [{ "src": "api/*.ts", "use": "@vercel/node" }],
   "routes": [
-    { "src": "/webhook", "dest": "/api/webhook.ts" },
-    { "src": "/oauth/callback", "dest": "/api/webhook.ts" }
+    { "src": "/", "dest": "/api/index" },
+    { "src": "/auth", "dest": "/api/auth" },
+    { "src": "/webhook", "dest": "/api/webhook" },
+    { "src": "/oauth/callback", "dest": "/api/callback" }
   ]
 }

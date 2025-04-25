@@ -1,5 +1,4 @@
 import { LinearClient } from "@linear/sdk";
-import fetch from "node-fetch";
 
 type AccessTokenResponse = {
   access_token: string;
@@ -62,6 +61,7 @@ export class LinearService {
 
     const viewer = await this.client.viewer;
     this.appUserId = viewer.id;
+
     return this.appUserId;
   }
 
