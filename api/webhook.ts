@@ -131,12 +131,6 @@ async function handleIssueMention(
       ? extractQuestion(mentionComment.body, appUserId)
       : issue.title;
 
-    // Add thinking reaction to the issue
-    await linearClient.createReaction({
-      issueId: issue.id,
-      emoji: "thinking_face",
-    } as any);
-
     // Generate a response
     const response = await respondToMessage(question, context);
 
@@ -203,12 +197,6 @@ async function handleCommentMention(
     // Extract question from the comment
     const question = extractQuestion(comment.body, appUserId);
 
-    // Add thinking reaction to the issue
-    await linearClient.createReaction({
-      commentId,
-      emoji: "thinking_face",
-    });
-
     // Generate response
     const response = await respondToMessage(question, context);
 
@@ -272,12 +260,6 @@ async function handleIssueCreated(
 
     // Get context about the issue
     const context = await getIssueContext(issue, linearClient);
-
-    // Add thinking reaction to the issue
-    await linearClient.createReaction({
-      issueId: issue.id,
-      emoji: "thinking_face",
-    } as any);
 
     // Create a default question for analysis
     const question = "Please analyze this issue for missing information";
@@ -373,12 +355,6 @@ async function handleIssueAssigned(
     await linearClient.createReaction({
       issueId: issue.id,
       emoji: "eyes",
-    } as any);
-
-    // Add thinking reaction
-    await linearClient.createReaction({
-      issueId: issue.id,
-      emoji: "thinking_face",
     } as any);
 
     // Generate questions about missing critical information
