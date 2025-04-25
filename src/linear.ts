@@ -24,21 +24,24 @@ export class LinearService {
   }
 
   public async getAccessToken(code: string): Promise<string> {
+    const formData = new URLSearchParams();
+    formData.append("client_id", this.clientId);
+    formData.append("client_secret", this.clientSecret);
+    formData.append("redirect_uri", this.redirectUri);
+    formData.append("code", code);
+    formData.append("grant_type", "authorization_code");
+
     const response = await fetch("https://api.linear.app/oauth/token", {
       method: "POST",
       headers: {
-        "Content-Type": "application/json",
+        "Content-Type": "application/x-www-form-urlencoded",
       },
-      body: JSON.stringify({
-        client_id: this.clientId,
-        client_secret: this.clientSecret,
-        redirect_uri: this.redirectUri,
-        code,
-        grant_type: "authorization_code",
-      }),
+      body: formData.toString(),
     });
 
     if (!response.ok) {
+      const errorText = await response.text();
+      console.error(`OAuth error response: ${errorText}`);
       throw new Error(`Failed to get access token: ${response.statusText}`);
     }
 
