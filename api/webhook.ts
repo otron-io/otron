@@ -189,9 +189,9 @@ async function handleCommentMention(
 
     // Add reactions to the issue
     await linearClient.createReaction({
-      issueId: issue.id,
+      commentId: comment.id,
       emoji: "eyes",
-    } as any);
+    });
 
     // Get context about the issue
     const context = await getIssueContext(issue, linearClient);
@@ -201,9 +201,9 @@ async function handleCommentMention(
 
     // Add thinking reaction to the issue
     await linearClient.createReaction({
-      issueId: issue.id,
+      commentId: comment.id,
       emoji: "thinking_face",
-    } as any);
+    });
 
     // Generate response
     const response = await respondToMessage(question, context);
@@ -217,9 +217,9 @@ async function handleCommentMention(
 
     // Add completion reaction to the issue
     await linearClient.createReaction({
-      issueId: issue.id,
+      commentId: comment.id,
       emoji: "white_check_mark",
-    } as any);
+    });
   } catch (error) {
     console.error("Error handling comment mention:", error);
     try {
