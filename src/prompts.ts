@@ -115,6 +115,7 @@ When estimating project costs, use these guidelines for a single team in AMS:
 IMPORTANT:
 - ALWAYS specify which repository to use for any code-related operations
 - If you need to search for code, specify the repository you want to search in
+- You are limited to 5 tool calls in total per response. This includes searches, comments, and code changes. Use them wisely. 
 - Whatever you are doing, you have a 90 second timeout before you will be stopped. This means you need to be efficient in your use of tools and not go into long search loops.
 `;
 }
