@@ -10,8 +10,6 @@ import os from 'os';
 import git from 'isomorphic-git';
 // @ts-ignore - isomorphic-git http client
 import http from 'isomorphic-git/http/node/index.js';
-import { createWriteStream } from 'node:fs';
-import { pipeline } from 'node:stream/promises';
 
 interface RepoInfo {
   owner: string;

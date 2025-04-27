@@ -1,7 +1,6 @@
 import { Octokit } from '@octokit/rest';
 import '@octokit/plugin-rest-endpoint-methods';
 import '@octokit/plugin-paginate-rest';
-import { PaginateInterface } from '@octokit/plugin-paginate-rest';
 import { Issue } from '@linear/sdk';
 import OpenAI from 'openai';
 import { env } from './env.js';

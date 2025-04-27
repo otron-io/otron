@@ -1,4 +1,3 @@
-import fs from 'fs/promises';
 import path from 'path';
 import { LocalRepositoryManager } from './repository-manager.js';
 

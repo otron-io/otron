@@ -9,7 +9,6 @@ import { LocalRepositoryManager } from './repository-manager.js';
 import {
   buildTechnicalAnalysisPrompt,
   buildChangePlanPrompt,
-  buildEnhancedAnalysisPrompt,
 } from './prompts.js';
 
 // Initialize OpenAI client
