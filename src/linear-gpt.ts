@@ -32,14 +32,17 @@ export class LinearGPT {
       );
     }
 
-    this.localRepoManager = new LocalRepositoryManager();
-
     // Parse allowed repositories from env variable
     if (env.ALLOWED_REPOSITORIES) {
       this.allowedRepositories = env.ALLOWED_REPOSITORIES.split(',').map((r) =>
         r.trim()
       );
     }
+
+    // Pass the allowed repositories to the LocalRepositoryManager
+    this.localRepoManager = new LocalRepositoryManager(
+      this.allowedRepositories
+    );
   }
 
   /**
