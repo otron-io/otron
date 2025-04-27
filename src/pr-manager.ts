@@ -91,14 +91,16 @@ export class PRManager {
     const branchToUse = branch || repo.baseBranch;
 
     try {
+      // Sanitize the path before using it with GitHub API
+      const sanitizedPath = this.sanitizePath(path);
       console.log(
-        `Getting file content for ${path} from ${branchToUse} in ${repo.owner}/${repo.repo}`
+        `Getting file content for ${sanitizedPath} from ${branchToUse} in ${repo.owner}/${repo.repo}`
       );
 
       const response = await this.octokit.repos.getContent({
         owner: repo.owner,
         repo: repo.repo,
-        path,
+        path: sanitizedPath,
         ref: branchToUse,
       });
 
@@ -107,7 +109,7 @@ export class PRManager {
         const content = Buffer.from(response.data.content, 'base64').toString();
         return content;
       } else {
-        throw new Error(`${path} is a directory or not a file`);
+        throw new Error(`${sanitizedPath} is a directory or not a file`);
       }
     } catch (error) {
       console.error(
@@ -186,6 +188,20 @@ export class PRManager {
   }
 
   /**
+   * Sanitizes a file path to ensure it's valid for GitHub API
+   * Removes leading slashes and normalizes path separators
+   */
+  private sanitizePath(path: string): string {
+    // Remove leading slashes
+    let sanitizedPath = path.replace(/^\/+/, '');
+
+    // Replace backslashes with forward slashes (for Windows paths)
+    sanitizedPath = sanitizedPath.replace(/\\/g, '/');
+
+    return sanitizedPath;
+  }
+
+  /**
    * Implements code changes in a specific repository
    */
   private async implementChangesInRepo(
@@ -198,13 +214,19 @@ export class PRManager {
     try {
       // Implement each change as a separate commit
       for (const change of changes) {
+        // Sanitize the file path to ensure it's valid for GitHub API
+        const sanitizedPath = this.sanitizePath(change.path);
+        console.log(
+          `Processing file: ${sanitizedPath} (original: ${change.path})`
+        );
+
         // Get the current file (if it exists) to get its SHA
         let fileSha: string | undefined;
         try {
           const fileResponse = await this.octokit.repos.getContent({
             owner: repo.owner,
             repo: repo.repo,
-            path: change.path,
+            path: sanitizedPath,
             ref: branchName,
           });
 
@@ -214,7 +236,7 @@ export class PRManager {
         } catch (error) {
           // File doesn't exist yet, that's okay for new files
           console.log(
-            `Creating new file: ${change.path} in ${repo.owner}/${repo.repo}`
+            `Creating new file: ${sanitizedPath} in ${repo.owner}/${repo.repo}`
           );
         }
 
@@ -222,7 +244,7 @@ export class PRManager {
         await this.octokit.repos.createOrUpdateFileContents({
           owner: repo.owner,
           repo: repo.repo,
-          path: change.path,
+          path: sanitizedPath,
           message: change.message,
           content: Buffer.from(change.content).toString('base64'),
           branch: branchName,

@@ -218,6 +218,14 @@ export class DeveloperAgent {
   }
 
   /**
+   * Sanitizes file paths to ensure they're correctly formatted
+   */
+  private sanitizePath(path: string): string {
+    // Remove leading slashes
+    return path.replace(/^\/+/, '');
+  }
+
+  /**
    * Identify relevant code files for the issue
    */
   private async identifyRelevantFiles(issue: Issue): Promise<
@@ -261,17 +269,24 @@ Return only the keywords separated by commas, no explanation.`,
 
           // For each result, get the file content
           for (const item of searchResults.data.items) {
+            // Sanitize the path
+            const sanitizedPath = this.sanitizePath(item.path);
+
             // Skip if we already have this file
-            if (relevantFiles.some((f) => f.path === item.path)) {
+            if (relevantFiles.some((f) => f.path === sanitizedPath)) {
               continue;
             }
 
             try {
               // Get file content
-              const content = await this.prManager.getFileContent(item.path);
+              const content = await this.prManager.getFileContent(
+                sanitizedPath,
+                undefined,
+                repoFullName
+              );
 
               relevantFiles.push({
-                path: item.path,
+                path: sanitizedPath,
                 content,
               });
 
@@ -280,7 +295,10 @@ Return only the keywords separated by commas, no explanation.`,
                 break;
               }
             } catch (error) {
-              console.error(`Error fetching content for ${item.path}:`, error);
+              console.error(
+                `Error fetching content for ${sanitizedPath}:`,
+                error
+              );
             }
           }
 
@@ -437,6 +455,8 @@ ${file.content}
 REPOSITORIES AVAILABLE:
 ${this.allowedRepositories.join(', ')}
 
+IMPORTANT: File paths must not start with a slash. Make sure all path values are relative to the repository root without a leading slash.
+
 Respond with ONLY a valid JSON array of change objects without explanation.`,
         temperature: 0.2,
         maxTokens: 4000,
@@ -463,24 +483,32 @@ Respond with ONLY a valid JSON array of change objects without explanation.`,
         // Log successful parsing
         console.log(`Successfully parsed ${changes.length} code changes`);
 
-        // Validate each change has the required fields
-        const validChanges = changes.filter((change) => {
-          const isValid =
-            typeof change.path === 'string' &&
-            change.path.length > 0 &&
-            typeof change.content === 'string' &&
-            change.content.length > 0 &&
-            typeof change.message === 'string' &&
-            change.message.length > 0;
+        // Validate each change has the required fields and sanitize paths
+        const validChanges = changes
+          .filter((change) => {
+            const isValid =
+              typeof change.path === 'string' &&
+              change.path.length > 0 &&
+              typeof change.content === 'string' &&
+              change.content.length > 0 &&
+              typeof change.message === 'string' &&
+              change.message.length > 0;
 
-          if (!isValid) {
-            console.warn(
-              `Skipping invalid change for path: ${change.path || 'unknown'}`
-            );
-          }
+            if (!isValid) {
+              console.warn(
+                `Skipping invalid change for path: ${change.path || 'unknown'}`
+              );
+            }
 
-          return isValid;
-        });
+            return isValid;
+          })
+          .map((change) => {
+            // Sanitize the path to ensure it doesn't start with a slash
+            return {
+              ...change,
+              path: this.sanitizePath(change.path),
+            };
+          });
 
         if (validChanges.length === 0) {
           throw new Error('No valid code changes were generated');
