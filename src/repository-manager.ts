@@ -444,42 +444,120 @@ export class LocalRepositoryManager {
     query: string,
     repoFullName: string
   ): Promise<Array<{ path: string; line: number; content: string }>> {
-    await this.ensureRepoCloned(repoFullName);
-
-    // Generate a cache key
-    const cacheKey = `${repoFullName}:${query}`;
-
-    // Check cache first
-    const cachedResult = this.searchResultCache[cacheKey];
-    if (
-      cachedResult &&
-      Date.now() - cachedResult.timestamp <
-        LocalRepositoryManager.CACHE_TTL.SEARCH_RESULTS
-    ) {
-      console.log(
-        `Using cached search results for "${query}" in ${repoFullName}`
-      );
-      return cachedResult.results;
-    }
+    // Set a timeout to ensure we always return something
+    const SEARCH_TIMEOUT = 15000; // 15 seconds max for search
 
     try {
+      await this.ensureRepoCloned(repoFullName);
+
+      // Generate a cache key
+      const cacheKey = `${repoFullName}:${query}`;
+
+      // Check cache first
+      const cachedResult = this.searchResultCache[cacheKey];
+      if (
+        cachedResult &&
+        Date.now() - cachedResult.timestamp <
+          LocalRepositoryManager.CACHE_TTL.SEARCH_RESULTS
+      ) {
+        console.log(
+          `Using cached search results for "${query}" in ${repoFullName}`
+        );
+        return cachedResult.results;
+      }
+
       console.log(
         `Searching for "${query}" in ${repoFullName} using GitHub API`
       );
 
-      // Get Octokit instance for this repo
-      const octokit = await this.getOctokitForRepo(repoFullName);
+      // Create a promise that will be rejected after the timeout
+      const timeoutPromise = new Promise<
+        Array<{ path: string; line: number; content: string }>
+      >((_, reject) => {
+        setTimeout(() => {
+          reject(
+            new Error(`Search operation timed out after ${SEARCH_TIMEOUT}ms`)
+          );
+        }, SEARCH_TIMEOUT);
+      });
 
-      // Use rate limiter to prevent hitting GitHub API limits
-      const results = await this.rateLimiter.enqueue(async () => {
+      // Create the actual search promise
+      const searchPromise = this.performSearch(query, repoFullName);
+
+      // Race the promises - whichever completes first wins
+      const results = await Promise.race([searchPromise, timeoutPromise]).catch(
+        async (error) => {
+          console.error(`Error or timeout in search: ${error.message}`);
+          // On timeout or error, do a quick fallback search
+          return this.fallbackSearch(query, repoFullName);
+        }
+      );
+
+      // Cache the search results if we got any
+      if (results && results.length > 0) {
+        this.searchResultCache[cacheKey] = {
+          results,
+          timestamp: Date.now(),
+        };
+      }
+
+      return results;
+    } catch (error) {
+      console.error(`Error searching code in ${repoFullName}:`, error);
+      // Always return something, even if it's just a message about the error
+      return [
+        {
+          path: 'search-error.txt',
+          line: 1,
+          content: `Search failed or timed out. Try a more specific query or check repository access.`,
+        },
+      ];
+    }
+  }
+
+  /**
+   * Performs the actual search using GitHub API with retries
+   * @private
+   */
+  private async performSearch(
+    query: string,
+    repoFullName: string
+  ): Promise<Array<{ path: string; line: number; content: string }>> {
+    // Get Octokit instance for this repo
+    const octokit = await this.getOctokitForRepo(repoFullName);
+    const [owner, repo] = repoFullName.split('/');
+
+    // Try to narrow down the search if query is long
+    let searchQuery = query;
+    if (query.length > 20) {
+      // For long queries, use keywords to make search more efficient
+      const keywords = query
+        .split(/\s+/)
+        .filter(
+          (word) =>
+            word.length > 3 &&
+            !['with', 'this', 'that', 'from', 'have'].includes(
+              word.toLowerCase()
+            )
+        );
+      if (keywords.length > 0) {
+        searchQuery = keywords.slice(0, 3).join(' '); // Use up to 3 keywords
+        console.log(
+          `Simplified search query to "${searchQuery}" for better performance`
+        );
+      }
+    }
+
+    // Use rate limiter to prevent hitting GitHub API limits
+    return this.rateLimiter.enqueue(async () => {
+      try {
         // Performing GitHub search
-        // The GitHub search API is quite powerful but has limitations
-        const searchQuery = `repo:${repoFullName} ${query}`;
+        const fullQuery = `repo:${repoFullName} ${searchQuery}`;
+        console.log(`Executing GitHub search with query: ${fullQuery}`);
 
-        // First try an exact search
         const { data: searchData } = await octokit.search.code({
-          q: searchQuery,
-          per_page: 30,
+          q: fullQuery,
+          per_page: 15, // Limit to 15 for faster response
         });
 
         const matchResults: Array<{
@@ -488,107 +566,230 @@ export class LocalRepositoryManager {
           content: string;
         }> = [];
 
-        // Process each search result
-        for (const item of searchData.items) {
-          // We need to get the file content to find the matching line
-          const fileContent = await this.getFileContent(
-            item.path,
-            repoFullName
-          );
-
-          // Find matching lines
-          const lines = fileContent.split('\n');
-          const lowercaseQuery = query.toLowerCase();
-
-          let foundMatch = false;
-
-          // Look for matches in each line
-          for (let i = 0; i < lines.length; i++) {
-            const line = lines[i];
-            if (line.toLowerCase().includes(lowercaseQuery)) {
-              matchResults.push({
-                path: item.path,
-                line: i + 1,
-                content: line.trim(),
-              });
-              foundMatch = true;
-              // Only include the first match per file to avoid overwhelming results
-              break;
-            }
-          }
-
-          // If no specific line matched but the file matched, include the first line
-          if (!foundMatch) {
-            matchResults.push({
-              path: item.path,
-              line: 1,
-              content: lines[0]?.trim() || 'File matched by name',
-            });
-          }
+        // Check if we have results
+        if (!searchData.items || searchData.items.length === 0) {
+          console.log('No search results found, trying fallback');
+          return await this.fallbackSearch(query, repoFullName);
         }
 
-        return matchResults;
-      });
+        // We'll only get content for the first 5 files to avoid timeouts
+        const MAX_FILES_TO_PROCESS = 5;
+        const filesToProcess = searchData.items.slice(0, MAX_FILES_TO_PROCESS);
 
-      // Cache the search results
-      this.searchResultCache[cacheKey] = {
-        results,
-        timestamp: Date.now(),
-      };
+        // We'll process files in parallel with a short timeout for each
+        const filePromises = filesToProcess.map(async (item) => {
+          try {
+            // Set a timeout for getting each file content
+            const fileContent = await Promise.race([
+              this.getFileContent(item.path, repoFullName),
+              new Promise<string>((_, reject) =>
+                setTimeout(
+                  () => reject(new Error('File content retrieval timed out')),
+                  3000
+                )
+              ),
+            ]).catch(() => '// File content retrieval timed out');
 
-      return results;
-    } catch (error) {
-      console.error(`Error searching code in ${repoFullName}:`, error);
+            // Find matching lines
+            const lines = fileContent.split('\n');
+            const lowercaseQuery = query.toLowerCase();
 
-      // If search fails, try a different approach - check if we have any text matches
-      if (query.length > 3) {
-        try {
-          console.log('Falling back to filename search...');
-          const [owner, repo] = repoFullName.split('/');
-          const octokit = await this.getOctokitForRepo(repoFullName);
+            let foundMatch = false;
 
-          // Get some files from the repository that might be relevant by name
-          const { data: contentsData } = await octokit.repos.getContent({
-            owner,
-            repo,
-            path: '',
-          });
-
-          const results: Array<{
-            path: string;
-            line: number;
-            content: string;
-          }> = [];
-
-          // If we got a directory listing, look for files with names matching parts of the query
-          if (Array.isArray(contentsData)) {
-            const queryParts = query.toLowerCase().split(/\s+/);
-
-            for (const item of contentsData) {
-              if (item.type === 'file') {
-                const lowerName = item.name.toLowerCase();
-                if (
-                  queryParts.some(
-                    (part) => part.length > 3 && lowerName.includes(part)
-                  )
-                ) {
-                  results.push({
-                    path: item.path,
-                    line: 1,
-                    content: 'File matched by name',
-                  });
-                }
+            // Look for matches in each line
+            for (let i = 0; i < lines.length; i++) {
+              const line = lines[i];
+              if (line.toLowerCase().includes(lowercaseQuery)) {
+                matchResults.push({
+                  path: item.path,
+                  line: i + 1,
+                  content: line.trim(),
+                });
+                foundMatch = true;
+                // Only include the first match per file to avoid overwhelming results
+                break;
               }
             }
 
-            return results;
+            // If no specific line matched but the file matched, include the first line
+            if (!foundMatch) {
+              matchResults.push({
+                path: item.path,
+                line: 1,
+                content: lines[0]?.trim() || 'File matched by name',
+              });
+            }
+          } catch (error) {
+            console.error(
+              `Error processing search result for ${item.path}:`,
+              error
+            );
+            // Include the file anyway, even if we couldn't get content
+            matchResults.push({
+              path: item.path,
+              line: 1,
+              content: 'Error retrieving file content',
+            });
           }
-        } catch (fallbackError) {
-          console.error('Fallback search also failed:', fallbackError);
+        });
+
+        // Wait for all file processing to complete, but with a timeout
+        await Promise.race([
+          Promise.all(filePromises),
+          new Promise((_, reject) =>
+            setTimeout(
+              () => reject(new Error('All files processing timed out')),
+              10000
+            )
+          ),
+        ]).catch((error) => {
+          console.warn(`File content processing: ${error.message}`);
+        });
+
+        // Even if some files failed, return what we have so far
+        return matchResults.length > 0
+          ? matchResults
+          : await this.fallbackSearch(query, repoFullName);
+      } catch (error) {
+        console.error('Search API error:', error);
+        return this.fallbackSearch(query, repoFullName);
+      }
+    });
+  }
+
+  /**
+   * Fallback search method when the main search fails or times out
+   * @private
+   */
+  private async fallbackSearch(
+    query: string,
+    repoFullName: string
+  ): Promise<Array<{ path: string; line: number; content: string }>> {
+    try {
+      console.log('Performing fallback search by filename...');
+      const [owner, repo] = repoFullName.split('/');
+      const octokit = await this.getOctokitForRepo(repoFullName);
+
+      // Get some common file types to check based on the query context
+      let filePatterns = [
+        'ts',
+        'js',
+        'py',
+        'rb',
+        'php',
+        'java',
+        'go',
+        'c',
+        'cpp',
+        'cs',
+        'html',
+        'css',
+      ];
+
+      // If query has specific contexts, prioritize those file types
+      if (
+        query.toLowerCase().includes('api') ||
+        query.toLowerCase().includes('service')
+      ) {
+        filePatterns = ['ts', 'js', 'py', 'rb', 'php', 'java', 'go'];
+      } else if (
+        query.toLowerCase().includes('ui') ||
+        query.toLowerCase().includes('interface')
+      ) {
+        filePatterns = ['html', 'css', 'tsx', 'jsx', 'vue'];
+      }
+
+      const results: Array<{ path: string; line: number; content: string }> =
+        [];
+      let totalResults = 0;
+      const MAX_RESULTS = 10;
+
+      // Split query into keywords
+      const queryParts = query
+        .toLowerCase()
+        .split(/\s+/)
+        .filter((part) => part.length > 3);
+
+      // Try to find key files in common paths
+      const commonPaths = [
+        '', // Root directory
+        'src',
+        'app',
+        'lib',
+        'api',
+        'services',
+        'models',
+        'controllers',
+      ];
+
+      // Try each path, but stop if we get enough results
+      for (const dirPath of commonPaths) {
+        if (totalResults >= MAX_RESULTS) break;
+
+        try {
+          const { data: contents } = await octokit.repos
+            .getContent({
+              owner,
+              repo,
+              path: dirPath,
+            })
+            .catch(() => ({ data: [] }));
+
+          if (!Array.isArray(contents)) continue;
+
+          // Filter for likely relevant files
+          for (const item of contents) {
+            if (totalResults >= MAX_RESULTS) break;
+
+            if (item.type === 'file') {
+              const extension = item.name.split('.').pop()?.toLowerCase();
+              if (!extension || !filePatterns.includes(extension)) continue;
+
+              const lowerName = item.name.toLowerCase();
+              // Check if the filename contains any of our query parts
+              if (
+                queryParts.some((part) => lowerName.includes(part)) ||
+                lowerName.includes('index') || // Often contains important code
+                lowerName.includes('main') ||
+                lowerName.includes('service') ||
+                lowerName.includes('model') ||
+                lowerName.includes('controller')
+              ) {
+                results.push({
+                  path: item.path,
+                  line: 1,
+                  content: `Likely relevant file based on name: ${item.name}`,
+                });
+                totalResults++;
+              }
+            }
+          }
+        } catch (error) {
+          console.error(`Error reading directory ${dirPath}:`, error);
+          // Continue with next path
         }
       }
 
-      return [];
+      // If we still have no results, provide a helpful message with suggestions
+      if (results.length === 0) {
+        results.push({
+          path: 'suggestions.txt',
+          line: 1,
+          content: `No files found for "${query}". Try a different search term or check specific directories.`,
+        });
+      }
+
+      return results;
+    } catch (error) {
+      console.error('Fallback search failed:', error);
+      // Return something useful even when everything fails
+      return [
+        {
+          path: 'error.txt',
+          line: 1,
+          content: `Search encountered an error. Please try with more specific terms or check repository access.`,
+        },
+      ];
     }
   }
 
