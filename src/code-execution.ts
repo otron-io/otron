@@ -135,6 +135,89 @@ export class DeveloperAgent {
   }
 
   /**
+   * Process an issue and force implementation regardless of complexity assessment
+   */
+  async processIssueWithImplementation(issue: Issue): Promise<void> {
+    try {
+      console.log(
+        `Processing issue with forced implementation: ${issue.identifier} - ${issue.title}`
+      );
+
+      // Add a comment to let the team know the agent is working on it
+      await this.linearClient.createComment({
+        issueId: issue.id,
+        body: `I'm analyzing this issue and will implement changes as requested. 🔍`,
+      });
+
+      // 1. Identify relevant code files
+      const relevantFiles = await this.identifyRelevantFiles(issue);
+
+      // 2. Generate technical analysis
+      const technicalReport =
+        await this.technicalAnalysis.generateTechnicalReport(
+          issue,
+          relevantFiles
+        );
+
+      // 3. Post technical report as a comment
+      await this.technicalAnalysis.postReportToIssue(issue, technicalReport);
+
+      // 4. Plan code changes
+      const { branchName, changePlan } =
+        await this.technicalAnalysis.planCodeChanges(
+          issue,
+          technicalReport,
+          relevantFiles
+        );
+
+      // 5. Generate implementation changes (skip the shouldImplement check)
+      const codeChanges = await this.generateCodeChanges(
+        issue,
+        relevantFiles,
+        technicalReport,
+        changePlan
+      );
+
+      // 6. Create PRs with changes across multiple repositories
+      const prs = await this.prManager.implementAndCreatePRs(
+        issue,
+        branchName,
+        codeChanges,
+        `Implements solution for ${issue.identifier}\n\n${technicalReport}`
+      );
+
+      if (prs.length > 0) {
+        const repoList = prs.map((pr) => pr.repoFullName).join(', ');
+        console.log(
+          `Created PRs in repositories: ${repoList} for issue ${issue.identifier}`
+        );
+      } else {
+        console.log(`No PRs were created for issue ${issue.identifier}`);
+
+        // Add a comment explaining that no changes could be made
+        await this.linearClient.createComment({
+          issueId: issue.id,
+          body: `I've tried to implement the changes but was unable to create pull requests. This might be because no valid code changes could be generated. Please review the technical analysis above.`,
+        });
+      }
+    } catch (error: any) {
+      console.error(`Error processing issue ${issue.identifier}:`, error);
+
+      // Notify about the failure
+      try {
+        await this.linearClient.createComment({
+          issueId: issue.id,
+          body: `I encountered an error while implementing changes: \`${
+            error.message || 'Unknown error'
+          }\`\n\nPlease check the logs for more details.`,
+        });
+      } catch (e) {
+        console.error(`Failed to post error comment:`, e);
+      }
+    }
+  }
+
+  /**
    * Identify relevant code files for the issue
    */
   private async identifyRelevantFiles(issue: Issue): Promise<

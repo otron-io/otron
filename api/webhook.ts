@@ -103,10 +103,17 @@ async function handleAutonomously(
 
     // React to show we're processing
     try {
-      await linearClient.createReaction({
-        issueId: issue.id,
-        emoji: 'eyes',
-      });
+      if (issueId) {
+        await linearClient.createReaction({
+          issueId: issue.id,
+          emoji: 'eyes',
+        });
+      } else if (commentId) {
+        await linearClient.createReaction({
+          commentId,
+          emoji: 'eyes',
+        });
+      }
     } catch (e) {
       console.error('Failed to add processing reaction:', e);
     }
@@ -118,27 +125,64 @@ async function handleAutonomously(
     // Determine context - check if this came from a comment
     let context = await getIssueContext(issue, linearClient);
     let userQuery = '';
+    let isImplementationRequest = false;
 
     if (commentId) {
       const comment = await linearClient.comment({ id: commentId });
       if (comment && comment.body) {
-        // If the agent was mentioned, extract the message
+        // Extract the message
+        userQuery = comment.body.trim();
+
+        // If the agent was mentioned, extract only the instruction part
         if (comment.body.includes(`@${appUserId}`)) {
           userQuery = comment.body.replace(`@${appUserId}`, '').trim();
         }
+
+        // Check for implementation approval phrases
+        isImplementationRequest =
+          /please proceed/i.test(userQuery) ||
+          /implement.+changes/i.test(userQuery) ||
+          /go ahead/i.test(userQuery) ||
+          /create (a )?pr/i.test(userQuery) ||
+          /start implementing/i.test(userQuery) ||
+          /yes, implement/i.test(userQuery);
       }
     }
 
-    // Start processing the issue
-    if (
-      action === 'issueAssignedToYou' ||
+    // Check if this is an issue assignment
+    const isAssignment = action === 'issueAssignedToYou';
+
+    // Check if this is a technical request
+    const isTechnicalRequest =
       userQuery.includes('analyze') ||
       userQuery.includes('fix') ||
       userQuery.includes('implement') ||
-      userQuery.includes('technical')
-    ) {
-      // Full technical processing
-      await developerAgent.processIssue(issue);
+      userQuery.includes('technical') ||
+      isImplementationRequest;
+
+    // Full technical processing if:
+    // 1. It's an assignment, or
+    // 2. It's a technical/implementation request
+    if (isAssignment || isTechnicalRequest) {
+      if (isImplementationRequest) {
+        // If explicitly requesting implementation, force it to implement
+        console.log(
+          'Implementation explicitly requested for issue',
+          issue.identifier
+        );
+
+        // Add a comment acknowledging the request
+        await linearClient.createComment({
+          issueId: issue.id,
+          body: `I'll implement the changes and create a PR for you right away.`,
+        });
+
+        // Process with forced implementation
+        await developerAgent.processIssueWithImplementation(issue);
+      } else {
+        // Normal processing
+        await developerAgent.processIssue(issue);
+      }
     } else {
       // Basic AI response
       const response = userQuery
@@ -158,10 +202,17 @@ async function handleAutonomously(
 
     // React to show we've completed processing
     try {
-      await linearClient.createReaction({
-        issueId: issue.id,
-        emoji: 'white_check_mark',
-      });
+      if (issueId) {
+        await linearClient.createReaction({
+          issueId: issue.id,
+          emoji: 'white_check_mark',
+        });
+      } else if (commentId) {
+        await linearClient.createReaction({
+          commentId,
+          emoji: 'white_check_mark',
+        });
+      }
     } catch (e) {
       console.error('Failed to add completion reaction:', e);
     }
