@@ -436,15 +436,43 @@ export class LinearGPT {
                     functionArgs.query,
                     functionArgs.repository
                   );
-                  toolResponse = `Found ${results.length} relevant files for query "${functionArgs.query}" in ${functionArgs.repository}.`;
+
+                  // Prepare a formatted response with a summary
+                  let formattedResults = `Found ${results.length} relevant files for query "${functionArgs.query}" in ${functionArgs.repository}:\n\n`;
+
+                  // Add each file with path and content, limited to avoid token issues
+                  const MAX_RESULTS_TO_SHOW = 5;
+                  for (
+                    let i = 0;
+                    i < Math.min(results.length, MAX_RESULTS_TO_SHOW);
+                    i++
+                  ) {
+                    const result = results[i];
+                    formattedResults += `File: ${result.path}\nLine ${result.line}: ${result.content}\n\n`;
+                  }
+
+                  // Add note if we truncated results
+                  if (results.length > MAX_RESULTS_TO_SHOW) {
+                    formattedResults += `... and ${
+                      results.length - MAX_RESULTS_TO_SHOW
+                    } more matches (not shown to conserve space)`;
+                  }
+
+                  // Set the tool response
+                  toolResponse = formattedResults;
                 } else if (functionName === 'getFileContent') {
                   const content = await this.localRepoManager.getFileContent(
                     functionArgs.path,
                     functionArgs.repository
                   );
-                  toolResponse = `Retrieved content for ${functionArgs.path} in ${functionArgs.repository}:
-                  -----------------------------------------------------------------------------------------
-                  ${content}`;
+                  toolResponse = `Retrieved content for ${
+                    functionArgs.path
+                  } in ${functionArgs.repository}:
+${
+  content.length > 5000
+    ? content.substring(0, 5000) + '\n... (content truncated due to size)'
+    : content
+}`;
                 } else if (functionName === 'updateIssueStatus') {
                   await this.updateIssueStatus(
                     functionArgs.issueId,
