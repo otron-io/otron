@@ -83,8 +83,10 @@ export class LinearGPT {
 
       // Tool use loop - continue until model stops making tool calls
       let hasMoreToolCalls = true;
+      let toolCallCount = 0;
+      const MAX_TOOL_CALLS = 10; // Maximum number of tool calls to prevent infinite loops
 
-      while (hasMoreToolCalls) {
+      while (hasMoreToolCalls && toolCallCount < MAX_TOOL_CALLS) {
         // Use OpenAI's client
         const response = await openai.chat.completions.create({
           model: 'gpt-4.1',
@@ -386,6 +388,9 @@ export class LinearGPT {
             responseMessage as OpenAI.Chat.ChatCompletionMessageParam
           );
 
+          // Increment tool call count
+          toolCallCount += responseMessage.tool_calls.length;
+
           // Process each tool call
           for (const toolCall of responseMessage.tool_calls) {
             if (toolCall.type === 'function') {
@@ -485,6 +490,18 @@ export class LinearGPT {
             });
           }
         }
+      }
+
+      // Check if we hit the tool call limit
+      if (toolCallCount >= MAX_TOOL_CALLS) {
+        console.warn(
+          `Hit maximum tool call limit (${MAX_TOOL_CALLS}) for issue ${issue.identifier}. Stopping execution.`
+        );
+        await this.linearClient.createComment({
+          issueId: issue.id,
+          body: `I've reached my maximum number of operations (${MAX_TOOL_CALLS}) for this request. I'll need to stop here. Please create a new request if you need me to continue working on this issue.`,
+          parentId: commentId,
+        });
       }
     } catch (error: unknown) {
       console.error(`Error in LinearGPT processing:`, error);
