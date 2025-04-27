@@ -105,12 +105,29 @@ export class LocalRepositoryManager {
 
       try {
         // Get access token for the repo
+        console.log(`Getting Octokit for ${repoFullName}...`);
         const octokit = await this.getOctokitForRepo(repoFullName);
+
+        // Debug logging
+        console.log(`Got Octokit instance, retrieving auth token...`);
+
         const auth = await octokit.auth();
+        console.log(
+          `Auth result type: ${typeof auth}, format: ${
+            auth ? (typeof auth === 'object' ? 'object' : 'string') : 'null'
+          }`
+        );
+
         const token =
           typeof auth === 'object' && auth !== null && 'token' in auth
             ? auth.token
             : '';
+
+        console.log(
+          `Token received: ${
+            token ? 'Yes (length: ' + token.length + ')' : 'No'
+          }`
+        );
 
         if (!token) {
           throw new Error(
@@ -119,11 +136,12 @@ export class LocalRepositoryManager {
         }
 
         // Clone the repository using isomorphic-git with token in URL
+        console.log(`Cloning repository with auth token...`);
         await git.clone({
           fs,
           http,
           dir: repoPath,
-          url: `https://${token}@github.com/${repoFullName}.git`,
+          url: `https://x-access-token:${token}@github.com/${repoFullName}.git`,
           singleBranch: true,
           depth: 1, // Shallow clone for better performance
         });
@@ -166,7 +184,7 @@ export class LocalRepositoryManager {
                 dir: repoPath,
                 ref: currentBranch,
                 singleBranch: true,
-                url: `https://${token}@github.com/${repoFullName}.git`,
+                url: `https://x-access-token:${token}@github.com/${repoFullName}.git`,
               });
             }
 
@@ -190,28 +208,86 @@ export class LocalRepositoryManager {
       // Add additional debug information for auth errors
       if (error.code === 'HttpError' && error.data?.statusCode === 401) {
         // Log token info without exposing the full token
-        const octokit = await this.getOctokitForRepo(repoFullName);
-        const auth = await octokit.auth();
-        const token =
-          typeof auth === 'object' && auth !== null && 'token' in auth
-            ? auth.token
-            : '';
+        try {
+          console.log(`Attempting to debug auth error...`);
+          const octokit = await this.getOctokitForRepo(repoFullName);
+          const auth = await octokit.auth();
+          const token =
+            typeof auth === 'object' && auth !== null && 'token' in auth
+              ? auth.token
+              : '';
 
-        console.error(
-          `Authentication error for ${repoFullName}. Token length: ${
-            typeof token === 'string' ? token.length : 0
-          }`
-        );
+          console.error(
+            `Authentication error for ${repoFullName}. Token length: ${
+              typeof token === 'string' ? token.length : 0
+            }`
+          );
 
-        // Check if GitHub App authentication is being used
-        if (this.githubAppService) {
-          console.error(
-            'GitHub App authentication is being used. Check app permissions and installation.'
-          );
-        } else {
-          console.error(
-            'Token-based authentication is being used. Check if token has correct permissions.'
-          );
+          // Check if GitHub App authentication is being used
+          if (this.githubAppService) {
+            console.error(
+              'GitHub App authentication is being used. Check app permissions and installation.'
+            );
+
+            // Check installation and repository access
+            try {
+              console.log('Checking GitHub App installations...');
+              const installations =
+                await this.githubAppService.getInstallations();
+              console.log(
+                `Found ${
+                  installations ? installations.length : 0
+                } installations`
+              );
+
+              // Try to find installation with access to this repo
+              let foundRepo = false;
+              if (installations && Array.isArray(installations)) {
+                for (const installation of installations) {
+                  console.log(
+                    `Checking installation ${installation.id} (${
+                      installation.account?.login || 'unknown'
+                    })...`
+                  );
+                  try {
+                    const repos =
+                      await this.githubAppService.getInstallationRepositories(
+                        installation.id
+                      );
+                    console.log(
+                      `Installation has access to ${repos.length} repositories`
+                    );
+                    if (repos.includes(repoFullName)) {
+                      console.log(
+                        `Repository ${repoFullName} is accessible via installation ${installation.id}`
+                      );
+                      foundRepo = true;
+                      break;
+                    }
+                  } catch (repoErr) {
+                    console.error(
+                      `Error checking repos for installation ${installation.id}:`,
+                      repoErr
+                    );
+                  }
+                }
+              }
+
+              if (!foundRepo) {
+                console.error(
+                  `Repository ${repoFullName} is not accessible by any GitHub App installation!`
+                );
+              }
+            } catch (instErr) {
+              console.error('Error checking installations:', instErr);
+            }
+          } else {
+            console.error(
+              'Token-based authentication is being used. Check if token has correct permissions.'
+            );
+          }
+        } catch (debugErr) {
+          console.error('Error during auth debugging:', debugErr);
         }
       }
 

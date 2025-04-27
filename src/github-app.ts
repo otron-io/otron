@@ -79,11 +79,27 @@ export class GitHubAppService {
 
   /**
    * Get all installations of this GitHub App
-   * Using any[] type to avoid complex GitHub API response typing issues
+   * Properly typed to avoid TypeScript errors
    */
-  public async getInstallations(): Promise<any[]> {
+  public async getInstallations(): Promise<
+    Array<{
+      id: number;
+      account: {
+        login: string;
+        id: number;
+        type: string;
+      };
+    }>
+  > {
     const { data } = await this.appOctokit.apps.listInstallations();
-    return data;
+    return data as Array<{
+      id: number;
+      account: {
+        login: string;
+        id: number;
+        type: string;
+      };
+    }>;
   }
 
   /**
