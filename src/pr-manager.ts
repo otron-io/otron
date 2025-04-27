@@ -1,449 +1,245 @@
-import { openai } from '@ai-sdk/openai';
-import { Issue, LinearClient } from '@linear/sdk';
-import { generateText } from 'ai';
+import { LinearClient } from '@linear/sdk';
 import { Octokit } from '@octokit/rest';
 import { env } from './env.js';
-
-interface CodeChange {
-  path: string;
-  content: string;
-  message: string;
-  repository: string; // Required field to specify which repository this change belongs to
-}
-
-interface Repository {
-  owner: string;
-  repo: string;
-  baseBranch: string;
-}
+import { GitHubAppService } from './github-app.js';
 
 export class PRManager {
   private octokit: Octokit;
-  private repositories: Map<string, Repository> = new Map();
+  private githubAppService: GitHubAppService | null = null;
 
   constructor(private linearClient: LinearClient) {
-    // Initialize GitHub client
-    this.octokit = new Octokit({
-      auth: env.GITHUB_TOKEN,
+    if (env.GITHUB_TOKEN) {
+      // Legacy mode: use PAT
+      this.octokit = new Octokit({
+        auth: env.GITHUB_TOKEN,
+      });
+    } else if (env.GITHUB_APP_ID && env.GITHUB_APP_PRIVATE_KEY) {
+      // GitHub App mode: initialize the service
+      this.githubAppService = GitHubAppService.getInstance();
+      // Initialize with a temporary Octokit that will be replaced per-repo
+      this.octokit = new Octokit();
+    } else {
+      throw new Error(
+        'No GitHub authentication credentials provided. Set either GITHUB_TOKEN or GITHUB_APP_ID and GITHUB_APP_PRIVATE_KEY.'
+      );
+    }
+  }
+
+  /**
+   * Get the appropriate Octokit client for a repository
+   */
+  private async getOctokitForRepo(repository: string): Promise<Octokit> {
+    if (this.githubAppService) {
+      // Using GitHub App authentication
+      return this.githubAppService.getOctokitForRepo(repository);
+    }
+    // Using PAT authentication (already initialized)
+    return this.octokit;
+  }
+
+  /**
+   * Retrieve the default branch name for a repository
+   */
+  async getDefaultBranch(repository: string): Promise<string> {
+    const [owner, repo] = repository.split('/');
+
+    const octokit = await this.getOctokitForRepo(repository);
+    const { data } = await octokit.repos.get({
+      owner,
+      repo,
     });
 
-    // Parse allowed repositories
-    if (env.ALLOWED_REPOSITORIES) {
-      const allowedRepos = env.ALLOWED_REPOSITORIES.split(',').map((r) =>
-        r.trim()
-      );
-
-      for (const repoFullName of allowedRepos) {
-        // Skip if already added or if format is invalid
-        if (
-          this.repositories.has(repoFullName) ||
-          !repoFullName.includes('/')
-        ) {
-          continue;
-        }
-
-        const [owner, repo] = repoFullName.split('/');
-        this.repositories.set(repoFullName, {
-          owner,
-          repo,
-          baseBranch: 'main', // Default to 'main' for other repositories
-        });
-      }
-    }
+    return data.default_branch;
   }
 
   /**
-   * Gets repository info, throwing an error if not found
+   * Create a new branch in a repository
    */
-  private getRepoInfo(repoFullName: string): Repository {
-    if (!repoFullName) {
-      throw new Error('Repository name must be specified');
-    }
+  async createBranch(
+    branchName: string,
+    repository: string,
+    baseBranch?: string
+  ): Promise<void> {
+    const [owner, repo] = repository.split('/');
+    const baseRef = baseBranch || env.REPO_BASE_BRANCH || 'main';
 
-    const repo = this.repositories.get(repoFullName);
-    if (!repo) {
-      throw new Error(`Repository not found or not allowed: ${repoFullName}`);
-    }
+    // Get the SHA of the base branch
+    const octokit = await this.getOctokitForRepo(repository);
+    const { data: refData } = await octokit.git.getRef({
+      owner,
+      repo,
+      ref: `heads/${baseRef}`,
+    });
 
-    return repo;
-  }
+    const sha = refData.object.sha;
 
-  /**
-   * Fetches a file's content from the specified repository
-   */
-  async getFileContent(
-    path: string,
-    repoFullName: string,
-    branch?: string
-  ): Promise<string> {
-    if (!repoFullName) {
-      throw new Error('Repository must be specified for getFileContent');
-    }
-
-    const repo = this.getRepoInfo(repoFullName);
-    const branchToUse = branch || repo.baseBranch;
-
+    // Create the new branch
     try {
-      // Sanitize the path before using it with GitHub API
-      const sanitizedPath = this.sanitizePath(path);
-      console.log(
-        `Getting file content for ${sanitizedPath} from ${branchToUse} in ${repo.owner}/${repo.repo}`
-      );
-
-      const response = await this.octokit.repos.getContent({
-        owner: repo.owner,
-        repo: repo.repo,
-        path: sanitizedPath,
-        ref: branchToUse,
-      });
-
-      // The response content is base64 encoded
-      if ('content' in response.data && !Array.isArray(response.data)) {
-        const content = Buffer.from(response.data.content, 'base64').toString();
-        return content;
-      } else {
-        throw new Error(`${sanitizedPath} is a directory or not a file`);
-      }
-    } catch (error) {
-      console.error(
-        `Error fetching file: ${path} from ${repo.owner}/${repo.repo}`,
-        error
-      );
-      throw error;
-    }
-  }
-
-  /**
-   * Creates a new branch for implementing changes
-   */
-  async createBranch(branchName: string, repoFullName: string): Promise<void> {
-    if (!repoFullName) {
-      throw new Error('Repository must be specified for createBranch');
-    }
-
-    const repo = this.getRepoInfo(repoFullName);
-
-    try {
-      // Get the SHA of the latest commit on the base branch
-      const refResponse = await this.octokit.git.getRef({
-        owner: repo.owner,
-        repo: repo.repo,
-        ref: `heads/${repo.baseBranch}`,
-      });
-
-      const sha = refResponse.data.object.sha;
-
-      // Create the new branch
-      await this.octokit.git.createRef({
-        owner: repo.owner,
-        repo: repo.repo,
+      await octokit.git.createRef({
+        owner,
+        repo,
         ref: `refs/heads/${branchName}`,
         sha,
       });
-
-      console.log(
-        `Created branch: ${branchName} from ${repo.baseBranch} in ${repo.owner}/${repo.repo}`
-      );
-    } catch (error) {
-      console.error(
-        `Error creating branch: ${branchName} in ${repo.owner}/${repo.repo}`,
-        error
-      );
-      throw error;
-    }
-  }
-
-  /**
-   * Organizes changes by repository
-   */
-  private organizeChangesByRepo(
-    changes: CodeChange[]
-  ): Map<string, CodeChange[]> {
-    const changesByRepo = new Map<string, CodeChange[]>();
-
-    for (const change of changes) {
-      // Require repository to be specified
-      if (!change.repository) {
-        console.warn(
-          `Skipping change for unspecified repository: ${change.path}`
-        );
-        continue;
-      }
-
-      const repoKey = change.repository;
-
-      // Skip if it's for a repository we don't have access to
-      if (!this.repositories.has(repoKey)) {
-        console.warn(`Skipping change for unauthorized repository: ${repoKey}`);
-        continue;
-      }
-
-      // Add to the map
-      if (!changesByRepo.has(repoKey)) {
-        changesByRepo.set(repoKey, []);
-      }
-
-      changesByRepo.get(repoKey)!.push(change);
-    }
-
-    return changesByRepo;
-  }
-
-  /**
-   * Sanitizes a file path to ensure it's valid for GitHub API
-   * Removes leading slashes and normalizes path separators
-   */
-  private sanitizePath(path: string): string {
-    // Remove leading slashes
-    let sanitizedPath = path.replace(/^\/+/, '');
-
-    // Replace backslashes with forward slashes (for Windows paths)
-    sanitizedPath = sanitizedPath.replace(/\\/g, '/');
-
-    return sanitizedPath;
-  }
-
-  /**
-   * Implements changes in multiple repositories
-   */
-  async implementChanges(
-    branchName: string,
-    changes: CodeChange[]
-  ): Promise<void> {
-    const changesByRepo = this.organizeChangesByRepo(changes);
-
-    // Create branches and implement changes for each repository
-    for (const [repoFullName, repoChanges] of changesByRepo.entries()) {
-      try {
-        // Create branch in this repository
-        await this.createBranch(branchName, repoFullName);
-
-        // Implement changes in this repository
-        await this.implementChangesInRepo(
-          repoFullName,
-          branchName,
-          repoChanges
-        );
-      } catch (error) {
-        console.error(`Error implementing changes in ${repoFullName}:`, error);
+      console.log(`Created branch ${branchName} in ${repository}`);
+    } catch (error: any) {
+      // If branch already exists, get its current SHA
+      if (error.status === 422) {
+        console.log(`Branch ${branchName} already exists in ${repository}`);
+      } else {
         throw error;
       }
     }
   }
 
   /**
-   * Implements code changes in a specific repository
+   * Get the content of a file from a repository
    */
-  private async implementChangesInRepo(
-    repoFullName: string,
-    branchName: string,
-    changes: CodeChange[]
-  ): Promise<void> {
-    const repo = this.getRepoInfo(repoFullName);
+  async getFileContent(path: string, repository: string): Promise<string> {
+    const [owner, repo] = repository.split('/');
 
     try {
-      // Implement each change as a separate commit
-      for (const change of changes) {
-        // Sanitize the file path to ensure it's valid for GitHub API
-        const sanitizedPath = this.sanitizePath(change.path);
-        console.log(
-          `Processing file: ${sanitizedPath} (original: ${change.path})`
-        );
+      const octokit = await this.getOctokitForRepo(repository);
+      const { data } = await octokit.repos.getContent({
+        owner,
+        repo,
+        path,
+      });
 
-        // Get the current file (if it exists) to get its SHA
-        let fileSha: string | undefined;
-        try {
-          const fileResponse = await this.octokit.repos.getContent({
-            owner: repo.owner,
-            repo: repo.repo,
-            path: sanitizedPath,
-            ref: branchName,
-          });
-
-          if ('sha' in fileResponse.data && !Array.isArray(fileResponse.data)) {
-            fileSha = fileResponse.data.sha;
-          }
-        } catch (error) {
-          // File doesn't exist yet, that's okay for new files
-          console.log(
-            `Creating new file: ${sanitizedPath} in ${repo.owner}/${repo.repo}`
-          );
+      if ('content' in data && 'encoding' in data) {
+        // It's a file
+        if (data.encoding === 'base64') {
+          return Buffer.from(data.content, 'base64').toString('utf-8');
         }
-
-        // Update or create the file
-        await this.octokit.repos.createOrUpdateFileContents({
-          owner: repo.owner,
-          repo: repo.repo,
-          path: sanitizedPath,
-          message: change.message,
-          content: Buffer.from(change.content).toString('base64'),
-          branch: branchName,
-          sha: fileSha,
-        });
-
-        console.log(
-          `Updated/created file: ${sanitizedPath} in ${repo.owner}/${repo.repo}`
-        );
+        return data.content;
       }
-    } catch (error) {
-      console.error(
-        `Error implementing changes in ${repo.owner}/${repo.repo}:`,
-        error
-      );
+
+      throw new Error(`Not a file: ${path}`);
+    } catch (error: any) {
+      if (error.status === 404) {
+        throw new Error(`File not found: ${path}`);
+      }
       throw error;
     }
   }
 
   /**
-   * Creates a PR in a specific repository
+   * Create or update a file in a repository
    */
-  private async createPRInRepo(
-    issue: Issue,
-    repoFullName: string,
-    branchName: string,
-    description: string
-  ): Promise<{ url: string; number: number; repoFullName: string }> {
-    const repo = this.getRepoInfo(repoFullName);
-
-    try {
-      // Create the PR
-      const pr = await this.octokit.pulls.create({
-        owner: repo.owner,
-        repo: repo.repo,
-        title: `${issue.identifier}: ${issue.title}`,
-        body: description,
-        head: branchName,
-        base: repo.baseBranch,
-        draft: false,
-      });
-
-      console.log(
-        `Created PR: ${pr.data.html_url} in ${repo.owner}/${repo.repo}`
-      );
-
-      return {
-        url: pr.data.html_url,
-        number: pr.data.number,
-        repoFullName: repoFullName,
-      };
-    } catch (error) {
-      console.error(`Error creating PR in ${repo.owner}/${repo.repo}:`, error);
-      throw error;
-    }
-  }
-
-  /**
-   * Creates pull requests in specified repositories
-   */
-  async createPullRequests(
-    issue: Issue,
-    branchName: string,
-    description: string,
-    repoNames: string[]
-  ): Promise<Array<{ url: string; number: number; repoFullName: string }>> {
-    const prs: Array<{
-      url: string;
-      number: number;
-      repoFullName: string;
-    }> = [];
-
-    for (const repoName of repoNames) {
-      try {
-        const pr = await this.createPRInRepo(
-          issue,
-          repoName,
-          branchName,
-          description
-        );
-        prs.push(pr);
-      } catch (error) {
-        console.error(`Error creating PR in ${repoName}:`, error);
-        // Continue with other repositories
-      }
-    }
-
-    return prs;
-  }
-
-  /**
-   * Links pull requests to a Linear issue
-   */
-  async linkPullRequestsToIssue(
-    issue: Issue,
-    prs: Array<{ url: string; number: number; repoFullName: string }>
+  async createOrUpdateFile(
+    path: string,
+    content: string,
+    message: string,
+    repository: string,
+    branch: string
   ): Promise<void> {
-    // Only proceed if we have PRs
-    if (prs.length === 0) {
-      return;
-    }
+    const [owner, repo] = repository.split('/');
 
+    let sha: string | undefined;
+
+    const octokit = await this.getOctokitForRepo(repository);
+
+    // Check if file already exists to get its SHA
     try {
-      // Format PR links for the comment
-      const prLinks = prs
-        .map((pr) => {
-          const [owner, repo] = pr.repoFullName.split('/');
-          return `- [PR #${pr.number} in ${owner}/${repo}](${pr.url})`;
-        })
-        .join('\n');
-
-      // Add the comment with PR links to the issue
-      await this.linearClient.createComment({
-        issueId: issue.id,
-        body: `I've created the following pull requests to implement the changes:\n\n${prLinks}`,
+      const { data } = await octokit.repos.getContent({
+        owner,
+        repo,
+        path,
+        ref: branch,
       });
 
-      // Create URL attachments for each PR
-      for (const pr of prs) {
-        const [owner, repo] = pr.repoFullName.split('/');
-        // Add as comment with link
-        await this.linearClient.createComment({
-          issueId: issue.id,
-          body: `[PR #${pr.number} in ${owner}/${repo}](${pr.url})`,
-        });
+      if ('sha' in data) {
+        sha = data.sha;
       }
-    } catch (error) {
-      console.error('Error linking PRs to Linear issue:', error);
-      // Don't throw here, as the PRs are already created
+    } catch (error: any) {
+      // File doesn't exist, which is fine for creation
+      if (error.status !== 404) {
+        throw error;
+      }
     }
+
+    // Create or update the file
+    await octokit.repos.createOrUpdateFileContents({
+      owner,
+      repo,
+      path,
+      message,
+      content: Buffer.from(content).toString('base64'),
+      branch,
+      ...(sha ? { sha } : {}),
+    });
   }
 
   /**
-   * Implements changes across repositories and creates pull requests
+   * Create a pull request in a repository
    */
-  async implementAndCreatePRs(
-    issue: Issue,
-    branchName: string,
-    changes: CodeChange[],
-    description: string
-  ): Promise<Array<{ url: string; number: number; repoFullName: string }>> {
-    if (changes.length === 0) {
-      console.log('No changes to implement');
-      return [];
+  async createPullRequest(
+    title: string,
+    body: string,
+    head: string,
+    base: string,
+    repository: string
+  ): Promise<{ url: string; number: number }> {
+    const [owner, repo] = repository.split('/');
+
+    const octokit = await this.getOctokitForRepo(repository);
+    const { data } = await octokit.pulls.create({
+      owner,
+      repo,
+      title,
+      body,
+      head,
+      base,
+    });
+
+    return {
+      url: data.html_url,
+      number: data.number,
+    };
+  }
+
+  /**
+   * Get files in a specific directory of a repository
+   */
+  async getDirectoryContents(
+    path: string,
+    repository: string
+  ): Promise<Array<{ path: string; type: string; name: string }>> {
+    const [owner, repo] = repository.split('/');
+
+    const octokit = await this.getOctokitForRepo(repository);
+    const { data } = await octokit.repos.getContent({
+      owner,
+      repo,
+      path,
+    });
+
+    if (!Array.isArray(data)) {
+      throw new Error(`Not a directory: ${path}`);
     }
 
-    try {
-      // Implement changes in all repositories
-      await this.implementChanges(branchName, changes);
+    return data.map((item) => ({
+      path: item.path,
+      type: item.type,
+      name: item.name,
+    }));
+  }
 
-      // Determine which repositories had changes
-      const changesByRepo = this.organizeChangesByRepo(changes);
-      const repoNames = Array.from(changesByRepo.keys());
+  /**
+   * Search for files in a repository matching a query
+   */
+  async searchCode(
+    query: string,
+    repository: string
+  ): Promise<Array<{ path: string; repository: string }>> {
+    const octokit = await this.getOctokitForRepo(repository);
+    const { data } = await octokit.rest.search.code({
+      q: `repo:${repository} ${query}`,
+    });
 
-      // Create PRs in those repositories
-      const prs = await this.createPullRequests(
-        issue,
-        branchName,
-        description,
-        repoNames
-      );
-
-      // Link PRs to the Linear issue
-      await this.linkPullRequestsToIssue(issue, prs);
-
-      return prs;
-    } catch (error) {
-      console.error('Error implementing changes and creating PRs:', error);
-      throw error;
-    }
+    return data.items.map((item) => ({
+      path: item.path,
+      repository,
+    }));
   }
 }

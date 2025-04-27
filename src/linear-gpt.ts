@@ -12,6 +12,7 @@ import {
 } from './prompts.js';
 import { z } from 'zod';
 import path from 'path';
+import { GitHubAppService } from './github-app.js';
 
 // Initialize OpenAI client
 const openai = new OpenAI({
@@ -30,11 +31,25 @@ export class LinearGPT {
   private prManager: PRManager;
   private technicalAnalysis: TechnicalAnalysisService;
   private allowedRepositories: string[] = [];
+  private githubAppService: GitHubAppService | null = null;
 
   constructor(private linearClient: LinearClient) {
-    this.octokit = new Octokit({
-      auth: env.GITHUB_TOKEN,
-    });
+    // Set up GitHub client
+    if (env.GITHUB_TOKEN) {
+      // Legacy mode: use PAT
+      this.octokit = new Octokit({
+        auth: env.GITHUB_TOKEN,
+      });
+    } else if (env.GITHUB_APP_ID && env.GITHUB_APP_PRIVATE_KEY) {
+      // GitHub App mode: initialize the service
+      this.githubAppService = GitHubAppService.getInstance();
+      // Initialize with a temporary Octokit that will be replaced per-repo
+      this.octokit = new Octokit();
+    } else {
+      throw new Error(
+        'No GitHub authentication credentials provided. Set either GITHUB_TOKEN or GITHUB_APP_ID and GITHUB_APP_PRIVATE_KEY.'
+      );
+    }
 
     this.prManager = new PRManager(linearClient);
     this.technicalAnalysis = new TechnicalAnalysisService(linearClient);
@@ -45,6 +60,16 @@ export class LinearGPT {
         r.trim()
       );
     }
+  }
+
+  // Add method to get appropriate octokit for a repo
+  private async getOctokitForRepo(repository: string): Promise<Octokit> {
+    if (this.githubAppService) {
+      // Using GitHub App authentication
+      return this.githubAppService.getOctokitForRepo(repository);
+    }
+    // Using PAT authentication (already initialized)
+    return this.octokit;
   }
 
   /**
@@ -1049,7 +1074,6 @@ export class LinearGPT {
   private async searchRelevantFiles(
     issue: Issue
   ): Promise<Array<{ path: string; repository: string; content?: string }>> {
-    const octokit = this.octokit;
     const results: Array<{
       path: string;
       repository: string;
@@ -1082,6 +1106,9 @@ export class LinearGPT {
 
       for (const keyword of keywords) {
         try {
+          // Get the octokit instance for this repository
+          const octokit = await this.getOctokitForRepo(repo);
+
           // Search for files containing the keyword
           const searchResponse = await octokit.rest.search.code({
             q: `repo:${repo} ${keyword}`,
@@ -1349,7 +1376,10 @@ export class LinearGPT {
 
       try {
         const [owner, repo] = file.repository.split('/');
-        const response = await this.octokit.rest.repos.getContent({
+        // Get the octokit instance for this repository
+        const octokit = await this.getOctokitForRepo(file.repository);
+
+        const response = await octokit.repos.getContent({
           owner,
           repo,
           path: file.path,
@@ -1479,77 +1509,100 @@ Format your response as Markdown with the following structure:
       /\b([a-zA-Z0-9_.-]+\/[a-zA-Z0-9_.-]+)\b/g,
     ];
 
-    const repos = new Set<string>();
+    const repositories = new Set<string>();
 
-    // Match all patterns
+    // Extract repositories using each pattern
     for (const pattern of repoPatterns) {
       let match;
       while ((match = pattern.exec(report)) !== null) {
-        // Verify it's a likely repository name by checking it against allowed repos
-        const repo = match[1].trim();
+        const repo = match[1];
         if (this.allowedRepositories.includes(repo)) {
-          repos.add(repo);
+          repositories.add(repo);
         }
       }
     }
 
-    return repos.size > 0
-      ? Array.from(repos).join(', ')
+    return repositories.size > 0
+      ? Array.from(repositories).join(', ')
       : 'none explicitly mentioned';
   }
 
   /**
-   * Update the priority of an issue
+   * Update the priority of a Linear issue
    */
   private async updateIssuePriority(
-    issueId: string,
+    issueIdOrIdentifier: string,
     priority: number
   ): Promise<void> {
     try {
-      const issue = await this.linearClient.issue(issueId);
+      // Get the issue
+      const issue = await this.linearClient.issue(issueIdOrIdentifier);
+      if (!issue) {
+        console.error(`Issue ${issueIdOrIdentifier} not found`);
+        return;
+      }
+
+      // Update the issue with the new priority
       await issue.update({ priority });
-      console.log(`Updated priority for issue ${issueId} to ${priority}`);
+
+      console.log(
+        `Updated issue ${issueIdOrIdentifier} priority to ${priority}`
+      );
     } catch (error: unknown) {
       console.error(
-        `Error updating priority for issue ${issueId}:`,
+        `Error updating priority for issue ${issueIdOrIdentifier}:`,
         error instanceof Error ? error.message : String(error)
       );
     }
   }
 
   /**
-   * Find the technical report in issue comments
+   * Implement changes for an issue
+   */
+  private async implementChanges(issue: Issue): Promise<void> {
+    try {
+      // Execute the technical analysis first
+      await this.performTechnicalAnalysis(issue);
+
+      console.log(`Implemented changes for issue ${issue.identifier}`);
+    } catch (error: unknown) {
+      console.error(
+        `Error implementing changes for issue ${issue.identifier}:`,
+        error instanceof Error ? error.message : String(error)
+      );
+      throw error;
+    }
+  }
+
+  /**
+   * Find an existing technical report in the issue comments
    */
   private async findTechnicalReportInComments(
     issue: Issue
   ): Promise<string | null> {
     try {
       // Get comments for the issue
-      const comments = await this.linearClient.comments({
-        filter: {
-          issue: { id: { eq: issue.id } },
-        },
-      });
+      const comments = await issue.comments();
 
-      // Find the comment containing a technical report
-      // Look for markers like "## Summary" and "## Technical Root Cause Analysis"
+      // Look for a comment that contains a technical report
       for (const comment of comments.nodes) {
-        const content = comment.body || '';
-
-        if (
-          content.includes('## Summary') &&
-          (content.includes('## Technical Root Cause Analysis') ||
-            content.includes('## Root Cause Analysis'))
-        ) {
-          return content;
+        if (comment.body.includes('## Technical Analysis Report')) {
+          // Extract the report content (everything after the header)
+          const reportContent = comment.body.split(
+            '## Technical Analysis Report\n\n'
+          )[1];
+          if (reportContent) {
+            return reportContent;
+          }
         }
       }
 
+      // No technical report found
       return null;
-    } catch (error: unknown) {
+    } catch (error) {
       console.error(
         `Error finding technical report for issue ${issue.identifier}:`,
-        error instanceof Error ? error.message : String(error)
+        error
       );
       return null;
     }
@@ -1559,349 +1612,166 @@ Format your response as Markdown with the following structure:
    * Generate a technical report for an issue
    */
   private async generateTechnicalReport(issue: Issue): Promise<string> {
-    // Check if we already have a technical report
-    const existingReport = await this.findTechnicalReportInComments(issue);
-    if (existingReport) {
-      return existingReport;
-    }
+    try {
+      // Search for relevant files
+      const relevantFiles = await this.searchRelevantFiles(issue);
 
-    // Execute technical analysis to generate a report
-    await this.executeTechnicalAnalysis(issue);
+      // Load the content for the files
+      const filesWithContent = await this.loadFileContents(relevantFiles);
 
-    // Now try to find the report that was just created
-    const report = await this.findTechnicalReportInComments(issue);
-    if (!report) {
-      throw new Error(
-        `Failed to generate technical report for issue ${issue.identifier}`
+      // Use the technical analysis service to generate a report
+      const report = await this.technicalAnalysis.generateTechnicalReport(
+        issue,
+        filesWithContent
       );
-    }
 
-    return report;
+      return report;
+    } catch (error: unknown) {
+      console.error(
+        `Error generating technical report for issue ${issue.identifier}:`,
+        error instanceof Error ? error.message : String(error)
+      );
+      return 'Failed to generate technical report due to an error.';
+    }
   }
 
   /**
-   * Plan code changes based on a technical report and implementation plan
+   * Plan code changes based on a technical report
    */
   private async planCodeChanges(
     issue: Issue,
     technicalReport: string
   ): Promise<any> {
-    // Extract implementation plan from technical report
-    const implementationPlanMatch = technicalReport.match(
-      /## Implementation Plan\s+([\s\S]+?)(?:\n#|$)/
-    );
+    try {
+      // Search for relevant files
+      const relevantFiles = await this.searchRelevantFiles(issue);
 
-    if (!implementationPlanMatch) {
-      throw new Error('No implementation plan found in technical report');
+      // Load file contents
+      const filesWithContent = await this.loadFileContents(relevantFiles);
+
+      // Use technical analysis service to plan changes
+      return this.technicalAnalysis.planCodeChanges(
+        issue,
+        technicalReport,
+        filesWithContent
+      );
+    } catch (error: unknown) {
+      console.error(
+        `Error planning code changes for issue ${issue.identifier}:`,
+        error instanceof Error ? error.message : String(error)
+      );
+      throw error;
     }
-
-    const implementationPlan = implementationPlanMatch[1].trim();
-
-    // Get repositories mentioned in the report
-    const repositories = this.extractRepositoriesFromReport(technicalReport);
-
-    return {
-      issue,
-      technicalReport,
-      implementationPlan,
-      repositories,
-    };
   }
 
   /**
-   * Generate code changes based on a technical report and implementation plan
+   * Generate code changes based on technical report and implementation plan
    */
   private async generateCodeChanges(
     issueId: string,
     technicalReport: string,
     implementationPlan: string
-  ): Promise<any[]> {
-    // Extract repositories from the report
-    const repoString = this.extractRepositoriesFromReport(technicalReport);
-    const repositories =
-      repoString === 'none explicitly mentioned'
-        ? this.allowedRepositories
-        : repoString.split(',').map((r) => r.trim());
-
-    if (repositories.length === 0) {
-      throw new Error('No repositories identified for implementation');
-    }
-
-    // Prepare prompt for code generation
-    const prompt = `
-# Technical Report and Implementation Plan
-${technicalReport}
-
-# Task
-Based on the technical report and implementation plan above, generate the necessary code changes.
-Your response should include only a JSON array where each element represents a change to a specific file.
-No explanations or comments outside the JSON structure.
-
-Each change object must have:
-- path: the file path (relative to repo root, should NOT start with a slash)
-- repository: the GitHub repository in format "owner/repo"
-- content: the entire content of the file after changes
-
-Example format:
-[
-  {
-    "path": "src/example.ts",
-    "repository": "owner/repo",
-    "content": "// Full file content after changes"
-  }
-]
-`;
-
+  ): Promise<Array<{ path: string; content: string; repository: string }>> {
     try {
-      // Use OpenAI to generate code changes
+      // Get the issue object
+      const issue = await this.linearClient.issue(issueId);
+      if (!issue) {
+        throw new Error(`Issue ${issueId} not found`);
+      }
+
+      // Search for relevant files
+      const relevantFiles = await this.searchRelevantFiles(issue);
+      const filesWithContent = await this.loadFileContents(relevantFiles);
+
+      // Call the AI model to generate code changes
       const response = await openai.chat.completions.create({
-        model: 'gpt-4o',
+        model: 'gpt-4.1',
         messages: [
           {
             role: 'system',
-            content: prompt,
+            content: buildCodeImplementationPrompt({
+              issue,
+              technicalReport,
+              changePlan: implementationPlan,
+              filesWithRepoInfo: filesWithContent,
+              allowedRepositories: this.allowedRepositories,
+            }),
           },
         ],
         temperature: 0.2,
+        response_format: { type: 'json_object' },
       });
 
-      const content = response.choices[0].message.content || '';
-
-      // Try to parse the response as JSON
-      try {
-        const changes = JSON.parse(content);
-        console.log('Successfully parsed code changes response');
-
-        // Validate each change
-        const validChanges = changes.filter((change: any) => {
-          if (!change.path || !change.repository || !change.content) {
-            console.warn(
-              'Invalid change object missing required fields',
-              change
-            );
-            return false;
-          }
-
-          // Ensure paths don't start with slash
-          if (change.path.startsWith('/')) {
-            change.path = change.path.substring(1);
-          }
-
-          return true;
-        });
-
-        return validChanges;
-      } catch (error: unknown) {
-        console.error(
-          'Failed to parse code changes response:',
-          error instanceof Error ? error.message : String(error)
-        );
-        throw new Error('Failed to parse code changes response');
+      // Parse the response to get code changes
+      const responseText = response.choices[0].message.content;
+      if (!responseText) {
+        return [];
       }
+
+      const parsedResponse = JSON.parse(responseText);
+      const changes = parsedResponse.changes || [];
+
+      // Validate each change has required fields
+      return changes.filter(
+        (change: any) =>
+          change.path &&
+          change.content &&
+          change.repository &&
+          this.allowedRepositories.includes(change.repository)
+      );
     } catch (error: unknown) {
       console.error(
-        'Error generating code changes:',
+        `Error generating code changes for issue ${issueId}:`,
         error instanceof Error ? error.message : String(error)
       );
-      throw new Error('Failed to generate code changes');
+      return [];
     }
   }
 
   /**
-   * Implement changes in repository for the issue
+   * Create a pull request with code changes for an issue
    */
-  private async implementChanges(issue: Issue): Promise<void> {
-    try {
-      // 1. Generate or retrieve technical report
-      const technicalReport = await this.generateTechnicalReport(issue);
-
-      // 2. Plan code changes based on technical report
-      const changePlan = await this.planCodeChanges(issue, technicalReport);
-
-      // 3. Generate code changes
-      const changes = await this.generateCodeChanges(
-        issue.identifier,
-        technicalReport,
-        changePlan.implementationPlan
-      );
-
-      if (!changes || changes.length === 0) {
-        await this.linearClient.createComment({
-          issueId: issue.id,
-          body: "I couldn't generate any code changes based on the technical analysis. Please provide more details or clarify the implementation requirements.",
-        });
-        return;
-      }
-
-      // 4. Create PRs for repositories with changes
-      const prUrls: string[] = [];
-      const changesByRepo = new Map<string, any[]>();
-
-      // Group changes by repository
-      for (const change of changes) {
-        if (!changesByRepo.has(change.repository)) {
-          changesByRepo.set(change.repository, []);
-        }
-        changesByRepo.get(change.repository)!.push({
-          path: change.path,
-          content: change.content,
-        });
-      }
-
-      // For each repository, create a branch and implement changes
-      for (const [repo, repoChanges] of changesByRepo.entries()) {
-        try {
-          // Create branch name based on issue
-          const branchName =
-            `fix/${issue.identifier.toLowerCase()}-${Date.now()}`.replace(
-              /[^a-zA-Z0-9-_]/g,
-              '-'
-            );
-
-          // Create PR with all changes
-          const prResult = await this.createPullRequest(
-            issue,
-            repo,
-            branchName,
-            repoChanges,
-            `Fixes ${issue.identifier}: ${issue.title}\n\n${technicalReport}`
-          );
-
-          prUrls.push(prResult.url);
-
-          // Add PR as attachment to issue
-          await this.linearClient.createAttachment({
-            issueId: issue.id,
-            title: `PR: ${repo}`,
-            url: prResult.url,
-          });
-        } catch (error: unknown) {
-          console.error(`Error creating PR for ${repo}:`, error);
-          await this.linearClient.createComment({
-            issueId: issue.id,
-            body: `⚠️ Error creating PR for repository ${repo}: ${
-              error instanceof Error ? error.message : 'Unknown error'
-            }`,
-          });
-        }
-      }
-
-      // 5. Update issue with PR links
-      if (prUrls.length > 0) {
-        await this.linearClient.createComment({
-          issueId: issue.id,
-          body: `✅ Created ${
-            prUrls.length
-          } pull request(s) to implement these changes:\n\n${prUrls
-            .map((url) => `- ${url}`)
-            .join('\n')}`,
-        });
-
-        // 6. Add PR label to the issue
-        await this.addLabel(issue.identifier, 'has-pr');
-
-        // 7. Move issue to 'In Review' state
-        await this.updateIssueStatus(issue.identifier, 'In Review');
-      }
-    } catch (error: unknown) {
-      console.error(
-        `Error implementing changes for issue ${issue.identifier}:`,
-        error instanceof Error ? error.message : String(error)
-      );
-
-      await this.linearClient.createComment({
-        issueId: issue.id,
-        body: `I encountered an error while implementing changes: ${
-          error instanceof Error ? error.message : 'Unknown error'
-        }`,
-      });
-    }
-  }
-
   private async createPullRequest(
     issue: Issue,
     repository: string,
     branchName: string,
     changes: Array<{ path: string; content: string }>,
-    description: string
+    commitMessage: string
   ): Promise<{ url: string; number: number }> {
-    const [owner, repo] = repository.split('/');
+    try {
+      // Get default branch for repository
+      const defaultBranch = await this.prManager.getDefaultBranch(repository);
 
-    // First create the branch
-    await this.prManager.createBranch(branchName, repository);
+      // Create a new branch for the changes
+      await this.prManager.createBranch(branchName, repository, defaultBranch);
 
-    // Then implement the changes
-    for (const change of changes) {
-      try {
-        // Get current content if file exists
-        let currentContent = '';
-        try {
-          currentContent = await this.prManager.getFileContent(
-            change.path,
-            repository
-          );
-        } catch (error) {
-          // File may not exist yet
-        }
-
-        // Create commit for this change
-        await this.octokit.repos.createOrUpdateFileContents({
-          owner,
-          repo,
-          path: change.path,
-          message: `Update ${change.path} for ${issue.identifier}`,
-          content: Buffer.from(change.content).toString('base64'),
-          branch: branchName,
-          ...(currentContent
-            ? {
-                sha: await this.getFileSha(
-                  owner,
-                  repo,
-                  change.path,
-                  branchName
-                ),
-              }
-            : {}),
-        });
-      } catch (error: unknown) {
-        console.error(`Error implementing change for ${change.path}:`, error);
-        throw error;
+      // Apply each change to the repository
+      for (const change of changes) {
+        await this.prManager.createOrUpdateFile(
+          change.path,
+          change.content,
+          `Update ${change.path} for ${issue.identifier}`,
+          repository,
+          branchName
+        );
       }
+
+      // Create pull request
+      const pullRequest = await this.prManager.createPullRequest(
+        `Fix ${issue.identifier}: ${issue.title}`,
+        commitMessage,
+        branchName,
+        defaultBranch,
+        repository
+      );
+
+      return pullRequest;
+    } catch (error: unknown) {
+      console.error(
+        `Error creating pull request for issue ${issue.identifier}:`,
+        error instanceof Error ? error.message : String(error)
+      );
+      throw error;
     }
-
-    // Create pull request
-    const pr = await this.octokit.pulls.create({
-      owner,
-      repo,
-      title: `Fix ${issue.identifier}: ${issue.title}`,
-      body: description,
-      head: branchName,
-      base: 'main', // This should be configurable
-    });
-
-    return {
-      url: pr.data.html_url,
-      number: pr.data.number,
-    };
-  }
-
-  private async getFileSha(
-    owner: string,
-    repo: string,
-    path: string,
-    branch: string
-  ): Promise<string> {
-    const response = await this.octokit.repos.getContent({
-      owner,
-      repo,
-      path,
-      ref: branch,
-    });
-
-    if (!('sha' in response.data)) {
-      throw new Error(`Could not get SHA for ${path}`);
-    }
-
-    return response.data.sha;
   }
 }

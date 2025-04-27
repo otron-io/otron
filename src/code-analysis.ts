@@ -1,9 +1,42 @@
 import { Octokit } from '@octokit/rest';
+import '@octokit/plugin-rest-endpoint-methods';
+import '@octokit/plugin-paginate-rest';
+import { PaginateInterface } from '@octokit/plugin-paginate-rest';
 import { Issue } from '@linear/sdk';
 import OpenAI from 'openai';
 import { env } from './env.js';
 import { PRManager } from './pr-manager.js';
 import * as path from 'path';
+
+// Define CodeFile interface
+interface CodeFile {
+  path: string;
+  repository: string;
+  content: string;
+  url?: string; // Make url optional to match existing usage
+}
+
+// Add the necessary interfaces
+interface CodebaseAnalysis {
+  repository: string;
+  fileStats: { totalFiles: number; filesByExtension: Record<string, number> };
+  languages: Record<string, number>;
+  contributors: { name: string; commits: number }[];
+  commitFrequency: { week: string; commits: number }[];
+  recentCommits: {
+    sha: string;
+    message: string;
+    author: string;
+    date: string;
+  }[];
+}
+
+interface CodeSearchResult {
+  repository: string;
+  path: string;
+  url: string;
+  score: number;
+}
 
 // Initialize OpenAI client
 const openai = new OpenAI({
@@ -15,7 +48,7 @@ const openai = new OpenAI({
  */
 export class CodeAnalyzer {
   constructor(
-    private octokit: Octokit,
+    private getOctokit: (repository: string) => Promise<Octokit>,
     private prManager: PRManager,
     private allowedRepositories: string[]
   ) {}
@@ -440,9 +473,7 @@ export class CodeAnalyzer {
   /**
    * Parse stack traces to identify relevant files for bug analysis
    */
-  async parseStackTrace(
-    stackTrace: string
-  ): Promise<
+  async parseStackTrace(stackTrace: string): Promise<
     Array<{
       path: string;
       content: string;
@@ -492,83 +523,92 @@ export class CodeAnalyzer {
    * Build a high-level structure overview of a repository for context
    */
   async getCodebaseStructure(repository: string): Promise<string> {
+    const [owner, repo] = repository.split('/');
+    let structure = '';
+
     try {
-      const [owner, repo] = repository.split('/');
+      // Get the octokit instance for this repository
+      const octokit = await this.getOctokit(repository);
 
       // Get top-level directories
-      const { data: contents } = await this.octokit.repos.getContent({
+      const { data: contents } = await octokit.repos.getContent({
         owner,
         repo,
         path: '',
       });
 
-      if (!Array.isArray(contents)) {
-        return `Unable to get structure for ${repository}`;
+      // Build a simple tree structure
+      if (Array.isArray(contents)) {
+        structure += `Repository: ${repository}\n`;
+        structure += `Top-level structure:\n`;
+
+        for (const item of contents) {
+          if (item.type === 'dir') {
+            structure += `- 📁 ${item.path}/\n`;
+          } else {
+            structure += `- 📄 ${item.path}\n`;
+          }
+        }
       }
-
-      // Count files by type
-      const fileStats = await this.getFileStatistics(repository);
-
-      // Build a structure representation
-      let structure = `Repository ${repository} Structure:\n\n`;
-
-      // Add directory overview
-      structure += 'Directories:\n';
-      const directories = contents
-        .filter((item) => item.type === 'dir')
-        .map((dir) => dir.name);
-
-      for (const dir of directories) {
-        structure += `- ${dir}/\n`;
-      }
-
-      // Add file type statistics
-      structure += '\nFile Type Distribution:\n';
-      for (const [ext, count] of Object.entries(fileStats.byExtension)) {
-        structure += `- ${ext}: ${count} files\n`;
-      }
-
-      return structure;
     } catch (error) {
-      console.error(
-        `Error getting codebase structure for ${repository}:`,
-        error
-      );
-      return `Unable to analyze structure of ${repository}`;
+      console.error(`Error getting structure for ${repository}:`, error);
+      structure = `Could not retrieve structure for ${repository}`;
     }
+
+    return structure;
   }
 
   /**
    * Get statistics about file types in a repository
    */
-  private async getFileStatistics(repository: string): Promise<{
-    byExtension: Record<string, number>;
-    totalFiles: number;
-  }> {
-    const [owner, repo] = repository.split('/');
-    const stats = {
-      byExtension: {} as Record<string, number>,
-      totalFiles: 0,
-    };
-
+  async getFileStatistics(
+    repository: string
+  ): Promise<{ totalFiles: number; filesByExtension: Record<string, number> }> {
     try {
-      // Search for all files in the repository
-      const { data } = await this.octokit.search.code({
-        q: `repo:${repository} extension:js extension:ts extension:jsx extension:tsx extension:py extension:rb extension:go extension:java extension:php extension:cs extension:html extension:css extension:scss extension:json extension:md`,
-        per_page: 100,
-      });
+      const extensions = [
+        '.js',
+        '.ts',
+        '.tsx',
+        '.jsx',
+        '.py',
+        '.java',
+        '.rb',
+        '.go',
+        '.php',
+        '.cs',
+        '.cpp',
+        '.html',
+        '.css',
+        '.json',
+      ];
+      const filesByExtension: Record<string, number> = {};
+      let totalFiles = 0;
 
-      // Count files by extension
-      for (const item of data.items) {
-        const ext = this.getFileExtension(item.path) || 'unknown';
-        stats.byExtension[ext] = (stats.byExtension[ext] || 0) + 1;
-        stats.totalFiles++;
+      for (const ext of extensions) {
+        try {
+          const octokit = await this.getOctokit(repository);
+          const response = await octokit.rest.search.code({
+            q: `extension:${ext.substring(1)} repo:${repository}`,
+            per_page: 100,
+          });
+
+          const count = response.data.total_count;
+          if (count > 0) {
+            filesByExtension[ext] = count;
+            totalFiles += count;
+          }
+        } catch (error) {
+          console.error(
+            `Error searching for ${ext} files in ${repository}:`,
+            error
+          );
+        }
       }
 
-      return stats;
+      return { totalFiles, filesByExtension };
     } catch (error) {
       console.error(`Error getting file statistics for ${repository}:`, error);
-      return { byExtension: {}, totalFiles: 0 };
+      return { totalFiles: 0, filesByExtension: {} };
     }
   }
 
@@ -770,8 +810,11 @@ Format as JSON with two arrays: "keyTerms" and "dataElements".`,
         try {
           const [owner, repo] = repository.split('/');
 
+          // Get octokit instance
+          const octokit = await this.getOctokit(repository);
+
           // Search for the term in code
-          const searchResults = await this.octokit.search.code({
+          const searchResults = await octokit.rest.search.code({
             q: `${term} in:file repo:${owner}/${repo}`,
             per_page: 5,
           });
@@ -892,6 +935,9 @@ Format as JSON with two arrays: "keyTerms" and "dataElements".`,
       try {
         const [owner, repo] = repository.split('/');
 
+        // Get the octokit instance
+        const octokit = await this.getOctokit(repository);
+
         // Combine key terms with bug terms for search
         for (const bugTerm of bugTerms) {
           // Search commits for this bug term and any of the key terms
@@ -899,7 +945,7 @@ Format as JSON with two arrays: "keyTerms" and "dataElements".`,
             if (!keyTerm || keyTerm.length < 3) continue; // Skip very short terms
 
             try {
-              const { data: commits } = await this.octokit.search.commits({
+              const { data: commits } = await octokit.rest.search.commits({
                 q: `repo:${owner}/${repo} ${bugTerm} ${keyTerm}`,
                 per_page: 5,
               });
@@ -968,5 +1014,329 @@ Format as JSON with two arrays: "keyTerms" and "dataElements".`,
 
   private escapeRegExp(string: string): string {
     return string.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  }
+
+  async searchCodeFiles(
+    keywords: string[],
+    repository: string
+  ): Promise<CodeFile[]> {
+    const results: CodeFile[] = [];
+    const [owner, repo] = repository.split('/');
+
+    try {
+      // Get the octokit instance
+      const octokit = await this.getOctokit(repository);
+
+      // Search for all files in the repository
+      const { data } = await octokit.rest.search.code({
+        q: `repo:${repository} ${keywords.join(' ')}`,
+        per_page: 100,
+      });
+
+      for (const item of data.items) {
+        results.push({
+          path: item.path,
+          url: item.html_url,
+          repository,
+          content: '',
+        });
+      }
+    } catch (error) {
+      console.error(
+        `Error searching code files in repository ${repository}:`,
+        error
+      );
+    }
+
+    return results;
+  }
+
+  async findRelatedCodeTerms(
+    codeSnippet: string,
+    repository: string
+  ): Promise<string[]> {
+    const terms: string[] = [];
+
+    try {
+      // Extract potential keywords from the code snippet
+      const keywords = this.extractKeywords(codeSnippet);
+
+      if (keywords.length === 0) {
+        return terms;
+      }
+
+      // Get octokit instance
+      const octokit = await this.getOctokit(repository);
+
+      for (const keyword of keywords) {
+        if (keyword.length < 3) continue; // Skip very short terms
+
+        const { data } = await octokit.rest.search.code({
+          q: `repo:${repository} ${keyword}`,
+          per_page: 5,
+        });
+
+        if (data.total_count > 0) {
+          terms.push(keyword);
+        }
+
+        if (terms.length >= 10) break; // Limit to 10 terms
+      }
+    } catch (error) {
+      console.error(
+        `Error finding related code terms for repository ${repository}:`,
+        error
+      );
+    }
+
+    return terms;
+  }
+
+  async getPastBugFixes(
+    repository: string,
+    filePath: string
+  ): Promise<string[]> {
+    const [owner, repo] = repository.split('/');
+    const bugFixes: string[] = [];
+
+    try {
+      // Get octokit instance
+      const octokit = await this.getOctokit(repository);
+
+      const query = `repo:${repository} path:${filePath} fix bug issue type:commit`;
+
+      const { data } = await octokit.rest.search.commits({
+        q: query,
+        per_page: 5,
+        sort: 'committer-date',
+        order: 'desc',
+      });
+
+      for (const item of data.items) {
+        const message = item.commit.message;
+        const sha = item.sha;
+        bugFixes.push(
+          `Commit ${sha.substring(0, 7)}: ${message.split('\n')[0]}`
+        );
+      }
+    } catch (error) {
+      console.error(
+        `Error getting past bug fixes for file ${filePath} in repository ${repository}:`,
+        error
+      );
+    }
+
+    return bugFixes;
+  }
+
+  private extractKeywords(codeSnippet: string): string[] {
+    const keywords: string[] = [];
+
+    // Remove common syntax and split into words
+    const cleanedCode = codeSnippet
+      .replace(/[^\w\s]/g, ' ')
+      .replace(/\s+/g, ' ')
+      .trim();
+
+    // Extract potential keywords (camelCase, snake_case, etc.)
+    const words = cleanedCode.split(' ');
+
+    for (const word of words) {
+      // Skip common keywords, numbers, and very short words
+      if (
+        !this.isCommonKeyword(word) &&
+        !word.match(/^\d+$/) &&
+        word.length > 2
+      ) {
+        keywords.push(word);
+      }
+    }
+
+    return [...new Set(keywords)]; // Remove duplicates
+  }
+
+  private isCommonKeyword(word: string): boolean {
+    const commonKeywords = [
+      'if',
+      'else',
+      'for',
+      'while',
+      'do',
+      'switch',
+      'case',
+      'break',
+      'continue',
+      'return',
+      'function',
+      'var',
+      'let',
+      'const',
+      'class',
+      'this',
+      'new',
+      'null',
+      'undefined',
+      'true',
+      'false',
+      'try',
+      'catch',
+      'finally',
+      'throw',
+      'async',
+      'await',
+      'import',
+      'export',
+      'from',
+      'public',
+      'private',
+      'protected',
+      'static',
+      'interface',
+      'type',
+      'extends',
+      'implements',
+      'string',
+      'number',
+      'boolean',
+      'any',
+      'void',
+      'object',
+      'array',
+      'get',
+      'set',
+      'default',
+    ];
+
+    return commonKeywords.includes(word.toLowerCase());
+  }
+
+  async analyzeCodebase(repository: string): Promise<CodebaseAnalysis> {
+    try {
+      const [owner, repo] = repository.split('/');
+      const fileStats = await this.getFileStatistics(repository);
+      const languages = await this.getLanguages(repository);
+      const contributors = await this.getTopContributors(repository);
+      const commitFrequency = await this.getCommitFrequency(repository);
+
+      // Get recent commits
+      const octokit = await this.getOctokit(repository);
+      const { data: commits } = await octokit.rest.repos.listCommits({
+        owner,
+        repo,
+        per_page: 10,
+      });
+
+      return {
+        repository,
+        fileStats,
+        languages,
+        contributors,
+        commitFrequency,
+        recentCommits: commits.map((commit) => ({
+          sha: commit.sha,
+          message: commit.commit.message,
+          author: commit.commit.author?.name || 'Unknown',
+          date: commit.commit.author?.date || new Date().toISOString(),
+        })),
+      };
+    } catch (error) {
+      console.error(`Error analyzing codebase for ${repository}:`, error);
+      return {
+        repository,
+        fileStats: { totalFiles: 0, filesByExtension: {} },
+        languages: {},
+        contributors: [],
+        commitFrequency: [],
+        recentCommits: [],
+      };
+    }
+  }
+
+  async searchCode(
+    repository: string,
+    query: string,
+    fileExtension?: string
+  ): Promise<CodeSearchResult[]> {
+    try {
+      const octokit = await this.getOctokit(repository);
+      let q = `repo:${repository} ${query}`;
+
+      if (fileExtension) {
+        q += ` extension:${fileExtension}`;
+      }
+
+      const response = await octokit.rest.search.code({
+        q,
+        per_page: 10,
+      });
+
+      return response.data.items.map((item) => ({
+        repository,
+        path: item.path,
+        url: item.html_url,
+        score: item.score,
+      }));
+    } catch (error) {
+      console.error(`Error searching code in ${repository}:`, error);
+      return [];
+    }
+  }
+
+  async getLanguages(repository: string): Promise<Record<string, number>> {
+    try {
+      const [owner, repo] = repository.split('/');
+      const octokit = await this.getOctokit(repository);
+      const { data } = await octokit.rest.repos.listLanguages({
+        owner,
+        repo,
+      });
+      return data;
+    } catch (error) {
+      console.error(`Error getting languages for ${repository}:`, error);
+      return {};
+    }
+  }
+
+  async getTopContributors(
+    repository: string
+  ): Promise<{ name: string; commits: number }[]> {
+    try {
+      const [owner, repo] = repository.split('/');
+      const octokit = await this.getOctokit(repository);
+      const { data } = await octokit.rest.repos.listContributors({
+        owner,
+        repo,
+        per_page: 10,
+      });
+
+      return data.map((contributor) => ({
+        name: contributor.login || 'Anonymous',
+        commits: contributor.contributions,
+      }));
+    } catch (error) {
+      console.error(`Error getting contributors for ${repository}:`, error);
+      return [];
+    }
+  }
+
+  async getCommitFrequency(
+    repository: string
+  ): Promise<{ week: string; commits: number }[]> {
+    try {
+      const [owner, repo] = repository.split('/');
+      const octokit = await this.getOctokit(repository);
+      const { data } = await octokit.rest.repos.getCommitActivityStats({
+        owner,
+        repo,
+      });
+
+      return data.map((week) => ({
+        week: new Date(week.week * 1000).toISOString().split('T')[0],
+        commits: week.total,
+      }));
+    } catch (error) {
+      console.error(`Error getting commit frequency for ${repository}:`, error);
+      return [];
+    }
   }
 }

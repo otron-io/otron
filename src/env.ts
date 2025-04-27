@@ -12,11 +12,20 @@ export const env = createEnv({
     KV_REST_API_URL: z.string().url(),
     KV_REST_API_TOKEN: z.string().min(1),
 
-    // New environment variables for the autonomous developer agent
-    GITHUB_TOKEN: z.string().min(1),
+    // GitHub authentication - support both PAT and GitHub App
+    // If using a PAT
+    GITHUB_TOKEN: z.string().optional(),
+
+    // If using a GitHub App
+    GITHUB_APP_ID: z.string().optional(),
+    GITHUB_APP_PRIVATE_KEY: z.string().optional(),
+    GITHUB_APP_CLIENT_ID: z.string().optional(),
+    GITHUB_APP_CLIENT_SECRET: z.string().optional(),
+    GITHUB_APP_INSTALLATION_ID: z.string().optional(),
+
     REPO_BASE_BRANCH: z.string().min(1).default('main'),
-    CLAUDE_API_KEY: z.string().min(1).optional(),
     ALLOWED_REPOSITORIES: z.string().optional(),
+    CLAUDE_API_KEY: z.string().min(1).optional(),
   },
   runtimeEnv: process.env,
   emptyStringAsUndefined: true,

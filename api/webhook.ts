@@ -2,7 +2,6 @@ import crypto from 'node:crypto';
 import { LinearClient } from '@linear/sdk';
 import { Redis } from '@upstash/redis';
 import type { VercelRequest, VercelResponse } from '@vercel/node';
-import { getIssueContext, respondToMessage } from '../src/ai.js';
 import { env } from '../src/env.js';
 
 // Initialize Redis client
