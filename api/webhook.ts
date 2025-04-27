@@ -356,6 +356,12 @@ async function handleIssueAssigned(
     const issueHistory = await issue.history();
     console.log(`Retrieved history with ${issueHistory.nodes.length} events`);
 
+    // Log all history events for debugging
+    console.log(
+      "All history events:",
+      JSON.stringify(issueHistory.nodes, null, 2),
+    );
+
     // Log all history entries related to assignee changes for debugging
     const allAssigneeChanges = issueHistory.nodes.filter(
       (event: any) =>
