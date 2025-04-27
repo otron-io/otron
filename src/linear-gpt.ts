@@ -1,5 +1,5 @@
 import { Issue, LinearClient } from '@linear/sdk';
-import OpenAI from 'openai';
+import Anthropic from '@anthropic-ai/sdk';
 import { env } from './env.js';
 import { LocalRepositoryManager } from './repository-manager.js';
 import {
@@ -7,9 +7,9 @@ import {
   getAvailableToolsDescription,
 } from './prompts.js';
 
-// Initialize OpenAI client
-const openai = new OpenAI({
-  apiKey: env.OPENAI_API_KEY,
+// Initialize Anthropic client
+const anthropic = new Anthropic({
+  apiKey: env.CLAUDE_API_KEY,
 });
 
 interface NotificationContext {
@@ -58,18 +58,303 @@ export class LinearGPT {
       // Setup the system tools the model can use
       const availableTools = getAvailableToolsDescription();
 
-      // Create conversation history
-      const messages: Array<OpenAI.Chat.ChatCompletionMessageParam> = [
+      // Create system message
+      const systemMessage = buildLinearGptSystemPrompt({
+        notificationType,
+        commentId,
+        issueContext,
+        availableTools,
+        allowedRepositories: this.allowedRepositories,
+      }) as string;
+
+      // Define all the tools Claude can use
+      const tools: any[] = [
         {
-          role: 'system',
-          content: buildLinearGptSystemPrompt({
-            notificationType,
-            commentId,
-            issueContext,
-            availableTools,
-            allowedRepositories: this.allowedRepositories,
-          }),
+          name: 'createComment',
+          description: 'Create a comment on a Linear issue',
+          input_schema: {
+            type: 'object',
+            properties: {
+              issueId: {
+                type: 'string',
+                description: 'The ID of the issue to comment on',
+              },
+              comment: {
+                type: 'string',
+                description: 'The comment text to post',
+              },
+              parentCommentId: {
+                type: 'string',
+                description: 'Optional parent comment ID if this is a reply',
+              },
+            },
+            required: ['issueId', 'comment'],
+          },
         },
+        {
+          name: 'searchCodeFiles',
+          description: 'Search for relevant code files related to keywords',
+          input_schema: {
+            type: 'object',
+            properties: {
+              repository: {
+                type: 'string',
+                description: 'Repository to search in (owner/repo format)',
+              },
+              query: {
+                type: 'string',
+                description: 'Search query/keywords',
+              },
+            },
+            required: ['repository', 'query'],
+          },
+        },
+        {
+          name: 'getDirectoryStructure',
+          description:
+            'Get the directory structure of a repository or specific path',
+          input_schema: {
+            type: 'object',
+            properties: {
+              repository: {
+                type: 'string',
+                description: 'Repository to explore (owner/repo format)',
+              },
+              path: {
+                type: 'string',
+                description: 'Path within the repository to explore (optional)',
+              },
+            },
+            required: ['repository'],
+          },
+        },
+        {
+          name: 'getFileContent',
+          description: 'Get the content of a specific file from a repository',
+          input_schema: {
+            type: 'object',
+            properties: {
+              repository: {
+                type: 'string',
+                description:
+                  'Repository containing the file (owner/repo format)',
+              },
+              path: {
+                type: 'string',
+                description: 'Path to the file within the repository',
+              },
+            },
+            required: ['repository', 'path'],
+          },
+        },
+        {
+          name: 'updateIssueStatus',
+          description: 'Update the status of an issue in Linear',
+          input_schema: {
+            type: 'object',
+            properties: {
+              issueId: {
+                type: 'string',
+                description: 'The ID of the issue to update',
+              },
+              status: {
+                type: 'string',
+                description:
+                  'The new status name (e.g., "Todo", "In Progress", "Done", "Backlog")',
+              },
+            },
+            required: ['issueId', 'status'],
+          },
+        },
+        {
+          name: 'addLabel',
+          description: 'Add a label to an issue in Linear',
+          input_schema: {
+            type: 'object',
+            properties: {
+              issueId: {
+                type: 'string',
+                description: 'The ID of the issue to update',
+              },
+              label: {
+                type: 'string',
+                description: 'The name of the label to add',
+              },
+            },
+            required: ['issueId', 'label'],
+          },
+        },
+        {
+          name: 'removeLabel',
+          description: 'Remove a label from an issue in Linear',
+          input_schema: {
+            type: 'object',
+            properties: {
+              issueId: {
+                type: 'string',
+                description: 'The ID of the issue to update',
+              },
+              label: {
+                type: 'string',
+                description: 'The name of the label to remove',
+              },
+            },
+            required: ['issueId', 'label'],
+          },
+        },
+        {
+          name: 'assignIssue',
+          description: 'Assign an issue to a team member in Linear',
+          input_schema: {
+            type: 'object',
+            properties: {
+              issueId: {
+                type: 'string',
+                description: 'The ID of the issue to assign',
+              },
+              assigneeEmail: {
+                type: 'string',
+                description: 'The email of the user to assign the issue to',
+              },
+            },
+            required: ['issueId', 'assigneeEmail'],
+          },
+        },
+        {
+          name: 'createIssue',
+          description: 'Create a new issue in Linear',
+          input_schema: {
+            type: 'object',
+            properties: {
+              teamId: {
+                type: 'string',
+                description: 'The ID of the team to create the issue in',
+              },
+              title: {
+                type: 'string',
+                description: 'The title of the issue',
+              },
+              description: {
+                type: 'string',
+                description: 'The description of the issue',
+              },
+              status: {
+                type: 'string',
+                description:
+                  'The status name for the new issue (e.g., "Todo", "In Progress")',
+              },
+              priority: {
+                type: 'integer',
+                description:
+                  'The priority of the issue (1=Urgent, 2=High, 3=Medium, 4=Low)',
+              },
+              parentIssueId: {
+                type: 'string',
+                description: 'Optional ID of a parent issue (for sub-issues)',
+              },
+            },
+            required: ['teamId', 'title', 'description'],
+          },
+        },
+        {
+          name: 'addIssueAttachment',
+          description: 'Add a URL attachment to an issue in Linear',
+          input_schema: {
+            type: 'object',
+            properties: {
+              issueId: {
+                type: 'string',
+                description: 'The ID of the issue to add the attachment to',
+              },
+              url: {
+                type: 'string',
+                description: 'The URL to attach',
+              },
+              title: {
+                type: 'string',
+                description: 'A title for the attachment',
+              },
+            },
+            required: ['issueId', 'url', 'title'],
+          },
+        },
+        {
+          name: 'updateIssuePriority',
+          description: 'Update the priority of an issue in Linear',
+          input_schema: {
+            type: 'object',
+            properties: {
+              issueId: {
+                type: 'string',
+                description: 'The ID of the issue to update',
+              },
+              priority: {
+                type: 'integer',
+                description:
+                  'The priority level (1=Urgent, 2=High, 3=Medium, 4=Low)',
+              },
+            },
+            required: ['issueId', 'priority'],
+          },
+        },
+        {
+          name: 'createPullRequest',
+          description: 'Create a pull request for code changes',
+          input_schema: {
+            type: 'object',
+            properties: {
+              repository: {
+                type: 'string',
+                description: 'Repository in owner/repo format',
+              },
+              title: {
+                type: 'string',
+                description: 'Title for the pull request',
+              },
+              description: {
+                type: 'string',
+                description: 'Description/body for the pull request',
+              },
+              branch: {
+                type: 'string',
+                description: 'Branch name for the changes',
+              },
+              baseBranch: {
+                type: 'string',
+                description: 'Base branch to create PR against (usually main)',
+              },
+              changes: {
+                type: 'array',
+                items: {
+                  type: 'object',
+                  properties: {
+                    path: {
+                      type: 'string',
+                      description: 'Path to the file to modify',
+                    },
+                    content: {
+                      type: 'string',
+                      description: 'New content for the file',
+                    },
+                  },
+                  required: ['path', 'content'],
+                },
+                description: 'File changes to include in the PR',
+              },
+            },
+            required: [
+              'repository',
+              'title',
+              'description',
+              'branch',
+              'changes',
+            ],
+          },
+        },
+      ];
+
+      // Initialize message array with the user message - correct format for Anthropic API
+      let messages: any[] = [
         {
           role: 'user',
           content:
@@ -83,541 +368,223 @@ export class LinearGPT {
       const MAX_TOOL_CALLS = 50; // Maximum number of tool calls to prevent infinite loops
 
       while (hasMoreToolCalls && toolCallCount < MAX_TOOL_CALLS) {
-        // Use OpenAI's client
-        const response = await openai.chat.completions.create({
-          model: 'gpt-4.1',
-          messages,
+        // Use Anthropic's client with type assertions
+        const response = await anthropic.messages.create({
+          model: 'claude-3-7-sonnet-20240307',
+          max_tokens: 4096,
+          system: systemMessage as any,
+          messages: messages as any,
           temperature: 0.2,
-          tool_choice: 'auto',
-          parallel_tool_calls: false,
-          tools: [
-            {
-              type: 'function',
-              function: {
-                name: 'createComment',
-                description: 'Create a comment on a Linear issue',
-                parameters: {
-                  type: 'object',
-                  properties: {
-                    issueId: {
-                      type: 'string',
-                      description: 'The ID of the issue to comment on',
-                    },
-                    comment: {
-                      type: 'string',
-                      description: 'The comment text to post',
-                    },
-                    parentCommentId: {
-                      type: 'string',
-                      description:
-                        'Optional parent comment ID if this is a reply',
-                    },
-                  },
-                  required: ['issueId', 'comment'],
-                },
-              },
-            },
-            {
-              type: 'function',
-              function: {
-                name: 'searchCodeFiles',
-                description:
-                  'Search for relevant code files related to keywords',
-                parameters: {
-                  type: 'object',
-                  properties: {
-                    repository: {
-                      type: 'string',
-                      description:
-                        'Repository to search in (owner/repo format)',
-                    },
-                    query: {
-                      type: 'string',
-                      description: 'Search query/keywords',
-                    },
-                  },
-                  required: ['repository', 'query'],
-                },
-              },
-            },
-            {
-              type: 'function',
-              function: {
-                name: 'getDirectoryStructure',
-                description:
-                  'Get the directory structure of a repository or specific path',
-                parameters: {
-                  type: 'object',
-                  properties: {
-                    repository: {
-                      type: 'string',
-                      description: 'Repository to explore (owner/repo format)',
-                    },
-                    path: {
-                      type: 'string',
-                      description:
-                        'Path within the repository to explore (optional)',
-                    },
-                  },
-                  required: ['repository'],
-                },
-              },
-            },
-            {
-              type: 'function',
-              function: {
-                name: 'getFileContent',
-                description:
-                  'Get the content of a specific file from a repository',
-                parameters: {
-                  type: 'object',
-                  properties: {
-                    repository: {
-                      type: 'string',
-                      description:
-                        'Repository containing the file (owner/repo format)',
-                    },
-                    path: {
-                      type: 'string',
-                      description: 'Path to the file within the repository',
-                    },
-                  },
-                  required: ['repository', 'path'],
-                },
-              },
-            },
-            {
-              type: 'function',
-              function: {
-                name: 'updateIssueStatus',
-                description: 'Update the status of an issue in Linear',
-                parameters: {
-                  type: 'object',
-                  properties: {
-                    issueId: {
-                      type: 'string',
-                      description: 'The ID of the issue to update',
-                    },
-                    status: {
-                      type: 'string',
-                      description:
-                        'The new status name (e.g., "Todo", "In Progress", "Done", "Backlog")',
-                    },
-                  },
-                  required: ['issueId', 'status'],
-                },
-              },
-            },
-            {
-              type: 'function',
-              function: {
-                name: 'addLabel',
-                description: 'Add a label to an issue in Linear',
-                parameters: {
-                  type: 'object',
-                  properties: {
-                    issueId: {
-                      type: 'string',
-                      description: 'The ID of the issue to update',
-                    },
-                    label: {
-                      type: 'string',
-                      description: 'The name of the label to add',
-                    },
-                  },
-                  required: ['issueId', 'label'],
-                },
-              },
-            },
-            {
-              type: 'function',
-              function: {
-                name: 'removeLabel',
-                description: 'Remove a label from an issue in Linear',
-                parameters: {
-                  type: 'object',
-                  properties: {
-                    issueId: {
-                      type: 'string',
-                      description: 'The ID of the issue to update',
-                    },
-                    label: {
-                      type: 'string',
-                      description: 'The name of the label to remove',
-                    },
-                  },
-                  required: ['issueId', 'label'],
-                },
-              },
-            },
-            {
-              type: 'function',
-              function: {
-                name: 'assignIssue',
-                description: 'Assign an issue to a team member in Linear',
-                parameters: {
-                  type: 'object',
-                  properties: {
-                    issueId: {
-                      type: 'string',
-                      description: 'The ID of the issue to assign',
-                    },
-                    assigneeEmail: {
-                      type: 'string',
-                      description:
-                        'The email of the user to assign the issue to',
-                    },
-                  },
-                  required: ['issueId', 'assigneeEmail'],
-                },
-              },
-            },
-            {
-              type: 'function',
-              function: {
-                name: 'createIssue',
-                description: 'Create a new issue in Linear',
-                parameters: {
-                  type: 'object',
-                  properties: {
-                    teamId: {
-                      type: 'string',
-                      description: 'The ID of the team to create the issue in',
-                    },
-                    title: {
-                      type: 'string',
-                      description: 'The title of the issue',
-                    },
-                    description: {
-                      type: 'string',
-                      description: 'The description of the issue',
-                    },
-                    status: {
-                      type: 'string',
-                      description:
-                        'The status name for the new issue (e.g., "Todo", "In Progress")',
-                    },
-                    priority: {
-                      type: 'integer',
-                      description:
-                        'The priority of the issue (1=Urgent, 2=High, 3=Medium, 4=Low)',
-                    },
-                    parentIssueId: {
-                      type: 'string',
-                      description:
-                        'Optional ID of a parent issue (for sub-issues)',
-                    },
-                  },
-                  required: ['teamId', 'title', 'description'],
-                },
-              },
-            },
-            {
-              type: 'function',
-              function: {
-                name: 'addIssueAttachment',
-                description: 'Add a URL attachment to an issue in Linear',
-                parameters: {
-                  type: 'object',
-                  properties: {
-                    issueId: {
-                      type: 'string',
-                      description:
-                        'The ID of the issue to add the attachment to',
-                    },
-                    url: {
-                      type: 'string',
-                      description: 'The URL to attach',
-                    },
-                    title: {
-                      type: 'string',
-                      description: 'A title for the attachment',
-                    },
-                  },
-                  required: ['issueId', 'url', 'title'],
-                },
-              },
-            },
-            {
-              type: 'function',
-              function: {
-                name: 'updateIssuePriority',
-                description: 'Update the priority of an issue in Linear',
-                parameters: {
-                  type: 'object',
-                  properties: {
-                    issueId: {
-                      type: 'string',
-                      description: 'The ID of the issue to update',
-                    },
-                    priority: {
-                      type: 'integer',
-                      description:
-                        'The priority level (1=Urgent, 2=High, 3=Medium, 4=Low)',
-                    },
-                  },
-                  required: ['issueId', 'priority'],
-                },
-              },
-            },
-            {
-              type: 'function',
-              function: {
-                name: 'createPullRequest',
-                description: 'Create a pull request for code changes',
-                parameters: {
-                  type: 'object',
-                  properties: {
-                    repository: {
-                      type: 'string',
-                      description: 'Repository in owner/repo format',
-                    },
-                    title: {
-                      type: 'string',
-                      description: 'Title for the pull request',
-                    },
-                    description: {
-                      type: 'string',
-                      description: 'Description/body for the pull request',
-                    },
-                    branch: {
-                      type: 'string',
-                      description: 'Branch name for the changes',
-                    },
-                    baseBranch: {
-                      type: 'string',
-                      description:
-                        'Base branch to create PR against (usually main)',
-                    },
-                    changes: {
-                      type: 'array',
-                      items: {
-                        type: 'object',
-                        properties: {
-                          path: {
-                            type: 'string',
-                            description: 'Path to the file to modify',
-                          },
-                          content: {
-                            type: 'string',
-                            description: 'New content for the file',
-                          },
-                        },
-                        required: ['path', 'content'],
-                      },
-                      description: 'File changes to include in the PR',
-                    },
-                  },
-                  required: [
-                    'repository',
-                    'title',
-                    'description',
-                    'branch',
-                    'changes',
-                  ],
-                },
-              },
-            },
-          ],
+          tools: tools as any,
         });
 
-        // Extract the model's response text
-        const responseMessage = response.choices[0].message;
-        const responseText = responseMessage.content || '';
+        // Extract the model's response
+        const responseContent = response.content as any[];
 
         // Check if there's a tool call in the response
-        if (
-          responseMessage.tool_calls &&
-          responseMessage.tool_calls.length > 0
-        ) {
+        const toolUseBlocks = responseContent.filter(
+          (block: any) => block.type === 'tool_use'
+        ) as any[];
+
+        if (toolUseBlocks.length > 0) {
           // Add the model's response to conversation history
-          messages.push(
-            responseMessage as OpenAI.Chat.ChatCompletionMessageParam
-          );
+          messages.push({
+            role: 'assistant',
+            content: responseContent as any,
+          });
 
           // Increment tool call count
-          toolCallCount += responseMessage.tool_calls.length;
+          toolCallCount += toolUseBlocks.length;
 
           // Process each tool call
-          for (const toolCall of responseMessage.tool_calls) {
-            if (toolCall.type === 'function') {
-              const functionName = toolCall.function.name;
-              const functionArgs = JSON.parse(toolCall.function.arguments);
-              let toolResponse = '';
+          for (const toolBlock of toolUseBlocks) {
+            // Safe type assertion since we filtered by type
+            const toolId = toolBlock.id;
+            const toolName = toolBlock.name;
+            const toolInput = toolBlock.input as any;
+            let toolResponse = '';
 
-              // Execute the function based on its name
-              try {
-                if (functionName === 'createComment') {
-                  await this.linearClient.createComment({
-                    issueId: issue.id,
-                    body: functionArgs.comment,
-                    parentId: functionArgs.parentCommentId,
-                  });
-                  toolResponse = `Successfully posted comment on issue ${issue.identifier}.`;
-                } else if (functionName === 'searchCodeFiles') {
-                  const results = await this.localRepoManager.searchCode(
-                    functionArgs.query,
-                    functionArgs.repository
+            // Execute the function based on its name
+            try {
+              if (toolName === 'createComment') {
+                await this.linearClient.createComment({
+                  issueId: issue.id,
+                  body: toolInput.comment,
+                  parentId: toolInput.parentCommentId,
+                });
+                toolResponse = `Successfully posted comment on issue ${issue.identifier}.`;
+              } else if (toolName === 'searchCodeFiles') {
+                const results = await this.localRepoManager.searchCode(
+                  toolInput.query,
+                  toolInput.repository
+                );
+
+                // Prepare a formatted response with a summary
+                let formattedResults = `Found ${results.length} relevant files for query "${toolInput.query}" in ${toolInput.repository}:\n\n`;
+
+                // Add each file with path and content, limited to avoid token issues
+                const MAX_RESULTS_TO_SHOW = 5;
+                for (
+                  let i = 0;
+                  i < Math.min(results.length, MAX_RESULTS_TO_SHOW);
+                  i++
+                ) {
+                  const result = results[i];
+                  formattedResults += `File: ${result.path}\nLine ${result.line}: ${result.content}\n\n`;
+                }
+
+                // Add note if we truncated results
+                if (results.length > MAX_RESULTS_TO_SHOW) {
+                  formattedResults += `... and ${
+                    results.length - MAX_RESULTS_TO_SHOW
+                  } more matches (not shown to conserve space)`;
+                }
+
+                // Set the tool response
+                toolResponse = formattedResults;
+              } else if (toolName === 'getDirectoryStructure') {
+                const directoryStructure =
+                  await this.localRepoManager.getDirectoryStructure(
+                    toolInput.repository,
+                    toolInput.path
                   );
 
-                  // Prepare a formatted response with a summary
-                  let formattedResults = `Found ${results.length} relevant files for query "${functionArgs.query}" in ${functionArgs.repository}:\n\n`;
+                // Format the directory structure as a string
+                let formattedStructure = `Directory structure for ${
+                  toolInput.path || 'root'
+                } in ${toolInput.repository}:\n\n`;
 
-                  // Add each file with path and content, limited to avoid token issues
-                  const MAX_RESULTS_TO_SHOW = 5;
-                  for (
-                    let i = 0;
-                    i < Math.min(results.length, MAX_RESULTS_TO_SHOW);
-                    i++
-                  ) {
-                    const result = results[i];
-                    formattedResults += `File: ${result.path}\nLine ${result.line}: ${result.content}\n\n`;
-                  }
+                // Add each file/directory to the response
+                directoryStructure.forEach((item) => {
+                  const icon = item.type === 'dir' ? '📁' : '📄';
+                  const size = item.size
+                    ? ` (${Math.round(item.size / 1024)}KB)`
+                    : '';
+                  formattedStructure += `${icon} ${item.path}${size}\n`;
+                });
 
-                  // Add note if we truncated results
-                  if (results.length > MAX_RESULTS_TO_SHOW) {
-                    formattedResults += `... and ${
-                      results.length - MAX_RESULTS_TO_SHOW
-                    } more matches (not shown to conserve space)`;
-                  }
-
-                  // Set the tool response
-                  toolResponse = formattedResults;
-                } else if (functionName === 'getDirectoryStructure') {
-                  const directoryStructure =
-                    await this.localRepoManager.getDirectoryStructure(
-                      functionArgs.repository,
-                      functionArgs.path
-                    );
-
-                  // Format the directory structure as a string
-                  let formattedStructure = `Directory structure for ${
-                    functionArgs.path || 'root'
-                  } in ${functionArgs.repository}:\n\n`;
-
-                  // Add each file/directory to the response
-                  directoryStructure.forEach((item) => {
-                    const icon = item.type === 'dir' ? '📁' : '📄';
-                    const size = item.size
-                      ? ` (${Math.round(item.size / 1024)}KB)`
-                      : '';
-                    formattedStructure += `${icon} ${item.path}${size}\n`;
-                  });
-
-                  toolResponse = formattedStructure;
-                } else if (functionName === 'getFileContent') {
-                  const content = await this.localRepoManager.getFileContent(
-                    functionArgs.path,
-                    functionArgs.repository
-                  );
-                  toolResponse = `Retrieved content for ${
-                    functionArgs.path
-                  } in ${functionArgs.repository}:
+                toolResponse = formattedStructure;
+              } else if (toolName === 'getFileContent') {
+                const content = await this.localRepoManager.getFileContent(
+                  toolInput.path,
+                  toolInput.repository
+                );
+                toolResponse = `Retrieved content for ${toolInput.path} in ${
+                  toolInput.repository
+                }:
 ${
   content.length > 5000
     ? content.substring(0, 5000) + '\n... (content truncated due to size)'
     : content
 }`;
-                } else if (functionName === 'updateIssueStatus') {
-                  await this.updateIssueStatus(
-                    functionArgs.issueId,
-                    functionArgs.status
-                  );
-                  toolResponse = `Successfully updated status of issue ${functionArgs.issueId} to "${functionArgs.status}".`;
-                } else if (functionName === 'addLabel') {
-                  await this.addLabel(functionArgs.issueId, functionArgs.label);
-                  toolResponse = `Successfully added label "${functionArgs.label}" to issue ${functionArgs.issueId}.`;
-                } else if (functionName === 'removeLabel') {
-                  await this.removeLabel(
-                    functionArgs.issueId,
-                    functionArgs.label
-                  );
-                  toolResponse = `Successfully removed label "${functionArgs.label}" from issue ${functionArgs.issueId}.`;
-                } else if (functionName === 'assignIssue') {
-                  await this.assignIssue(
-                    functionArgs.issueId,
-                    functionArgs.assigneeEmail
-                  );
-                  toolResponse = `Successfully assigned issue ${functionArgs.issueId} to ${functionArgs.assigneeEmail}.`;
-                } else if (functionName === 'createIssue') {
-                  await this.createIssue(
-                    functionArgs.teamId,
-                    functionArgs.title,
-                    functionArgs.description,
-                    functionArgs.status,
-                    functionArgs.priority,
-                    functionArgs.parentIssueId
-                  );
-                  toolResponse = `Successfully created new issue "${functionArgs.title}".`;
-                } else if (functionName === 'addIssueAttachment') {
-                  await this.addIssueAttachment(
-                    functionArgs.issueId,
-                    functionArgs.url,
-                    functionArgs.title
-                  );
-                  toolResponse = `Successfully added attachment "${functionArgs.title}" to issue ${functionArgs.issueId}.`;
-                } else if (functionName === 'updateIssuePriority') {
-                  await this.updateIssuePriority(
-                    functionArgs.issueId,
-                    functionArgs.priority
-                  );
-                  toolResponse = `Successfully updated priority of issue ${functionArgs.issueId} to ${functionArgs.priority}.`;
-                } else if (functionName === 'createPullRequest') {
-                  // Create a branch
-                  await this.localRepoManager.createBranch(
-                    functionArgs.branch,
-                    functionArgs.repository,
-                    functionArgs.baseBranch || 'main'
-                  );
+              } else if (toolName === 'updateIssueStatus') {
+                await this.updateIssueStatus(
+                  toolInput.issueId,
+                  toolInput.status
+                );
+                toolResponse = `Successfully updated status of issue ${toolInput.issueId} to "${toolInput.status}".`;
+              } else if (toolName === 'addLabel') {
+                await this.addLabel(toolInput.issueId, toolInput.label);
+                toolResponse = `Successfully added label "${toolInput.label}" to issue ${toolInput.issueId}.`;
+              } else if (toolName === 'removeLabel') {
+                await this.removeLabel(toolInput.issueId, toolInput.label);
+                toolResponse = `Successfully removed label "${toolInput.label}" from issue ${toolInput.issueId}.`;
+              } else if (toolName === 'assignIssue') {
+                await this.assignIssue(
+                  toolInput.issueId,
+                  toolInput.assigneeEmail
+                );
+                toolResponse = `Successfully assigned issue ${toolInput.issueId} to ${toolInput.assigneeEmail}.`;
+              } else if (toolName === 'createIssue') {
+                await this.createIssue(
+                  toolInput.teamId,
+                  toolInput.title,
+                  toolInput.description,
+                  toolInput.status,
+                  toolInput.priority,
+                  toolInput.parentIssueId
+                );
+                toolResponse = `Successfully created new issue "${toolInput.title}".`;
+              } else if (toolName === 'addIssueAttachment') {
+                await this.addIssueAttachment(
+                  toolInput.issueId,
+                  toolInput.url,
+                  toolInput.title
+                );
+                toolResponse = `Successfully added attachment "${toolInput.title}" to issue ${toolInput.issueId}.`;
+              } else if (toolName === 'updateIssuePriority') {
+                await this.updateIssuePriority(
+                  toolInput.issueId,
+                  toolInput.priority
+                );
+                toolResponse = `Successfully updated priority of issue ${toolInput.issueId} to ${toolInput.priority}.`;
+              } else if (toolName === 'createPullRequest') {
+                // Create a branch
+                await this.localRepoManager.createBranch(
+                  toolInput.branch,
+                  toolInput.repository,
+                  toolInput.baseBranch || 'main'
+                );
 
-                  // Apply each change
-                  for (const change of functionArgs.changes) {
-                    await this.localRepoManager.createOrUpdateFile(
-                      change.path,
-                      change.content,
-                      `Update ${change.path} for PR`,
-                      functionArgs.repository,
-                      functionArgs.branch
-                    );
-                  }
-
-                  // Create pull request
-                  const pullRequest =
-                    await this.localRepoManager.createPullRequest(
-                      functionArgs.title,
-                      functionArgs.description,
-                      functionArgs.branch,
-                      functionArgs.baseBranch || 'main',
-                      functionArgs.repository
-                    );
-
-                  toolResponse = `Successfully created pull request: ${pullRequest.url}`;
-                } else {
-                  toolResponse = `Unknown function: ${functionName}`;
+                // Apply each change
+                for (const change of toolInput.changes) {
+                  await this.localRepoManager.createOrUpdateFile(
+                    change.path,
+                    change.content,
+                    `Update ${change.path} for PR`,
+                    toolInput.repository,
+                    toolInput.branch
+                  );
                 }
-              } catch (error) {
-                toolResponse = `Error executing ${functionName}: ${
-                  error instanceof Error ? error.message : 'Unknown error'
-                }`;
-              }
 
-              // Add tool response to conversation
-              messages.push({
-                role: 'tool',
-                tool_call_id: toolCall.id,
-                content: toolResponse,
-              } as OpenAI.Chat.ChatCompletionToolMessageParam);
+                // Create pull request
+                const pullRequest =
+                  await this.localRepoManager.createPullRequest(
+                    toolInput.title,
+                    toolInput.description,
+                    toolInput.branch,
+                    toolInput.baseBranch || 'main',
+                    toolInput.repository
+                  );
+
+                toolResponse = `Successfully created pull request: ${pullRequest.url}`;
+              } else {
+                toolResponse = `Unknown function: ${toolName}`;
+              }
+            } catch (error) {
+              toolResponse = `Error executing ${toolName}: ${
+                error instanceof Error ? error.message : 'Unknown error'
+              }`;
             }
+
+            // Add tool response to conversation
+            messages.push({
+              role: 'user',
+              content: [
+                {
+                  type: 'tool_result',
+                  tool_use_id: toolId,
+                  content: toolResponse,
+                },
+              ] as any,
+            });
           }
         } else {
           // No tool calls, exit the loop
           hasMoreToolCalls = false;
 
           // If there's a text response, post it as a comment
-          if (responseText) {
+          const textBlocks = responseContent.filter(
+            (block: any) => block.type === 'text'
+          );
+
+          if (textBlocks.length > 0) {
+            const textContent = textBlocks
+              .map((block: any) => block.text || '')
+              .join('\n');
             await this.linearClient.createComment({
               issueId: issue.id,
-              body: responseText,
+              body: textContent,
               parentId: commentId,
             });
           }
