@@ -2,7 +2,6 @@ import { Octokit } from '@octokit/rest';
 import { env } from './env.js';
 import { GitHubAppService } from './github-app.js';
 import * as fs from 'fs/promises';
-import { Stats, WriteFileOptions, MakeDirectoryOptions } from 'node:fs';
 import path from 'path';
 import os from 'os';
 import { spawn } from 'child_process';
@@ -52,7 +51,7 @@ interface RepoInfo {
   owner: string;
   repo: string;
   defaultBranch?: string;
-  localPath: string;
+  localPath?: string; // Make localPath optional since we don't use it in API-based approach
 }
 
 /**
@@ -89,6 +88,73 @@ async function runGitCommand(
   });
 }
 
+// Cache interfaces
+interface FileContentCache {
+  [key: string]: {
+    content: string;
+    timestamp: number;
+  };
+}
+
+interface SearchResultCache {
+  [key: string]: {
+    results: Array<{ path: string; line: number; content: string }>;
+    timestamp: number;
+  };
+}
+
+// GitHub API rate limiter
+class APIRateLimiter {
+  private queue: Array<() => Promise<any>> = [];
+  private processing = false;
+  private requestsPerSecond: number;
+
+  constructor(requestsPerSecond: number = 5) {
+    this.requestsPerSecond = requestsPerSecond;
+  }
+
+  public async enqueue<T>(fn: () => Promise<T>): Promise<T> {
+    return new Promise<T>((resolve, reject) => {
+      this.queue.push(async () => {
+        try {
+          const result = await fn();
+          resolve(result);
+        } catch (error) {
+          reject(error);
+        }
+      });
+
+      if (!this.processing) {
+        this.processQueue();
+      }
+    });
+  }
+
+  private async processQueue() {
+    if (this.queue.length === 0) {
+      this.processing = false;
+      return;
+    }
+
+    this.processing = true;
+    const task = this.queue.shift();
+
+    if (task) {
+      try {
+        await task();
+      } catch (error) {
+        console.error('Error processing task:', error);
+      }
+    }
+
+    // Delay to respect rate limits
+    await new Promise((resolve) =>
+      setTimeout(resolve, 1000 / this.requestsPerSecond)
+    );
+    this.processQueue();
+  }
+}
+
 /*
  * LocalRepositoryManager
  *
@@ -109,12 +175,23 @@ export class LocalRepositoryManager {
   private fileOpSemaphore: Semaphore;
   // Limit concurrent git operations
   private gitOpSemaphore: Semaphore;
+  private repoCache: Map<string, RepoInfo> = new Map();
+  private fileContentCache: FileContentCache = {};
+  private searchResultCache: SearchResultCache = {};
+  private rateLimiter: APIRateLimiter;
+
+  // Cache expiration times (in milliseconds)
+  private static CACHE_TTL = {
+    FILE_CONTENT: 5 * 60 * 1000, // 5 minutes
+    SEARCH_RESULTS: 2 * 60 * 1000, // 2 minutes
+  };
 
   constructor(
     private allowedRepositories: string[] = [],
     baseTempDir: string = path.join(os.tmpdir(), 'linear-agent-repos'),
     maxConcurrentFileOps: number = 20, // Reduced default
-    maxConcurrentGitOps: number = 2 // Reduced default
+    maxConcurrentGitOps: number = 2, // Reduced default
+    requestsPerSecond: number = 20 / 60 // Reduced default
   ) {
     // Only GitHub App authentication is supported
     if (env.GITHUB_APP_ID && env.GITHUB_APP_PRIVATE_KEY) {
@@ -141,6 +218,10 @@ export class LocalRepositoryManager {
     // Initialize the semaphores for file and git operations
     this.fileOpSemaphore = new Semaphore(maxConcurrentFileOps);
     this.gitOpSemaphore = new Semaphore(maxConcurrentGitOps);
+
+    // Initialize the rate limiter - GitHub search API allows 30 requests per minute
+    // We'll use a more conservative 20 per minute to be safe
+    this.rateLimiter = new APIRateLimiter(requestsPerSecond);
   }
 
   /**
@@ -296,12 +377,12 @@ export class LocalRepositoryManager {
   }
 
   /**
-   * Ensure a repository is cloned locally using isomorphic-git
-   * with optimizations for serverless environments
+   * Ensure a repository is accessible and get basic info
    */
   async ensureRepoCloned(repoFullName: string): Promise<string> {
-    if (this.clonedRepos.has(repoFullName)) {
-      return this.clonedRepos.get(repoFullName)!.localPath;
+    if (this.repoCache.has(repoFullName)) {
+      // We're only returning the repo name since we don't have local paths in the API implementation
+      return repoFullName;
     }
 
     const [owner, repo] = repoFullName.split('/');
@@ -313,335 +394,264 @@ export class LocalRepositoryManager {
       throw new Error(`Repository ${repoFullName} is not in the allowed list`);
     }
 
-    // Acquire git operation semaphore to limit concurrent cloning
-    await this.gitOpSemaphore.acquire();
-
     try {
-      // Create temp directory if it doesn't exist
-      await this.safeMkdir(this.tempDir, { recursive: true });
+      // Get repository info from GitHub API
+      console.log(`Getting info for ${repoFullName}...`);
+      const octokit = await this.getOctokitForRepo(repoFullName);
 
-      const repoPath = path.join(this.tempDir, repoFullName);
-      const ownerPath = path.join(this.tempDir, owner);
+      const { data: repoData } = await octokit.repos.get({
+        owner,
+        repo,
+      });
 
-      // Create owner directory if it doesn't exist
-      await this.safeMkdir(ownerPath, { recursive: true });
+      // Store repo info in cache
+      this.repoCache.set(repoFullName, {
+        owner,
+        repo,
+        defaultBranch: repoData.default_branch,
+      });
 
-      // Check if directory already exists and is not empty
-      try {
-        const repoDir = await this.safeReaddir(repoPath);
-        if (repoDir.length > 0) {
-          console.log(
-            `Repository ${repoFullName} already exists at ${repoPath}, skipping clone`
+      console.log(`Repository ${repoFullName} verified and available`);
+      return repoFullName; // Return repo name as we don't have a local path
+    } catch (error: any) {
+      // Handle authentication errors
+      if (error.status === 401) {
+        console.error(`Authentication error for ${repoFullName}:`, error);
+        if (this.githubAppService) {
+          throw new Error(
+            `Authentication error with GitHub App. Check app permissions and installation.`
           );
-
-          // Store repo info for future reference
-          this.clonedRepos.set(repoFullName, {
-            owner,
-            repo,
-            localPath: repoPath,
-          });
-
-          return repoPath;
+        } else {
+          throw new Error(`Authentication error. Check GitHub token.`);
         }
-      } catch (err) {
-        // Directory doesn't exist or can't be read, we'll create it
-        await this.safeMkdir(repoPath, { recursive: true });
       }
 
-      console.log(`Cloning ${repoFullName} to ${repoPath}`);
-
-      try {
-        // Get access token for the repo
-        console.log(`Getting Octokit for ${repoFullName}...`);
-        const octokit = await this.getOctokitForRepo(repoFullName);
-
-        // Debug logging
-        console.log(`Got Octokit instance, retrieving auth token...`);
-
-        const auth = await octokit.auth();
-        console.log(
-          `Auth result type: ${typeof auth}, format: ${
-            auth ? (typeof auth === 'object' ? 'object' : 'string') : 'null'
-          }`
-        );
-
-        const token =
-          typeof auth === 'object' && auth !== null && 'token' in auth
-            ? auth.token
-            : '';
-
-        console.log(
-          `Token received: ${
-            token
-              ? 'Yes (length: ' +
-                (typeof token === 'string' ? token.length : 'unknown') +
-                ')'
-              : 'No'
-          }`
-        );
-
-        if (!token) {
-          throw new Error(
-            `Could not get authentication token for repository ${repoFullName}`
-          );
-        }
-
-        // Clone the repository using isomorphic-git with optimizations
-        console.log(`Cloning repository with optimized settings...`);
-
-        // Create a limited FS implementation
-        const limitedFS = this.createLimitedFS();
-
-        // Get repo info from GitHub first to avoid cloning unnecessarily large repos
-        const { data: repoData } = await octokit.repos.get({
-          owner,
-          repo,
-        });
-
-        if (repoData.size > 100000) {
-          // Size is in KB
-          console.warn(
-            `Repository ${repoFullName} is very large (${repoData.size}KB). This may cause problems in serverless environments.`
-          );
-        }
-
-        // Optimized clone that minimizes file operations
-        const cloneOptions = {
-          fs: limitedFS.promises,
-          http,
-          dir: repoPath,
-          url: `https://x-access-token:${token}@github.com/${repoFullName}.git`,
-          singleBranch: true,
-          depth: 1, // Shallow clone
-          noCheckout: false, // We need the files for searching
-          noTags: true, // Skip tags
-          cache: {
-            fs: limitedFS.promises, // Cache results to minimize file operations
-          },
-          onProgress: (progress: {
-            phase?: string;
-            loaded: number;
-            total?: number;
-          }) => {
-            // Only log occasional progress to reduce noise
-            if (!progress.phase) return;
-
-            if (progress.phase === 'Analyzing workdir') {
-              if (progress.loaded % 1000 === 0) {
-                console.log(
-                  `Clone progress: ${progress.phase} (processing...)`
-                );
-              }
-            } else if (progress.loaded % 50 === 0) {
-              console.log(`Clone progress: ${progress.phase}`);
-            }
-          },
-          corsProxy: undefined,
-        };
-
-        // Execute the clone with additional throttling and EMFILE protection
-        console.log('Starting clone with controlled concurrency...');
-        await git.clone(cloneOptions);
-
-        console.log(`Successfully cloned ${repoFullName} to ${repoPath}`);
-
-        // Store repo info for future reference
-        this.clonedRepos.set(repoFullName, {
-          owner,
-          repo,
-          localPath: repoPath,
-        });
-
-        return repoPath;
-      } catch (error: any) {
-        // Handle specific git errors
-        if (error.code === 'ENOENT') {
-          console.error(`File not found error during clone: ${error.message}`);
-          throw new Error(
-            `File not found during clone: ${error.message}. This may be due to too many concurrent operations.`
-          );
-        } else if (error.code === 'EMFILE') {
-          console.error(`Too many open files during clone: ${error.message}`);
-          throw new Error(
-            `Too many open files during clone. Try increasing the system limit or reducing concurrent operations.`
-          );
-        }
-
-        // Handle authentication errors
-        if (error.message?.includes('401')) {
-          console.error(`Authentication error cloning ${repoFullName}:`, error);
-          if (this.githubAppService) {
-            throw new Error(
-              `Authentication error with GitHub App. Check app permissions and installation.`
-            );
-          } else {
-            throw new Error(`Authentication error. Check GitHub token.`);
-          }
-        }
-
-        console.error(`Error cloning repository ${repoFullName}:`, error);
-        throw error;
+      // Handle not found errors
+      if (error.status === 404) {
+        throw new Error(`Repository ${repoFullName} not found or no access`);
       }
-    } finally {
-      // Always release the semaphore
-      this.gitOpSemaphore.release();
+
+      console.error(`Error accessing repository ${repoFullName}:`, error);
+      throw error;
     }
   }
 
   /**
-   * Search for code in the repository
-   * Optimized to avoid EMFILE errors in serverless environments
+   * Search for code in the repository using GitHub's code search API
+   * with intelligent caching and efficient query strategies
    */
   async searchCode(
     query: string,
     repoFullName: string
   ): Promise<Array<{ path: string; line: number; content: string }>> {
     await this.ensureRepoCloned(repoFullName);
-    const repoInfo = this.clonedRepos.get(repoFullName);
-    if (!repoInfo) throw new Error(`Repository ${repoFullName} not found`);
+
+    // Generate a cache key
+    const cacheKey = `${repoFullName}:${query}`;
+
+    // Check cache first
+    const cachedResult = this.searchResultCache[cacheKey];
+    if (
+      cachedResult &&
+      Date.now() - cachedResult.timestamp <
+        LocalRepositoryManager.CACHE_TTL.SEARCH_RESULTS
+    ) {
+      console.log(
+        `Using cached search results for "${query}" in ${repoFullName}`
+      );
+      return cachedResult.results;
+    }
 
     try {
-      const repoPath = repoInfo.localPath;
-      const results: Array<{ path: string; line: number; content: string }> =
-        [];
+      console.log(
+        `Searching for "${query}" in ${repoFullName} using GitHub API`
+      );
 
-      // First, list all files efficiently
-      console.log(`Listing files in ${repoFullName}...`);
-      const allFiles: string[] = [];
+      // Get Octokit instance for this repo
+      const octokit = await this.getOctokitForRepo(repoFullName);
 
-      // Use isomorphic-git to list files more efficiently
-      const files = await git.listFiles({
-        fs: this.createLimitedFS().promises,
-        dir: repoPath,
-        ref: 'HEAD',
+      // Use rate limiter to prevent hitting GitHub API limits
+      const results = await this.rateLimiter.enqueue(async () => {
+        // Performing GitHub search
+        // The GitHub search API is quite powerful but has limitations
+        const searchQuery = `repo:${repoFullName} ${query}`;
+
+        // First try an exact search
+        const { data: searchData } = await octokit.search.code({
+          q: searchQuery,
+          per_page: 30,
+        });
+
+        const matchResults: Array<{
+          path: string;
+          line: number;
+          content: string;
+        }> = [];
+
+        // Process each search result
+        for (const item of searchData.items) {
+          // We need to get the file content to find the matching line
+          const fileContent = await this.getFileContent(
+            item.path,
+            repoFullName
+          );
+
+          // Find matching lines
+          const lines = fileContent.split('\n');
+          const lowercaseQuery = query.toLowerCase();
+
+          let foundMatch = false;
+
+          // Look for matches in each line
+          for (let i = 0; i < lines.length; i++) {
+            const line = lines[i];
+            if (line.toLowerCase().includes(lowercaseQuery)) {
+              matchResults.push({
+                path: item.path,
+                line: i + 1,
+                content: line.trim(),
+              });
+              foundMatch = true;
+              // Only include the first match per file to avoid overwhelming results
+              break;
+            }
+          }
+
+          // If no specific line matched but the file matched, include the first line
+          if (!foundMatch) {
+            matchResults.push({
+              path: item.path,
+              line: 1,
+              content: lines[0]?.trim() || 'File matched by name',
+            });
+          }
+        }
+
+        return matchResults;
       });
 
-      // Apply filters to exclude common directories like node_modules
-      const filteredFiles = files.filter(
-        (file) =>
-          !file.includes('node_modules/') &&
-          !file.includes('.git/') &&
-          !file.endsWith('.jpg') &&
-          !file.endsWith('.png') &&
-          !file.endsWith('.gif') &&
-          !file.endsWith('.pdf')
-      );
-
-      // Limit number of files to search to avoid EMFILE
-      const MAX_FILES_TO_SEARCH = 50;
-      const filesToSearch = filteredFiles.slice(0, MAX_FILES_TO_SEARCH);
-
-      console.log(
-        `Found ${filteredFiles.length} files, searching through ${filesToSearch.length}`
-      );
-
-      // Search regex
-      const searchRegex = new RegExp(query, 'i');
-
-      // Process files in small batches to avoid EMFILE
-      const BATCH_SIZE = 5;
-      for (let i = 0; i < filesToSearch.length; i += BATCH_SIZE) {
-        const batch = filesToSearch.slice(i, i + BATCH_SIZE);
-
-        // Process one batch at a time
-        for (const file of batch) {
-          try {
-            const fullPath = path.join(repoPath, file);
-            const content = await this.safeReadFile(fullPath, {
-              encoding: 'utf-8',
-            });
-            const lines = content.split('\n');
-
-            for (let lineIndex = 0; lineIndex < lines.length; lineIndex++) {
-              const line = lines[lineIndex];
-              if (searchRegex.test(line)) {
-                results.push({
-                  path: file,
-                  line: lineIndex + 1,
-                  content: line.trim(),
-                });
-              }
-            }
-          } catch (err) {
-            // Skip files that can't be read as text
-            console.log(
-              `Error reading file ${file}: ${
-                err instanceof Error ? err.message : String(err)
-              }`
-            );
-          }
-        }
-      }
-
-      // If no results from content search, try filename search
-      if (results.length === 0) {
-        console.log('No content matches found, searching filenames...');
-
-        // Search filenames for query terms
-        const queryParts = query.toLowerCase().split(/\s+/);
-
-        for (const file of filteredFiles) {
-          const lowerFile = file.toLowerCase();
-          // Check if any part of the query matches the filename
-          if (
-            queryParts.some(
-              (part) => part.length > 3 && lowerFile.includes(part)
-            )
-          ) {
-            try {
-              // Just get the first line to provide some context
-              const fullPath = path.join(repoPath, file);
-              const content = await this.safeReadFile(fullPath, {
-                encoding: 'utf-8',
-              });
-              const firstLine =
-                content.split('\n')[0] || 'File matched by name';
-
-              results.push({
-                path: file,
-                line: 1,
-                content: firstLine.trim(),
-              });
-
-              // Limit filename matches to avoid overwhelming results
-              if (results.length >= 20) break;
-            } catch (err) {
-              // If we can't read the file, still include it but without content
-              results.push({
-                path: file,
-                line: 1,
-                content: 'File matched by name',
-              });
-            }
-          }
-        }
-      }
+      // Cache the search results
+      this.searchResultCache[cacheKey] = {
+        results,
+        timestamp: Date.now(),
+      };
 
       return results;
     } catch (error) {
       console.error(`Error searching code in ${repoFullName}:`, error);
+
+      // If search fails, try a different approach - check if we have any text matches
+      if (query.length > 3) {
+        try {
+          console.log('Falling back to filename search...');
+          const [owner, repo] = repoFullName.split('/');
+          const octokit = await this.getOctokitForRepo(repoFullName);
+
+          // Get some files from the repository that might be relevant by name
+          const { data: contentsData } = await octokit.repos.getContent({
+            owner,
+            repo,
+            path: '',
+          });
+
+          const results: Array<{
+            path: string;
+            line: number;
+            content: string;
+          }> = [];
+
+          // If we got a directory listing, look for files with names matching parts of the query
+          if (Array.isArray(contentsData)) {
+            const queryParts = query.toLowerCase().split(/\s+/);
+
+            for (const item of contentsData) {
+              if (item.type === 'file') {
+                const lowerName = item.name.toLowerCase();
+                if (
+                  queryParts.some(
+                    (part) => part.length > 3 && lowerName.includes(part)
+                  )
+                ) {
+                  results.push({
+                    path: item.path,
+                    line: 1,
+                    content: 'File matched by name',
+                  });
+                }
+              }
+            }
+
+            return results;
+          }
+        } catch (fallbackError) {
+          console.error('Fallback search also failed:', fallbackError);
+        }
+      }
+
       return [];
     }
   }
 
   /**
-   * Get the content of a file from the local repository
+   * Get the content of a file using the GitHub API
+   * Implements caching to minimize API calls
    */
   async getFileContent(
     filePath: string,
     repoFullName: string
   ): Promise<string> {
     await this.ensureRepoCloned(repoFullName);
-    const repoInfo = this.clonedRepos.get(repoFullName);
-    if (!repoInfo) throw new Error(`Repository ${repoFullName} not found`);
+
+    // Generate cache key
+    const cacheKey = `${repoFullName}:${filePath}`;
+
+    // Check cache first
+    const cachedContent = this.fileContentCache[cacheKey];
+    if (
+      cachedContent &&
+      Date.now() - cachedContent.timestamp <
+        LocalRepositoryManager.CACHE_TTL.FILE_CONTENT
+    ) {
+      console.log(`Using cached content for ${filePath} in ${repoFullName}`);
+      return cachedContent.content;
+    }
 
     try {
-      const repoPath = repoInfo.localPath;
-      const fullPath = path.join(repoPath, filePath);
-      return await this.safeReadFile(fullPath, { encoding: 'utf-8' });
+      const [owner, repo] = repoFullName.split('/');
+      const octokit = await this.getOctokitForRepo(repoFullName);
+
+      // Use rate limiter to prevent hitting GitHub API limits
+      const content = await this.rateLimiter.enqueue(async () => {
+        console.log(
+          `Fetching content of ${filePath} from ${repoFullName} via GitHub API`
+        );
+
+        // Get the file content from GitHub API
+        const { data } = await octokit.repos.getContent({
+          owner,
+          repo,
+          path: filePath,
+        });
+
+        if ('content' in data && typeof data.content === 'string') {
+          // Decode base64 content
+          const content = Buffer.from(data.content, 'base64').toString('utf-8');
+          return content;
+        } else {
+          throw new Error(`Unexpected response format for ${filePath}`);
+        }
+      });
+
+      // Store in cache
+      this.fileContentCache[cacheKey] = {
+        content,
+        timestamp: Date.now(),
+      };
+
+      return content;
     } catch (error) {
       console.error(
-        `Error reading file ${filePath} from ${repoFullName}:`,
+        `Error getting file content for ${filePath} from ${repoFullName}:`,
         error
       );
       throw error;
@@ -657,43 +667,59 @@ export class LocalRepositoryManager {
     filter?: (filePath: string) => boolean
   ): Promise<string[]> {
     await this.ensureRepoCloned(repoFullName);
-    const repoInfo = this.clonedRepos.get(repoFullName);
-    if (!repoInfo) throw new Error(`Repository ${repoFullName} not found`);
 
-    const repoPath = repoInfo.localPath;
-    const fullPath = path.join(repoPath, dirPath);
-    const results: string[] = [];
+    try {
+      const [owner, repo] = repoFullName.split('/');
+      const octokit = await this.getOctokitForRepo(repoFullName);
 
-    async function walk(dir: string, relativePath: string): Promise<void> {
-      const entries = await fs.readdir(dir, { withFileTypes: true });
+      // Use rate limiter to prevent hitting GitHub API limits
+      return await this.rateLimiter.enqueue(async () => {
+        console.log(
+          `Listing contents of ${
+            dirPath || '/'
+          } in ${repoFullName} via GitHub API`
+        );
 
-      // Process entries in batches to avoid EMFILE
-      const BATCH_SIZE = 10;
-      for (let i = 0; i < entries.length; i += BATCH_SIZE) {
-        const batch = entries.slice(i, i + BATCH_SIZE);
+        // GitHub API doesn't have a recursive directory listing, so we need to recursively
+        // traverse the directory structure. This is less efficient than a local walk, but
+        // is the best we can do with the API.
+        const results: string[] = [];
 
-        for (const entry of batch) {
-          const entryPath = path.join(dir, entry.name);
-          const entryRelativePath = path.join(relativePath, entry.name);
+        async function walk(currentPath: string): Promise<void> {
+          const { data: contents } = await octokit.repos.getContent({
+            owner,
+            repo,
+            path: currentPath === '' ? '' : currentPath,
+          });
 
-          if (entry.isDirectory()) {
-            // Skip node_modules and .git directories
-            if (entry.name === 'node_modules' || entry.name === '.git') {
-              continue;
-            }
-            await walk(entryPath, entryRelativePath);
-          } else if (entry.isFile()) {
-            if (!filter || filter(entryRelativePath)) {
-              results.push(entryRelativePath);
+          if (!Array.isArray(contents)) {
+            // This is a file, not a directory
+            return;
+          }
+
+          for (const item of contents) {
+            const itemPath = item.path;
+
+            if (item.type === 'dir') {
+              // Skip node_modules and .git directories
+              if (
+                itemPath.includes('node_modules/') ||
+                itemPath.includes('.git/')
+              ) {
+                continue;
+              }
+              await walk(itemPath);
+            } else if (item.type === 'file') {
+              if (!filter || filter(itemPath)) {
+                results.push(itemPath);
+              }
             }
           }
         }
-      }
-    }
 
-    try {
-      await walk(fullPath, '');
-      return results;
+        await walk(dirPath || '');
+        return results;
+      });
     } catch (error) {
       console.error(
         `Error walking directory ${dirPath} in ${repoFullName}:`,
@@ -708,62 +734,36 @@ export class LocalRepositoryManager {
    */
   async getDefaultBranch(repoFullName: string): Promise<string> {
     // Check if we have it cached
-    const repoInfo = this.clonedRepos.get(repoFullName);
+    const repoInfo = this.repoCache.get(repoFullName);
     if (repoInfo && repoInfo.defaultBranch) {
       return repoInfo.defaultBranch;
     }
 
     try {
-      await this.ensureRepoCloned(repoFullName);
-      const repoPath = repoInfo?.localPath!;
+      // Get it from GitHub API
+      const [owner, repo] = repoFullName.split('/');
+      const octokit = await this.getOctokitForRepo(repoFullName);
 
-      // Try to get from isomorphic-git
-      await this.gitOpSemaphore.acquire();
-      try {
-        const currentBranch = await git.currentBranch({
-          fs: this.createLimitedFS().promises,
-          dir: repoPath,
-          fullname: false,
+      const { data } = await octokit.repos.get({ owner, repo });
+      const defaultBranch = data.default_branch;
+
+      // Cache the default branch
+      if (repoInfo) {
+        repoInfo.defaultBranch = defaultBranch;
+        this.repoCache.set(repoFullName, repoInfo);
+      } else {
+        this.repoCache.set(repoFullName, {
+          owner,
+          repo,
+          defaultBranch,
         });
-
-        const defaultBranch = currentBranch?.toString() || 'main';
-
-        // Cache it
-        if (repoInfo) {
-          repoInfo.defaultBranch = defaultBranch;
-          this.clonedRepos.set(repoFullName, repoInfo);
-        }
-
-        return defaultBranch;
-      } finally {
-        this.gitOpSemaphore.release();
       }
+
+      return defaultBranch;
     } catch (error) {
-      console.error(`Error getting default branch from isomorphic-git:`, error);
-
-      // Fall back to GitHub API
-      try {
-        const [owner, repo] = repoFullName.split('/');
-        const octokit = await this.getOctokitForRepo(repoFullName);
-
-        const { data } = await octokit.repos.get({ owner, repo });
-        const defaultBranch = data.default_branch;
-
-        // Cache the default branch
-        if (repoInfo) {
-          repoInfo.defaultBranch = defaultBranch;
-          this.clonedRepos.set(repoFullName, repoInfo);
-        }
-
-        return defaultBranch;
-      } catch (apiError) {
-        console.error(
-          `Error getting default branch for ${repoFullName}:`,
-          apiError
-        );
-        // Fall back to main as default branch
-        return 'main';
-      }
+      console.error(`Error getting default branch for ${repoFullName}:`, error);
+      // Fall back to main as default branch
+      return 'main';
     }
   }
 
@@ -776,51 +776,33 @@ export class LocalRepositoryManager {
     baseBranch?: string
   ): Promise<void> {
     await this.ensureRepoCloned(repoFullName);
-    const repoInfo = this.clonedRepos.get(repoFullName);
-    if (!repoInfo) throw new Error(`Repository ${repoFullName} not found`);
 
-    const repoPath = repoInfo.localPath;
-
-    // Get base branch if not provided
-    const baseRef = baseBranch || (await this.getDefaultBranch(repoFullName));
-
-    await this.gitOpSemaphore.acquire();
     try {
-      // Checkout base branch first
-      await git.checkout({
-        fs: this.createLimitedFS().promises,
-        dir: repoPath,
-        ref: baseRef,
-      });
-
-      // Fetch latest from remote
+      const [owner, repo] = repoFullName.split('/');
       const octokit = await this.getOctokitForRepo(repoFullName);
-      const auth = await octokit.auth();
-      const token =
-        typeof auth === 'object' && auth !== null && 'token' in auth
-          ? auth.token
-          : '';
 
-      await git.fetch({
-        fs: this.createLimitedFS().promises,
-        http,
-        dir: repoPath,
-        url: `https://x-access-token:${token}@github.com/${repoFullName}.git`,
-        ref: baseRef,
-        singleBranch: true,
-        depth: 1,
+      // Get base branch if not provided
+      const baseRef = baseBranch || (await this.getDefaultBranch(repoFullName));
+
+      // First get the SHA of the latest commit on the base branch
+      const { data: refData } = await octokit.git.getRef({
+        owner,
+        repo,
+        ref: `heads/${baseRef}`,
       });
 
-      // Create new branch from current HEAD
-      await git.branch({
-        fs: this.createLimitedFS().promises,
-        dir: repoPath,
-        ref: branchName,
-        checkout: true,
+      const baseSha = refData.object.sha;
+
+      // Create the new branch pointing to the same commit
+      await octokit.git.createRef({
+        owner,
+        repo,
+        ref: `refs/heads/${branchName}`,
+        sha: baseSha,
       });
 
       console.log(
-        `Created and checked out branch ${branchName} in ${repoFullName}`
+        `Created branch ${branchName} in ${repoFullName} based on ${baseRef}`
       );
     } catch (error) {
       console.error(
@@ -828,8 +810,6 @@ export class LocalRepositoryManager {
         error
       );
       throw error;
-    } finally {
-      this.gitOpSemaphore.release();
     }
   }
 
@@ -844,74 +824,57 @@ export class LocalRepositoryManager {
     branch: string
   ): Promise<void> {
     await this.ensureRepoCloned(repoFullName);
-    const repoInfo = this.clonedRepos.get(repoFullName);
-    if (!repoInfo) throw new Error(`Repository ${repoFullName} not found`);
 
-    const repoPath = repoInfo.localPath;
-    const fullPath = path.join(repoPath, filePath);
-
-    // Create directories if they don't exist
-    await this.safeMkdir(path.dirname(fullPath), { recursive: true });
-
-    // Write the file
-    await this.safeWriteFile(fullPath, content);
-    console.log(`File ${filePath} written to ${repoFullName}/${branch}`);
-
-    await this.gitOpSemaphore.acquire();
     try {
-      // Add file to git
-      await git.add({
-        fs: this.createLimitedFS().promises,
-        dir: repoPath,
-        filepath: filePath,
-      });
-
-      // Commit changes
-      await git.commit({
-        fs: this.createLimitedFS().promises,
-        dir: repoPath,
-        message: commitMessage,
-        author: {
-          name: 'Linear Agent',
-          email: 'agent@example.com',
-        },
-      });
-
-      console.log(
-        `Changes to ${filePath} committed to ${repoFullName}/${branch}`
-      );
-
-      // Push changes
+      const [owner, repo] = repoFullName.split('/');
       const octokit = await this.getOctokitForRepo(repoFullName);
-      const auth = await octokit.auth();
-      const token =
-        typeof auth === 'object' && auth !== null && 'token' in auth
-          ? auth.token
-          : '';
 
-      await git.push({
-        fs: this.createLimitedFS().promises,
-        http,
-        dir: repoPath,
-        url: `https://x-access-token:${token}@github.com/${repoFullName}.git`,
-        ref: branch,
+      // Check if the file already exists to get its SHA if it does
+      let sha: string | undefined;
+      try {
+        const { data: fileData } = await octokit.repos.getContent({
+          owner,
+          repo,
+          path: filePath,
+          ref: branch,
+        });
+
+        if ('sha' in fileData) {
+          sha = fileData.sha;
+        }
+      } catch (error) {
+        // File doesn't exist yet, which is fine
+      }
+
+      // Create or update the file
+      await octokit.repos.createOrUpdateFileContents({
+        owner,
+        repo,
+        path: filePath,
+        message: commitMessage,
+        content: Buffer.from(content).toString('base64'),
+        branch,
+        sha, // Include SHA if updating an existing file
       });
 
-      console.log(`Changes to ${filePath} pushed to ${repoFullName}/${branch}`);
+      console.log(`File ${filePath} updated in ${repoFullName}/${branch}`);
+
+      // Clear the file cache if it exists
+      const cacheKey = `${repoFullName}:${filePath}`;
+      if (this.fileContentCache[cacheKey]) {
+        delete this.fileContentCache[cacheKey];
+      }
     } catch (error) {
       console.error(
         `Error updating file ${filePath} in ${repoFullName}/${branch}:`,
         error
       );
       throw error;
-    } finally {
-      this.gitOpSemaphore.release();
     }
   }
 
   /**
    * Create a pull request on GitHub
-   * Note: This requires the GitHub API, it can't be done with local git operations
    */
   async createPullRequest(
     title: string,
@@ -945,18 +908,12 @@ export class LocalRepositoryManager {
   }
 
   /**
-   * Clean up temporary directories
+   * Cleanup method - with API-based implementation, we just clear caches
    */
   async cleanup(): Promise<void> {
-    try {
-      await fs.rm(this.tempDir, { recursive: true, force: true });
-      this.clonedRepos.clear();
-      console.log(`Cleaned up temporary directory ${this.tempDir}`);
-    } catch (error) {
-      console.error(
-        `Error cleaning up temporary directory ${this.tempDir}:`,
-        error
-      );
-    }
+    // Clear all caches
+    this.fileContentCache = {};
+    this.searchResultCache = {};
+    console.log(`Cleared all caches`);
   }
 }
