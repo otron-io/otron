@@ -338,7 +338,6 @@ async function handleIssueAssigned(
 ) {
   const { notification } = payload;
   const issueId = notification.issueId;
-
   if (!issueId) {
     console.error("No issue ID found in notification");
     return;
@@ -347,30 +346,52 @@ async function handleIssueAssigned(
   let originalAssigneeId: string | null | undefined = null;
 
   try {
+    console.log(`Processing issue assignment for issue: ${issueId}`);
+
     // Get the issue
     const issue = await linearClient.issue(issueId);
+    console.log(`Current issue assignee: ${issue.assigneeId}`);
 
     // Get the issue history to find the previous assignee
     const issueHistory = await issue.history();
+    console.log(`Retrieved history with ${issueHistory.nodes.length} events`);
 
-    // Find the most recent assignee change that happened before this one
-    const assigneeChanges = issueHistory.nodes
-      .filter(
-        (event: any) =>
-          event.type === "issue" &&
-          event.action === "update" &&
-          event.data &&
-          event.data.assigneeId !== undefined,
-      )
-      .sort(
-        (a: any, b: any) =>
-          new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime(),
+    // Log all history entries related to assignee changes for debugging
+    const allAssigneeChanges = issueHistory.nodes.filter(
+      (event: any) =>
+        event.type === "issue" &&
+        event.action === "update" &&
+        event.data &&
+        (event.data.assigneeId !== undefined ||
+          event.fromAssigneeId !== undefined),
+    );
+
+    console.log(
+      "All assignee change events:",
+      JSON.stringify(allAssigneeChanges, null, 2),
+    );
+
+    // The most recent event should be the current assignment to appUserId
+    // We want the event just before that which changed the assignee
+    let foundPreviousAssignee = false;
+
+    for (const event of allAssigneeChanges) {
+      console.log(
+        `Examining event: ${event.createdAt}, toAssigneeId: ${event.toAssigneeId}, fromAssigneeId: ${event.fromAssigneeId}`,
       );
 
-    // If we found previous assignee changes, get the most recent one (before current)
-    if (assigneeChanges.length > 1) {
-      // Skip the first entry (current change) and get the second one (previous)
-      originalAssigneeId = assigneeChanges?.[1]?.fromAssigneeId;
+      // If this is the event that assigned to our app user
+      if (event.toAssigneeId === appUserId) {
+        // The fromAssigneeId would be the previous assignee
+        originalAssigneeId = event.fromAssigneeId;
+        foundPreviousAssignee = true;
+        console.log(`Found previous assignee: ${originalAssigneeId}`);
+        break;
+      }
+    }
+
+    if (!foundPreviousAssignee) {
+      console.log("Could not determine previous assignee from history");
     }
 
     // Get context about the issue
@@ -404,9 +425,17 @@ async function handleIssueAssigned(
 
     // Re-assign to original assignee if we found one and it's different from the app user
     if (originalAssigneeId && originalAssigneeId !== appUserId) {
+      console.log(
+        `Reassigning issue from ${appUserId} to original assignee ${originalAssigneeId}`,
+      );
       await linearClient.updateIssue(issueId, {
         assigneeId: originalAssigneeId,
       });
+      console.log(`Successfully reassigned issue to ${originalAssigneeId}`);
+    } else {
+      console.log(
+        `Not reassigning issue. Original assignee: ${originalAssigneeId}, App user: ${appUserId}`,
+      );
     }
   } catch (error) {
     console.error("Error handling assigned issue:", error);
