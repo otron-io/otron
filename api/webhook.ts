@@ -344,9 +344,34 @@ async function handleIssueAssigned(
     return;
   }
 
+  let originalAssigneeId: string | null | undefined = null;
+
   try {
     // Get the issue
     const issue = await linearClient.issue(issueId);
+
+    // Get the issue history to find the previous assignee
+    const issueHistory = await issue.history();
+
+    // Find the most recent assignee change that happened before this one
+    const assigneeChanges = issueHistory.nodes
+      .filter(
+        (event: any) =>
+          event.type === "issue" &&
+          event.action === "update" &&
+          event.data &&
+          event.data.assigneeId !== undefined,
+      )
+      .sort(
+        (a: any, b: any) =>
+          new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime(),
+      );
+
+    // If we found previous assignee changes, get the most recent one (before current)
+    if (assigneeChanges.length > 1) {
+      // Skip the first entry (current change) and get the second one (previous)
+      originalAssigneeId = assigneeChanges?.[1]?.fromAssigneeId;
+    }
 
     // Get context about the issue
     const context = await getIssueContext(issue, linearClient);
@@ -376,6 +401,13 @@ async function handleIssueAssigned(
       issueId: issue.id,
       emoji: "white_check_mark",
     });
+
+    // Re-assign to original assignee if we found one and it's different from the app user
+    if (originalAssigneeId && originalAssigneeId !== appUserId) {
+      await linearClient.updateIssue(issueId, {
+        assigneeId: originalAssigneeId,
+      });
+    }
   } catch (error) {
     console.error("Error handling assigned issue:", error);
     try {
