@@ -11,6 +11,7 @@ import {
   buildCodeImplementationPrompt,
 } from './prompts.js';
 import { z } from 'zod';
+import path from 'path';
 
 // Initialize OpenAI client
 const openai = new OpenAI({
@@ -510,52 +511,56 @@ export class LinearGPT {
    * Update the status of a Linear issue
    */
   private async updateIssueStatus(
-    issueId: string,
+    issueIdOrIdentifier: string,
     statusName: string
   ): Promise<void> {
     try {
-      // Fetch the issue
-      const issue = await this.linearClient.issue(issueId);
-
-      // Get the issue's team
-      const team = await issue.team;
-      if (!team) {
-        throw new Error('Could not determine the team for this issue');
+      // Get all workflow states for the issue's team
+      const issue = await this.linearClient.issue(issueIdOrIdentifier);
+      if (!issue) {
+        console.error(`Issue ${issueIdOrIdentifier} not found`);
+        return;
       }
 
-      // Find all workflow states for the team
-      const statesResponse = await this.linearClient.workflowStates({
-        filter: { team: { id: { eq: team.id } } },
+      const team = await issue.team;
+      if (!team) {
+        console.error(`Team not found for issue ${issueIdOrIdentifier}`);
+        return;
+      }
+
+      const states = await this.linearClient.workflowStates({
+        filter: {
+          team: {
+            id: { eq: team.id },
+          },
+        },
       });
 
-      // Find the state that matches the requested status name
-      const state = statesResponse.nodes.find(
-        (state) => state.name.toLowerCase() === statusName.toLowerCase()
+      // Find the state with the matching name
+      const state = states.nodes.find(
+        (s) => s.name.toLowerCase() === statusName.toLowerCase()
       );
 
       if (!state) {
-        throw new Error(
-          `Could not find status "${statusName}" for team ${team.name}`
+        console.error(
+          `Status "${statusName}" not found for team ${
+            team.name
+          }. Available states: ${states.nodes.map((s) => s.name).join(', ')}`
         );
+        return;
       }
 
       // Update the issue with the new state
-      await issue.update({
-        stateId: state.id,
-      });
+      await issue.update({ stateId: state.id });
 
       console.log(
-        `Updated issue ${issue.identifier} status to "${statusName}"`
+        `Updated issue ${issueIdOrIdentifier} status to ${statusName}`
       );
-
-      // Notify in the issue comments
-      await this.linearClient.createComment({
-        issueId: issue.id,
-        body: `I've updated the status to **${statusName}**.`,
-      });
-    } catch (error) {
-      console.error(`Error updating issue status:`, error);
-      throw error;
+    } catch (error: unknown) {
+      console.error(
+        `Error updating status for issue ${issueIdOrIdentifier}:`,
+        error instanceof Error ? error.message : String(error)
+      );
     }
   }
 
@@ -564,68 +569,23 @@ export class LinearGPT {
    */
   private async addLabel(issueId: string, labelName: string): Promise<void> {
     try {
-      // Fetch the issue
-      const issue = await this.linearClient.issue(issueId);
-
-      // Get the issue's team
-      const team = await issue.team;
-      if (!team) {
-        throw new Error('Could not determine the team for this issue');
-      }
-
-      // Find all labels for the team
-      const labelsResponse = await this.linearClient.issueLabels({
-        filter: { team: { id: { eq: team.id } } },
-      });
-
-      // Find the label that matches the requested label name
-      const label = labelsResponse.nodes.find(
-        (label) => label.name.toLowerCase() === labelName.toLowerCase()
-      );
+      // Find the label by name
+      const labelsResponse = await this.linearClient.issueLabels();
+      const label = labelsResponse.nodes.find((l: any) => l.name === labelName);
 
       if (!label) {
-        // Create the label if it doesn't exist
-        const createdLabelResponse = await this.linearClient.createIssueLabel({
-          name: labelName,
-          teamId: team.id,
-        });
-
-        // Add the new label to the issue if created successfully
-        if (createdLabelResponse && createdLabelResponse.issueLabel) {
-          const issueLabelsResponse = await issue.labels();
-          const currentLabels = issueLabelsResponse.nodes.map(
-            (label) => label.id
-          );
-          // Get the actual issue label object
-          const createdLabel = await createdLabelResponse.issueLabel;
-          await issue.update({
-            labelIds: [...currentLabels, createdLabel.id],
-          });
-
-          console.log(
-            `Created and added new label "${labelName}" to issue ${issue.identifier}`
-          );
-        } else {
-          console.log(`Failed to create label "${labelName}"`);
-        }
-
-        // Notify in the issue comments
-        await this.linearClient.createComment({
-          issueId: issue.id,
-          body: `I've added the label **${labelName}**.`,
-        });
-      } else {
-        // Add the existing label to the issue
-        const currentLabels = issue.labelIds || [];
-        await issue.update({
-          labelIds: [...currentLabels, label.id],
-        });
-
-        console.log(`Added label "${labelName}" to issue ${issue.identifier}`);
+        console.error(`Label "${labelName}" not found`);
+        return;
       }
-    } catch (error) {
-      console.error(`Error adding label:`, error);
-      throw error;
+
+      // Add the label to the issue
+      await this.linearClient.issueAddLabel(issueId, label.id);
+      console.log(`Added label "${labelName}" to issue ${issueId}`);
+    } catch (error: unknown) {
+      console.error(
+        `Error adding label "${labelName}" to issue ${issueId}:`,
+        error instanceof Error ? error.message : String(error)
+      );
     }
   }
 
@@ -890,7 +850,7 @@ export class LinearGPT {
         if (comment.user) {
           try {
             const user = await comment.user;
-            userName = user?.name || 'Unknown';
+            userName = user ? user.name || 'Unknown' : 'Unknown';
           } catch (e) {
             console.error('Error getting user name:', e);
           }
@@ -926,144 +886,154 @@ export class LinearGPT {
           (repoDistribution.get(file.repository) || 0) + 1
         );
       }
-
-      console.log('File distribution for technical analysis:');
+      console.log(`Repository distribution for ${issue.identifier}:`);
       for (const [repo, count] of repoDistribution.entries()) {
-        console.log(`${repo}: ${count} files`);
+        console.log(`- ${repo}: ${count} files`);
       }
 
-      // 2. Generate technical analysis
-      const technicalReport =
-        await this.technicalAnalysis.generateTechnicalReport(
-          issue,
-          relevantFiles
-        );
-
-      // 3. Post technical report as a comment
-      await this.technicalAnalysis.postReportToIssue(issue, technicalReport);
-
-      // 4. Plan code changes
-      await this.technicalAnalysis.planCodeChanges(
-        issue,
-        technicalReport,
-        relevantFiles
-      );
-    } catch (error: unknown) {
-      console.error(`Error performing technical analysis:`, error);
-      await this.linearClient.createComment({
-        issueId: issue.id,
-        body: `I encountered an error while performing the technical analysis: ${
-          error instanceof Error ? error.message : 'Unknown error'
-        }`,
-      });
-    }
-  }
-
-  /**
-   * Implement changes for an issue
-   */
-  private async implementChanges(issue: Issue): Promise<void> {
-    try {
-      // 1. Identify relevant code files, now with repository info
-      const relevantFiles = await this.searchRelevantFiles(issue);
-
-      // Log repository distribution for debugging
-      const repoDistribution = new Map<string, number>();
-      for (const file of relevantFiles) {
-        repoDistribution.set(
-          file.repository,
-          (repoDistribution.get(file.repository) || 0) + 1
-        );
+      // 2. Check for stack trace - this provides valuable context
+      const hasStackTrace = this.containsStackTrace(issue.description || '');
+      if (hasStackTrace) {
+        console.log(`Stack trace detected in issue ${issue.identifier}`);
       }
 
-      console.log('Input file distribution across repositories:');
-      for (const [repo, count] of repoDistribution.entries()) {
-        console.log(`${repo}: ${count} files`);
-      }
+      // 3. Generate or get technical report from existing comments
+      let technicalReport = await this.findTechnicalReportInComments(issue);
 
-      // 2. Generate technical analysis if not already done
-      let technicalReport: string;
-      try {
-        // Try to find an existing technical report in the comments
-        const comments = await issue.comments({ first: 10 });
-        const technicalReportComment = comments.nodes.find(
-          (c) =>
-            c.body.includes('Technical Root Cause Analysis') ||
-            c.body.includes('Implementation Plan')
-        );
+      if (!technicalReport) {
+        console.log(`Generating technical report for ${issue.identifier}`);
+        technicalReport = await this.generateTechnicalReport(issue);
 
-        if (technicalReportComment) {
-          technicalReport = technicalReportComment.body;
-          console.log(
-            `Using existing technical report for ${issue.identifier}`
-          );
-        } else {
-          // Generate a new technical report
-          technicalReport =
-            await this.technicalAnalysis.generateTechnicalReport(
-              issue,
-              relevantFiles
-            );
-
-          // Log the technical report for debugging
-          console.log(
-            `Generated new technical report for ${issue.identifier}. ` +
-              `Report identifies repositories: ${this.extractRepositoriesFromReport(
-                technicalReport
-              )}`
-          );
-
-          // Post the report
-          await this.technicalAnalysis.postReportToIssue(
-            issue,
-            technicalReport
-          );
-        }
-      } catch (error: unknown) {
-        console.error(`Error getting/generating technical report:`, error);
-
-        // Generate a new one if there was an error
-        technicalReport = await this.technicalAnalysis.generateTechnicalReport(
-          issue,
-          relevantFiles
-        );
-
-        // Post the report
-        await this.technicalAnalysis.postReportToIssue(issue, technicalReport);
-      }
-
-      // 3. Plan code changes
-      const { branchName, changePlan } =
-        await this.technicalAnalysis.planCodeChanges(
-          issue,
-          technicalReport,
-          relevantFiles
-        );
-
-      // 4. Generate code changes
-      const codeChanges = await this.generateCodeChanges(
-        issue,
-        relevantFiles,
-        technicalReport,
-        changePlan
-      );
-
-      // 5. Create PRs with changes
-      const prs = await this.prManager.implementAndCreatePRs(
-        issue,
-        branchName,
-        codeChanges,
-        `Implements solution for ${issue.identifier}\n\n${technicalReport}`
-      );
-
-      if (prs.length === 0) {
+        // Add the technical report as a comment
         await this.linearClient.createComment({
           issueId: issue.id,
-          body: `I tried to implement changes but couldn't create any PRs. This might be because no valid code changes could be generated.`,
+          body: `## Technical Analysis Report\n\n${technicalReport}`,
         });
       }
+
+      // 4. Plan code changes using enhanced analysis
+      console.log(`Planning code changes for ${issue.identifier}`);
+      const changePlan = await this.planCodeChanges(issue, technicalReport);
+
+      // Add the change plan as a comment
+      await this.linearClient.createComment({
+        issueId: issue.id,
+        body: `## Implementation Plan\n\n${changePlan}`,
+      });
+
+      // 5. Generate code changes based on technical report and change plan
+      console.log(`Generating code changes for ${issue.identifier}`);
+      const changes = await this.generateCodeChanges(
+        issue.identifier,
+        technicalReport,
+        changePlan.implementationPlan
+      );
+
+      // Validate changes
+      if (!changes || changes.length === 0) {
+        console.log(`No changes generated for ${issue.identifier}`);
+        await this.linearClient.createComment({
+          issueId: issue.id,
+          body: "I couldn't generate any code changes. The issue may be too complex or might require more context.",
+        });
+        return;
+      }
+
+      // 6. Check if changes are in multiple repositories - this is a warning sign
+      const affectedRepositories = new Set(
+        changes.map((change) => change.repository)
+      );
+
+      if (affectedRepositories.size > 1) {
+        console.log(
+          `Warning: Changes span multiple repositories: ${Array.from(
+            affectedRepositories
+          ).join(', ')}`
+        );
+
+        await this.linearClient.createComment({
+          issueId: issue.id,
+          body: `⚠️ The changes I'm about to implement span multiple repositories (${Array.from(
+            affectedRepositories
+          ).join(', ')}). Please review carefully to ensure this is intended.`,
+        });
+      }
+
+      // Group changes by repository
+      const changesByRepo = new Map<
+        string,
+        Array<{ path: string; content: string }>
+      >();
+
+      for (const change of changes) {
+        if (!changesByRepo.has(change.repository)) {
+          changesByRepo.set(change.repository, []);
+        }
+
+        changesByRepo.get(change.repository)!.push({
+          path: change.path,
+          content: change.content,
+        });
+      }
+
+      // 7. Create PRs for each repository
+      for (const [repository, repoChanges] of changesByRepo.entries()) {
+        const repoName = repository.split('/')[1];
+
+        const repositoryChanges = changes.filter(
+          (change) => change.repository === repository
+        );
+
+        if (repositoryChanges.length > 0) {
+          await this.linearClient.createComment({
+            issueId: issue.id,
+            body: `Working on implementing changes in the repository ${repository}. This might take a few minutes...`,
+          });
+
+          try {
+            const branchName =
+              `fix/${issue.identifier.toLowerCase()}-${Date.now()}`.replace(
+                /[^a-zA-Z0-9-_]/g,
+                '-'
+              );
+
+            const pullRequest = await this.createPullRequest(
+              issue,
+              repository,
+              branchName,
+              repositoryChanges,
+              `Fix ${issue.identifier}: ${issue.title}\n\n${changePlan}`
+            );
+
+            // Add PR link as attachment
+            await this.linearClient.createAttachment({
+              issueId: issue.id,
+              title: `PR: ${repoName}`,
+              url: pullRequest.url,
+            });
+
+            await this.updateIssueStatus(issue.identifier, 'In Review');
+          } catch (error: unknown) {
+            console.error(`Error creating PR for ${repository}:`, error);
+            await this.linearClient.createComment({
+              issueId: issue.id,
+              body: `❌ Error creating PR for repository ${repository}: ${
+                error instanceof Error ? error.message : String(error)
+              }`,
+            });
+          }
+        } else {
+          await this.linearClient.createComment({
+            issueId: issue.id,
+            body: `⚠️ No changes were made in repository ${repository}`,
+          });
+        }
+      }
     } catch (error: unknown) {
-      console.error(`Error implementing changes:`, error);
+      console.error(
+        `Error implementing changes for ${issue.identifier}:`,
+        error
+      );
       await this.linearClient.createComment({
         issueId: issue.id,
         body: `I encountered an error while implementing changes: ${
@@ -1074,704 +1044,864 @@ export class LinearGPT {
   }
 
   /**
-   * Search for relevant code files based on issue content
+   * Search for relevant files based on keywords from an issue
    */
   private async searchRelevantFiles(
     issue: Issue
-  ): Promise<Array<{ path: string; content: string; repository: string }>> {
-    // Extract keywords from the issue
-    const keywordsResponse = await openai.chat.completions.create({
-      model: 'gpt-4.1',
-      messages: [
-        {
-          role: 'user',
-          content: buildKeywordExtractionPrompt(issue),
-        },
-      ],
-      temperature: 0.1,
-      max_tokens: 100,
-    });
-
-    const keywords = keywordsResponse.choices[0].message.content || '';
-    console.log(`Identified keywords for search: ${keywords}`);
-
-    // Initialize the array for all relevant files
-    const relevantFiles: Array<{
+  ): Promise<Array<{ path: string; repository: string; content?: string }>> {
+    const octokit = this.octokit;
+    const results: Array<{
       path: string;
-      content: string;
       repository: string;
+      content?: string;
     }> = [];
-    const keywordList = keywords.split(',').map((k: string) => k.trim());
 
-    // Track files per repository to ensure balanced representation
-    const filesPerRepo = new Map<string, number>();
-    const MAX_FILES_PER_REPO = 3; // Set a maximum per repository
-    const TOTAL_MAX_FILES = 12; // Set a higher overall maximum to allow for multiple repos
-
-    // Initialize the counter for each repository
-    for (const repo of this.allowedRepositories) {
-      filesPerRepo.set(repo, 0);
+    // Extract keywords from issue title and description
+    const keywords = this.extractKeywords(
+      issue.title + ' ' + (issue.description || '')
+    );
+    if (keywords.length === 0) {
+      return results;
     }
 
-    // First round: try to get at least one file from each repository
-    for (const keyword of keywordList) {
-      if (!keyword) continue;
+    // Extract repository names from issue description
+    const repositories = this.extractRepositoriesFromReport(
+      issue.description || ''
+    );
+    const repoNames =
+      repositories === 'none explicitly mentioned'
+        ? this.allowedRepositories
+        : repositories.split(',').map((r) => r.trim());
 
-      // Try each repository for this keyword
-      for (const repoFullName of this.allowedRepositories) {
-        // Skip if this repo already has its minimum representation
-        if ((filesPerRepo.get(repoFullName) || 0) >= 1) continue;
-
-        try {
-          const files = await this.searchFilesInRepo(keyword, repoFullName, 2);
-
-          for (const file of files) {
-            relevantFiles.push({
-              ...file,
-              repository: repoFullName, // Add repository information to each file
-            });
-
-            // Update the counter for this repository
-            filesPerRepo.set(
-              repoFullName,
-              (filesPerRepo.get(repoFullName) || 0) + 1
-            );
-
-            // Stop if we've reached the maximum for this repository
-            if ((filesPerRepo.get(repoFullName) || 0) >= 1) break;
-          }
-        } catch (error) {
-          console.error(
-            `Error searching for keyword "${keyword}" in ${repoFullName}:`,
-            error
-          );
-        }
+    for (const repo of repoNames) {
+      if (!this.allowedRepositories.includes(repo)) {
+        continue;
       }
-    }
 
-    // Second round: fill up to the per-repository maximum
-    for (const keyword of keywordList) {
-      if (!keyword) continue;
+      const [owner, name] = repo.split('/');
 
-      // Stop if we've reached the overall maximum
-      if (relevantFiles.length >= TOTAL_MAX_FILES) break;
-
-      for (const repoFullName of this.allowedRepositories) {
-        // Skip if this repo already has its maximum
-        if ((filesPerRepo.get(repoFullName) || 0) >= MAX_FILES_PER_REPO)
-          continue;
-
-        // Calculate how many more files we need from this repo
-        const neededFiles =
-          MAX_FILES_PER_REPO - (filesPerRepo.get(repoFullName) || 0);
-
+      for (const keyword of keywords) {
         try {
-          const files = await this.searchFilesInRepo(
-            keyword,
-            repoFullName,
-            neededFiles
-          );
-
-          for (const file of files) {
-            // Skip if we already have this file path
-            if (
-              relevantFiles.some(
-                (f) => f.path === file.path && f.repository === repoFullName
-              )
-            )
-              continue;
-
-            relevantFiles.push({
-              ...file,
-              repository: repoFullName, // Add repository information to each file
-            });
-
-            // Update the counter for this repository
-            filesPerRepo.set(
-              repoFullName,
-              (filesPerRepo.get(repoFullName) || 0) + 1
-            );
-
-            // Stop if we've reached the maximum for this repository
-            if ((filesPerRepo.get(repoFullName) || 0) >= MAX_FILES_PER_REPO)
-              break;
-
-            // Stop if we've reached the overall maximum
-            if (relevantFiles.length >= TOTAL_MAX_FILES) break;
-          }
-
-          // Break out of the repository loop if we've reached the overall maximum
-          if (relevantFiles.length >= TOTAL_MAX_FILES) break;
-        } catch (error) {
-          console.error(
-            `Error searching for keyword "${keyword}" in ${repoFullName}:`,
-            error
-          );
-        }
-      }
-    }
-
-    // Log the distribution of files
-    console.log('File distribution across repositories:');
-    for (const [repo, count] of filesPerRepo.entries()) {
-      console.log(`${repo}: ${count} files`);
-    }
-
-    // If we couldn't find any files, provide a helpful message
-    if (relevantFiles.length === 0) {
-      console.log(`No relevant files found for issue ${issue.identifier}`);
-
-      await this.linearClient.createComment({
-        issueId: issue.id,
-        body: `I couldn't find any relevant code files based on the issue description. Please provide more specific technical details or tag relevant files/components.`,
-      });
-
-      // Return a placeholder to avoid breaking the flow
-      return [
-        {
-          path: 'README.md',
-          content: 'No relevant files found',
-          repository: this.allowedRepositories[0], // Use the first repository as a fallback
-        },
-      ];
-    }
-
-    return relevantFiles;
-  }
-
-  /**
-   * Search for files in a specific repository
-   */
-  private async searchFilesInRepo(
-    keyword: string,
-    repoFullName: string,
-    limit: number
-  ): Promise<Array<{ path: string; content: string }>> {
-    const [owner, repo] = repoFullName.split('/');
-    const results: Array<{ path: string; content: string }> = [];
-
-    try {
-      // Search for the keyword in code
-      const searchResults = await this.octokit.search.code({
-        q: `${keyword} in:file repo:${owner}/${repo}`,
-        per_page: limit,
-      });
-
-      // For each result, get the file content
-      for (const item of searchResults.data.items) {
-        // Sanitize the path
-        const sanitizedPath = this.sanitizePath(item.path);
-
-        try {
-          // Get file content
-          const content = await this.prManager.getFileContent(
-            sanitizedPath,
-            repoFullName
-          );
-
-          results.push({
-            path: sanitizedPath,
-            content,
+          // Search for files containing the keyword
+          const searchResponse = await octokit.rest.search.code({
+            q: `repo:${repo} ${keyword}`,
+            per_page: 10,
           });
 
-          // Stop if we have enough files
-          if (results.length >= limit) {
-            break;
+          // Add results, avoiding duplicates
+          for (const item of searchResponse.data.items) {
+            if (
+              !results.some(
+                (r) => r.path === item.path && r.repository === repo
+              )
+            ) {
+              results.push({
+                path: item.path,
+                repository: repo,
+              });
+            }
           }
-        } catch (error) {
-          console.error(`Error fetching content for ${sanitizedPath}:`, error);
+        } catch (error: unknown) {
+          console.error(
+            `Error searching for ${keyword} in ${repo}:`,
+            error instanceof Error ? error.message : String(error)
+          );
         }
       }
-    } catch (error) {
-      console.error(
-        `Error searching for keyword "${keyword}" in ${repoFullName}:`,
-        error
-      );
     }
 
     return results;
   }
 
   /**
-   * Generate code changes based on technical analysis
+   * Extract meaningful keywords from text for file searching
    */
-  private async generateCodeChanges(
-    issue: Issue,
-    codeFiles: Array<{ path: string; content: string; repository: string }>,
-    technicalReport: string,
-    changePlan: string
-  ): Promise<
-    Array<{
-      path: string;
-      content: string;
-      message: string;
-      repository: string;
-    }>
-  > {
+  private extractKeywords(text: string): string[] {
+    // Remove common words and keep only meaningful terms
+    const words = text
+      .toLowerCase()
+      .replace(/[^\w\s]/g, ' ')
+      .split(/\s+/)
+      .filter(
+        (word) =>
+          word.length > 3 &&
+          ![
+            'the',
+            'and',
+            'that',
+            'have',
+            'for',
+            'not',
+            'with',
+            'you',
+            'this',
+            'but',
+            'his',
+            'from',
+            'they',
+            'say',
+            'her',
+            'she',
+            'will',
+            'one',
+            'all',
+            'would',
+            'there',
+            'their',
+            'what',
+            'out',
+            'about',
+            'who',
+            'get',
+            'which',
+            'when',
+            'make',
+            'can',
+            'like',
+            'time',
+            'just',
+            'him',
+            'know',
+            'take',
+            'people',
+            'into',
+            'year',
+            'your',
+            'good',
+            'some',
+            'could',
+            'them',
+            'see',
+            'other',
+            'than',
+            'then',
+            'now',
+            'look',
+            'only',
+            'come',
+            'its',
+            'over',
+            'think',
+            'also',
+            'back',
+            'after',
+            'use',
+            'two',
+            'how',
+            'our',
+            'work',
+            'first',
+            'well',
+            'way',
+            'even',
+            'new',
+            'want',
+            'because',
+            'any',
+            'these',
+            'give',
+            'day',
+            'most',
+            'user',
+            'error',
+            'bug',
+            'issue',
+            'problem',
+            'fails',
+            'feature',
+          ].includes(word)
+      );
+
+    // Prioritize technical terms (camelCase or snake_case)
+    const technicalTerms = words.filter(
+      (word) =>
+        /[A-Z]/.test(word) || // camelCase
+        word.includes('_') || // snake_case
+        /^[a-z]+\d+$/.test(word) // Words with numbers
+    );
+
+    // Combine technical terms with other meaningful words
+    const uniqueWords = [...new Set([...technicalTerms, ...words])];
+
+    // Return top keywords, prioritizing technical terms
+    return uniqueWords.slice(0, 10);
+  }
+
+  /**
+   * Execute a technical analysis with enhanced code context
+   */
+  async executeTechnicalAnalysis(issue: Issue): Promise<void> {
     try {
-      // Use the repository information we've already captured
-      const filesWithRepoInfo = codeFiles.map((file) => {
-        return {
-          path: file.path,
-          content: file.content,
-          repository: file.repository, // Include the repository information
-        };
+      // Update status to indicate we're working on the analysis
+      await this.updateIssueStatus(issue.identifier, 'In Progress');
+      await this.linearClient.createComment({
+        issueId: issue.id,
+        body: "🔍 I'm analyzing this issue to provide a technical report...",
       });
 
-      // Add repository distribution info to the prompt
-      const repoDistribution = new Map<string, number>();
-      for (const file of filesWithRepoInfo) {
-        repoDistribution.set(
-          file.repository,
-          (repoDistribution.get(file.repository) || 0) + 1
-        );
+      // Search for relevant files
+      const relevantFiles = await this.searchRelevantFiles(issue);
+      if (relevantFiles.length === 0) {
+        await this.linearClient.createComment({
+          issueId: issue.id,
+          body: "❓ I couldn't find relevant files to analyze based on the issue description. Please provide more specific information about the problem or mention which repositories contain the relevant code.",
+        });
+        await this.updateIssueStatus(issue.identifier, 'Todo');
+        return;
       }
 
-      const repoContext = Array.from(repoDistribution.entries())
-        .map(([repo, count]) => `- ${repo}: ${count} files`)
+      // Load content for all files
+      const filesWithContent = await this.loadFileContents(relevantFiles);
+
+      // Check if the issue contains a stack trace
+      const hasStackTrace = this.containsStackTrace(issue.description || '');
+
+      // Build file context for the prompt
+      const fileContext = filesWithContent
+        .map(
+          (file) =>
+            `## ${file.repository}/${file.path}\n\`\`\`\n${file.content}\n\`\`\``
+        )
+        .join('\n\n');
+
+      // Build list of relevant file paths for reference
+      const relevantFilePaths = filesWithContent
+        .map((file) => `${file.repository}/${file.path}`)
         .join('\n');
 
-      // Generate concrete code changes based on the technical report and plan
-      const implementationResponse = await openai.chat.completions.create({
-        model: 'gpt-4.1',
+      // Generate technical analysis
+      const technicalAnalysisPrompt = await this.buildTechnicalAnalysisPrompt(
+        issue,
+        fileContext,
+        hasStackTrace,
+        relevantFilePaths
+      );
+
+      // Use the AI model to generate the technical report
+      const response = await openai.chat.completions.create({
+        model: 'gpt-4o',
         messages: [
           {
             role: 'system',
-            content: buildCodeImplementationPrompt({
-              issue,
-              technicalReport,
-              changePlan,
-              filesWithRepoInfo,
-              allowedRepositories: this.allowedRepositories,
-              repoDistribution: repoContext, // Pass this to the prompt builder
-            }),
-          },
-          {
-            role: 'user',
-            content:
-              'Please generate code changes based on the technical report and plan. Be sure to carefully consider which repository each change belongs to.',
+            content: technicalAnalysisPrompt,
           },
         ],
-        temperature: 0.2,
-        max_tokens: 4000,
+        temperature: 0.3,
       });
 
-      const responseContent =
-        implementationResponse.choices[0].message.content || '';
+      const technicalReport = response.choices[0].message.content || '';
 
-      // Process the diff-based response format
-      try {
-        console.log(
-          `Processing implementation response of length ${responseContent.length}`
-        );
+      // Post the technical report as a comment
+      await this.linearClient.createComment({
+        issueId: issue.id,
+        body: technicalReport,
+      });
 
-        // Parse the diff-based format
-        const changes = this.parseDiffResponse(responseContent, codeFiles);
+      // Update issue status
+      await this.updateIssueStatus(issue.identifier, 'Todo');
 
-        if (changes.length === 0) {
-          throw new Error('No valid code changes were found in the response');
-        }
-
-        // Log repository distribution of changes
-        const changeRepoDistribution = new Map<string, number>();
-        for (const change of changes) {
-          changeRepoDistribution.set(
-            change.repository,
-            (changeRepoDistribution.get(change.repository) || 0) + 1
-          );
-        }
-
-        console.log('Change distribution across repositories:');
-        for (const [repo, count] of changeRepoDistribution.entries()) {
-          console.log(`${repo}: ${count} changes`);
-        }
-
-        console.log(`Successfully parsed ${changes.length} code changes`);
-        return changes;
-      } catch (parseError: unknown) {
-        console.error('Failed to process implementation response:', parseError);
-
-        // If we couldn't parse the response, notify in Linear and throw error
-        await this.linearClient.createComment({
-          issueId: issue.id,
-          body: `I generated a technical analysis but encountered an error when implementing the code changes. Please review the technical report and implement manually.`,
-        });
-
-        const errorMessage =
-          parseError instanceof Error
-            ? parseError.message
-            : 'Unknown parsing error';
-
-        throw new Error(
-          `Could not process implementation changes: ${errorMessage}`
-        );
-      }
-    } catch (error: any) {
-      console.error('Failed to generate implementation changes:', error);
-      throw new Error(
-        `Could not generate implementation changes: ${
-          error.message || 'Unknown error'
-        }`
-      );
+      // Add label to indicate analysis is complete
+      await this.addLabel(issue.id, 'technical-analysis');
+    } catch (error: unknown) {
+      console.error(`Error executing technical analysis:`, error);
+      await this.linearClient.createComment({
+        issueId: issue.id,
+        body: `I encountered an error while performing the technical analysis: ${
+          error instanceof Error ? error.message : 'Unknown error'
+        }`,
+      });
+      await this.updateIssueStatus(issue.identifier, 'Todo');
     }
   }
 
   /**
-   * Parse the diff-based response format into code changes
+   * Check if the text contains a stack trace
    */
-  private parseDiffResponse(
-    response: string,
-    originalFiles: Array<{ path: string; content: string; repository?: string }>
-  ): Array<{
-    path: string;
-    content: string;
-    message: string;
-    repository: string;
-  }> {
-    // Split the response into change blocks
-    const changeBlocks = response
-      .split(/^#{2}\s+CHANGE\s+\d+/gm)
-      .filter((block) => block.trim().length > 0);
+  private containsStackTrace(text: string): boolean {
+    const stackTracePatterns = [
+      /at\s+[\w$.]+\s+\(.*:\d+:\d+\)/i, // JavaScript/TypeScript stack trace
+      /Error:.*\n\s+at\s+/i, // Error followed by stack trace
+      /File ".*", line \d+, in \w+/i, // Python-like stack trace
+      /Exception in thread .*java\.\w+\.\w+/i, // Java exception
+      /Traceback \(most recent call last\):/i, // Python traceback
+    ];
 
-    if (changeBlocks.length === 0) {
-      console.log('No change blocks found in response');
-      return [];
-    }
-
-    console.log(`Found ${changeBlocks.length} change blocks to process`);
-
-    const changes: Array<{
-      path: string;
-      content: string;
-      message: string;
-      repository: string;
-    }> = [];
-
-    for (const block of changeBlocks) {
-      try {
-        // Extract repository, file path and description
-        const repoMatch = block.match(/Repository:\s+([^\n]+)/);
-        const fileMatch = block.match(/File:\s+([^\n]+)/);
-        const descMatch = block.match(/Description:\s+([^\n]+)/);
-
-        if (!repoMatch || !fileMatch) {
-          console.warn('Skipping block without repository or file path');
-          continue;
-        }
-
-        const repository = repoMatch[1].trim();
-        const filePath = this.sanitizePath(fileMatch[1].trim());
-        const message = descMatch ? descMatch[1].trim() : `Update ${filePath}`;
-
-        // Extract the diff content
-        const diffMatch = block.match(/```diff\n([\s\S]*?)```/);
-
-        if (!diffMatch) {
-          console.warn(`No diff content found for ${filePath}`);
-          continue;
-        }
-
-        const diffContent = diffMatch[1];
-
-        // Find the original file content, respecting repository context
-        // First try to find an exact match by path and repository
-        let originalFile = originalFiles.find(
-          (f) => f.path === filePath && f.repository === repository
-        );
-
-        // If not found, fall back to just matching by path
-        if (!originalFile) {
-          originalFile = originalFiles.find((f) => f.path === filePath);
-        }
-
-        const originalContent = originalFile ? originalFile.content : '';
-
-        // Apply the diff to get the new content
-        const newContent = this.applyDiff(originalContent, diffContent);
-
-        // Validate if the repository exists in the allowed list
-        if (!this.allowedRepositories.includes(repository)) {
-          console.warn(
-            `Specified repository "${repository}" is not in the allowed list. Checking for similar repositories...`
-          );
-
-          // Try to find a similar repository name (handle typos, etc)
-          const similarRepo = this.allowedRepositories.find(
-            (r) =>
-              r
-                .toLowerCase()
-                .includes(repository.toLowerCase().split('/')[1]) ||
-              repository.toLowerCase().includes(r.toLowerCase().split('/')[1])
-          );
-
-          if (similarRepo) {
-            console.log(
-              `Using similar repository "${similarRepo}" instead of "${repository}"`
-            );
-            changes.push({
-              path: filePath,
-              content: newContent,
-              message,
-              repository: similarRepo,
-            });
-          } else {
-            console.warn(
-              `Skipping change for invalid repository: ${repository}`
-            );
-          }
-          continue;
-        }
-
-        changes.push({
-          path: filePath,
-          content: newContent,
-          message,
-          repository,
-        });
-      } catch (error) {
-        console.error('Error processing change block:', error);
-        // Continue with other blocks
-      }
-    }
-
-    return changes;
+    return stackTracePatterns.some((pattern) => pattern.test(text));
   }
 
   /**
-   * Apply a diff to original content to get the new content
+   * Load the content of files from GitHub
    */
-  private applyDiff(originalContent: string, diffContent: string): string {
-    // Split content into lines
-    const lines = originalContent.split('\n');
+  private async loadFileContents(
+    files: Array<{ path: string; repository: string; content?: string }>
+  ): Promise<Array<{ path: string; repository: string; content: string }>> {
+    const result: Array<{ path: string; repository: string; content: string }> =
+      [];
 
-    // Process each line of the diff
-    const diffLines = diffContent.split('\n');
-    let lineIndex = 0;
-    const newLines: string[] = [];
-
-    // A simple tracking system to find context matches
-    let contextLines: string[] = [];
-    let addedLines: string[] = [];
-    let removedLines: string[] = [];
-    let processingChange = false;
-
-    for (const line of diffLines) {
-      // Skip comment lines in the diff
-      if (line.trim().startsWith('//') || line.trim() === '') {
+    for (const file of files) {
+      // Skip files that already have content
+      if (file.content) {
+        result.push(
+          file as { path: string; repository: string; content: string }
+        );
         continue;
       }
 
-      if (line.startsWith('+') && !line.startsWith('++')) {
-        // Added line
-        addedLines.push(line.substring(1));
-        processingChange = true;
-      } else if (line.startsWith('-') && !line.startsWith('--')) {
-        // Removed line
-        removedLines.push(line.substring(1));
-        processingChange = true;
-      } else if (!line.startsWith('+') && !line.startsWith('-')) {
-        // Context line
+      try {
+        const [owner, repo] = file.repository.split('/');
+        const response = await this.octokit.rest.repos.getContent({
+          owner,
+          repo,
+          path: file.path,
+        });
 
-        // If we were processing a change and now hit context, apply the change
-        if (processingChange) {
-          // Find matching context in the original file
-          const contextMatch = this.findContextMatch(
-            lines,
-            contextLines,
-            lineIndex
-          );
-
-          if (contextMatch >= 0) {
-            // Apply the change at the matched position
-            lineIndex = contextMatch;
-
-            // Remove the specified lines
-            if (removedLines.length > 0) {
-              lines.splice(lineIndex, removedLines.length);
-            }
-
-            // Add the new lines
-            if (addedLines.length > 0) {
-              lines.splice(lineIndex, 0, ...addedLines);
-              lineIndex += addedLines.length;
-            }
-
-            // Reset for next change
-            contextLines = [];
-            addedLines = [];
-            removedLines = [];
+        // Handle file content
+        if ('content' in response.data && 'encoding' in response.data) {
+          let content = '';
+          if (response.data.encoding === 'base64') {
+            content = Buffer.from(response.data.content, 'base64').toString(
+              'utf-8'
+            );
+          } else {
+            content = response.data.content;
           }
 
-          processingChange = false;
+          result.push({
+            path: file.path,
+            repository: file.repository,
+            content,
+          });
         }
-
-        // Store context line for matching
-        contextLines.push(line.trim());
+      } catch (error: unknown) {
+        console.error(
+          `Error loading content for ${file.repository}/${file.path}:`,
+          error instanceof Error ? error.message : String(error)
+        );
       }
     }
 
-    // Apply any final change
-    if (processingChange && contextLines.length > 0) {
-      const contextMatch = this.findContextMatch(
-        lines,
-        contextLines,
-        lineIndex
-      );
-
-      if (contextMatch >= 0) {
-        lineIndex = contextMatch;
-
-        // Remove the specified lines
-        if (removedLines.length > 0) {
-          lines.splice(lineIndex, removedLines.length);
-        }
-
-        // Add the new lines
-        if (addedLines.length > 0) {
-          lines.splice(lineIndex, 0, ...addedLines);
-        }
-      }
-    }
-
-    // Handle special case: entirely new file
-    if (originalContent === '' && addedLines.length > 0) {
-      return addedLines.join('\n');
-    }
-
-    return lines.join('\n');
+    return result;
   }
 
   /**
-   * Find the position in the file where the context matches
+   * Build a prompt for technical analysis
    */
-  private findContextMatch(
-    fileLines: string[],
-    contextLines: string[],
-    startIndex: number
-  ): number {
-    // If no context lines, return current position
-    if (contextLines.length === 0) {
-      return startIndex;
+  private async buildTechnicalAnalysisPrompt(
+    issue: Issue,
+    fileContext: string,
+    hasStackTrace: boolean,
+    relevantFilePaths: string
+  ): Promise<string> {
+    const issueContext = `
+# Issue Details
+ID: ${issue.identifier}
+Title: ${issue.title}
+Description:
+${issue.description || 'No description provided'}
+`;
+
+    let additionalContext = '';
+
+    // Add stack trace notice if detected
+    if (hasStackTrace) {
+      additionalContext +=
+        '## Stack Trace Analysis\nThe issue description appears to contain a stack trace. Please analyze it to identify the root cause of the error.\n\n';
     }
 
-    // Try to find the context starting from the current position
-    for (let i = startIndex; i < fileLines.length; i++) {
-      let matched = true;
+    // Add repo and file information
+    additionalContext += `## Relevant Files\nThese files were identified as potentially relevant to the issue:\n${relevantFilePaths}\n\n`;
 
-      for (let j = 0; j < contextLines.length; j++) {
-        if (
-          i + j >= fileLines.length ||
-          fileLines[i + j].trim() !== contextLines[j]
-        ) {
-          matched = false;
-          break;
-        }
-      }
+    return `# Technical Analysis Request
 
-      if (matched) {
-        return i;
-      }
-    }
+${issueContext}
 
-    // If not found from current position, search from the beginning
-    if (startIndex > 0) {
-      for (let i = 0; i < startIndex; i++) {
-        let matched = true;
+${additionalContext}
 
-        for (let j = 0; j < contextLines.length; j++) {
-          if (
-            i + j >= fileLines.length ||
-            fileLines[i + j].trim() !== contextLines[j]
-          ) {
-            matched = false;
-            break;
-          }
-        }
+## Codebase Files
+${fileContext}
 
-        if (matched) {
-          return i;
-        }
-      }
-    }
+Please analyze the provided code snippets in relation to the described issue and provide a comprehensive technical report with:
 
-    // Not found, return -1
-    return -1;
+1. A high-level summary of the issue
+2. The root cause analysis 
+3. Specific problematic code patterns
+4. Recommended fixes with code examples
+5. Implementation plan with specific file changes needed
+
+Format your response as Markdown with the following structure:
+
+## Summary
+
+[Non-technical very short summary grounded in the code]
+
+## Technical Root Cause Analysis
+
+### Core Issues Identified
+1. [Issue 1]
+2. [Issue 2]
+
+### Problematic Code Pattern
+\`\`\`
+[Code Snippet]
+\`\`\`
+
+### Recommended Fixes
+1. [Fix 1]
+2. [Fix 2]
+
+## Implementation Plan
+1. [Step 1 with file path]
+2. [Step 2 with file path]
+`;
   }
 
   /**
-   * Sanitizes a file path to ensure it's correctly formatted
+   * Extract repositories mentioned in a report string
    */
-  private sanitizePath(path: string): string {
-    // Remove leading slashes
-    return path.replace(/^\/+/, '');
+  private extractRepositoriesFromReport(report: string): string {
+    if (!report) {
+      return 'none explicitly mentioned';
+    }
+
+    // Patterns to match repository mentions
+    const repoPatterns = [
+      // Format: "Repository: owner/repo"
+      /repository\s*:\s*([a-zA-Z0-9_.-]+\/[a-zA-Z0-9_.-]+)/gi,
+      // Format: "In owner/repo"
+      /\bin\s+([a-zA-Z0-9_.-]+\/[a-zA-Z0-9_.-]+)/gi,
+      // Format: "owner/repo repository"
+      /\b([a-zA-Z0-9_.-]+\/[a-zA-Z0-9_.-]+)\s+repository\b/gi,
+      // Format: "owner/repo repo"
+      /\b([a-zA-Z0-9_.-]+\/[a-zA-Z0-9_.-]+)\s+repo\b/gi,
+      // Format: "repo: owner/repo"
+      /\brepo\s*:\s*([a-zA-Z0-9_.-]+\/[a-zA-Z0-9_.-]+)/gi,
+      // Format: bare "owner/repo"
+      /\b([a-zA-Z0-9_.-]+\/[a-zA-Z0-9_.-]+)\b/g,
+    ];
+
+    const repos = new Set<string>();
+
+    // Match all patterns
+    for (const pattern of repoPatterns) {
+      let match;
+      while ((match = pattern.exec(report)) !== null) {
+        // Verify it's a likely repository name by checking it against allowed repos
+        const repo = match[1].trim();
+        if (this.allowedRepositories.includes(repo)) {
+          repos.add(repo);
+        }
+      }
+    }
+
+    return repos.size > 0
+      ? Array.from(repos).join(', ')
+      : 'none explicitly mentioned';
   }
 
   /**
-   * Update the priority of a Linear issue
+   * Update the priority of an issue
    */
   private async updateIssuePriority(
     issueId: string,
     priority: number
   ): Promise<void> {
     try {
-      // Validate priority value (Linear uses 1-4)
-      if (priority < 1 || priority > 4) {
-        throw new Error('Priority must be between 1 and 4');
-      }
-
-      // Fetch the issue
       const issue = await this.linearClient.issue(issueId);
-
-      // Update the issue with the new priority
-      await issue.update({
-        priority,
-      });
-
-      // Map priority number to text for better readability
-      const priorityText = {
-        1: 'Urgent',
-        2: 'High',
-        3: 'Medium',
-        4: 'Low',
-      }[priority];
-
-      console.log(
-        `Updated issue ${issue.identifier} priority to "${priorityText}" (${priority})`
+      await issue.update({ priority });
+      console.log(`Updated priority for issue ${issueId} to ${priority}`);
+    } catch (error: unknown) {
+      console.error(
+        `Error updating priority for issue ${issueId}:`,
+        error instanceof Error ? error.message : String(error)
       );
-
-      // Notify in the issue comments
-      await this.linearClient.createComment({
-        issueId: issue.id,
-        body: `I've updated the priority to **${priorityText}**.`,
-      });
-    } catch (error) {
-      console.error(`Error updating issue priority:`, error);
-      throw error;
     }
   }
 
   /**
-   * Extract repository mentions from a technical report
-   * This helps debug which repositories are being identified during analysis
+   * Find the technical report in issue comments
    */
-  private extractRepositoriesFromReport(report: string): string {
-    const repoMentions: Set<string> = new Set();
+  private async findTechnicalReportInComments(
+    issue: Issue
+  ): Promise<string | null> {
+    try {
+      // Get comments for the issue
+      const comments = await this.linearClient.comments({
+        filter: {
+          issue: { id: { eq: issue.id } },
+        },
+      });
 
-    // Match patterns like "repository: owner/repo" or "in the owner/repo repository"
-    const repoPatterns = [
-      /(?:repository|repo):\s*([a-zA-Z0-9_-]+\/[a-zA-Z0-9_-]+)/gi,
-      /in\s+the\s+([a-zA-Z0-9_-]+\/[a-zA-Z0-9_-]+)\s+(?:repository|repo)/gi,
-      /([a-zA-Z0-9_-]+\/[a-zA-Z0-9_-]+)\s+(?:repository|repo)/gi,
-      /file\s+in\s+([a-zA-Z0-9_-]+\/[a-zA-Z0-9_-]+)/gi,
-    ];
+      // Find the comment containing a technical report
+      // Look for markers like "## Summary" and "## Technical Root Cause Analysis"
+      for (const comment of comments.nodes) {
+        const content = comment.body || '';
 
-    for (const pattern of repoPatterns) {
-      let match;
-      while ((match = pattern.exec(report)) !== null) {
-        repoMentions.add(match[1]);
+        if (
+          content.includes('## Summary') &&
+          (content.includes('## Technical Root Cause Analysis') ||
+            content.includes('## Root Cause Analysis'))
+        ) {
+          return content;
+        }
+      }
+
+      return null;
+    } catch (error: unknown) {
+      console.error(
+        `Error finding technical report for issue ${issue.identifier}:`,
+        error instanceof Error ? error.message : String(error)
+      );
+      return null;
+    }
+  }
+
+  /**
+   * Generate a technical report for an issue
+   */
+  private async generateTechnicalReport(issue: Issue): Promise<string> {
+    // Check if we already have a technical report
+    const existingReport = await this.findTechnicalReportInComments(issue);
+    if (existingReport) {
+      return existingReport;
+    }
+
+    // Execute technical analysis to generate a report
+    await this.executeTechnicalAnalysis(issue);
+
+    // Now try to find the report that was just created
+    const report = await this.findTechnicalReportInComments(issue);
+    if (!report) {
+      throw new Error(
+        `Failed to generate technical report for issue ${issue.identifier}`
+      );
+    }
+
+    return report;
+  }
+
+  /**
+   * Plan code changes based on a technical report and implementation plan
+   */
+  private async planCodeChanges(
+    issue: Issue,
+    technicalReport: string
+  ): Promise<any> {
+    // Extract implementation plan from technical report
+    const implementationPlanMatch = technicalReport.match(
+      /## Implementation Plan\s+([\s\S]+?)(?:\n#|$)/
+    );
+
+    if (!implementationPlanMatch) {
+      throw new Error('No implementation plan found in technical report');
+    }
+
+    const implementationPlan = implementationPlanMatch[1].trim();
+
+    // Get repositories mentioned in the report
+    const repositories = this.extractRepositoriesFromReport(technicalReport);
+
+    return {
+      issue,
+      technicalReport,
+      implementationPlan,
+      repositories,
+    };
+  }
+
+  /**
+   * Generate code changes based on a technical report and implementation plan
+   */
+  private async generateCodeChanges(
+    issueId: string,
+    technicalReport: string,
+    implementationPlan: string
+  ): Promise<any[]> {
+    // Extract repositories from the report
+    const repoString = this.extractRepositoriesFromReport(technicalReport);
+    const repositories =
+      repoString === 'none explicitly mentioned'
+        ? this.allowedRepositories
+        : repoString.split(',').map((r) => r.trim());
+
+    if (repositories.length === 0) {
+      throw new Error('No repositories identified for implementation');
+    }
+
+    // Prepare prompt for code generation
+    const prompt = `
+# Technical Report and Implementation Plan
+${technicalReport}
+
+# Task
+Based on the technical report and implementation plan above, generate the necessary code changes.
+Your response should include only a JSON array where each element represents a change to a specific file.
+No explanations or comments outside the JSON structure.
+
+Each change object must have:
+- path: the file path (relative to repo root, should NOT start with a slash)
+- repository: the GitHub repository in format "owner/repo"
+- content: the entire content of the file after changes
+
+Example format:
+[
+  {
+    "path": "src/example.ts",
+    "repository": "owner/repo",
+    "content": "// Full file content after changes"
+  }
+]
+`;
+
+    try {
+      // Use OpenAI to generate code changes
+      const response = await openai.chat.completions.create({
+        model: 'gpt-4o',
+        messages: [
+          {
+            role: 'system',
+            content: prompt,
+          },
+        ],
+        temperature: 0.2,
+      });
+
+      const content = response.choices[0].message.content || '';
+
+      // Try to parse the response as JSON
+      try {
+        const changes = JSON.parse(content);
+        console.log('Successfully parsed code changes response');
+
+        // Validate each change
+        const validChanges = changes.filter((change: any) => {
+          if (!change.path || !change.repository || !change.content) {
+            console.warn(
+              'Invalid change object missing required fields',
+              change
+            );
+            return false;
+          }
+
+          // Ensure paths don't start with slash
+          if (change.path.startsWith('/')) {
+            change.path = change.path.substring(1);
+          }
+
+          return true;
+        });
+
+        return validChanges;
+      } catch (error: unknown) {
+        console.error(
+          'Failed to parse code changes response:',
+          error instanceof Error ? error.message : String(error)
+        );
+        throw new Error('Failed to parse code changes response');
+      }
+    } catch (error: unknown) {
+      console.error(
+        'Error generating code changes:',
+        error instanceof Error ? error.message : String(error)
+      );
+      throw new Error('Failed to generate code changes');
+    }
+  }
+
+  /**
+   * Implement changes in repository for the issue
+   */
+  private async implementChanges(issue: Issue): Promise<void> {
+    try {
+      // 1. Generate or retrieve technical report
+      const technicalReport = await this.generateTechnicalReport(issue);
+
+      // 2. Plan code changes based on technical report
+      const changePlan = await this.planCodeChanges(issue, technicalReport);
+
+      // 3. Generate code changes
+      const changes = await this.generateCodeChanges(
+        issue.identifier,
+        technicalReport,
+        changePlan.implementationPlan
+      );
+
+      if (!changes || changes.length === 0) {
+        await this.linearClient.createComment({
+          issueId: issue.id,
+          body: "I couldn't generate any code changes based on the technical analysis. Please provide more details or clarify the implementation requirements.",
+        });
+        return;
+      }
+
+      // 4. Create PRs for repositories with changes
+      const prUrls: string[] = [];
+      const changesByRepo = new Map<string, any[]>();
+
+      // Group changes by repository
+      for (const change of changes) {
+        if (!changesByRepo.has(change.repository)) {
+          changesByRepo.set(change.repository, []);
+        }
+        changesByRepo.get(change.repository)!.push({
+          path: change.path,
+          content: change.content,
+        });
+      }
+
+      // For each repository, create a branch and implement changes
+      for (const [repo, repoChanges] of changesByRepo.entries()) {
+        try {
+          // Create branch name based on issue
+          const branchName =
+            `fix/${issue.identifier.toLowerCase()}-${Date.now()}`.replace(
+              /[^a-zA-Z0-9-_]/g,
+              '-'
+            );
+
+          // Create PR with all changes
+          const prResult = await this.createPullRequest(
+            issue,
+            repo,
+            branchName,
+            repoChanges,
+            `Fixes ${issue.identifier}: ${issue.title}\n\n${technicalReport}`
+          );
+
+          prUrls.push(prResult.url);
+
+          // Add PR as attachment to issue
+          await this.linearClient.createAttachment({
+            issueId: issue.id,
+            title: `PR: ${repo}`,
+            url: prResult.url,
+          });
+        } catch (error: unknown) {
+          console.error(`Error creating PR for ${repo}:`, error);
+          await this.linearClient.createComment({
+            issueId: issue.id,
+            body: `⚠️ Error creating PR for repository ${repo}: ${
+              error instanceof Error ? error.message : 'Unknown error'
+            }`,
+          });
+        }
+      }
+
+      // 5. Update issue with PR links
+      if (prUrls.length > 0) {
+        await this.linearClient.createComment({
+          issueId: issue.id,
+          body: `✅ Created ${
+            prUrls.length
+          } pull request(s) to implement these changes:\n\n${prUrls
+            .map((url) => `- ${url}`)
+            .join('\n')}`,
+        });
+
+        // 6. Add PR label to the issue
+        await this.addLabel(issue.identifier, 'has-pr');
+
+        // 7. Move issue to 'In Review' state
+        await this.updateIssueStatus(issue.identifier, 'In Review');
+      }
+    } catch (error: unknown) {
+      console.error(
+        `Error implementing changes for issue ${issue.identifier}:`,
+        error instanceof Error ? error.message : String(error)
+      );
+
+      await this.linearClient.createComment({
+        issueId: issue.id,
+        body: `I encountered an error while implementing changes: ${
+          error instanceof Error ? error.message : 'Unknown error'
+        }`,
+      });
+    }
+  }
+
+  private async createPullRequest(
+    issue: Issue,
+    repository: string,
+    branchName: string,
+    changes: Array<{ path: string; content: string }>,
+    description: string
+  ): Promise<{ url: string; number: number }> {
+    const [owner, repo] = repository.split('/');
+
+    // First create the branch
+    await this.prManager.createBranch(branchName, repository);
+
+    // Then implement the changes
+    for (const change of changes) {
+      try {
+        // Get current content if file exists
+        let currentContent = '';
+        try {
+          currentContent = await this.prManager.getFileContent(
+            change.path,
+            repository
+          );
+        } catch (error) {
+          // File may not exist yet
+        }
+
+        // Create commit for this change
+        await this.octokit.repos.createOrUpdateFileContents({
+          owner,
+          repo,
+          path: change.path,
+          message: `Update ${change.path} for ${issue.identifier}`,
+          content: Buffer.from(change.content).toString('base64'),
+          branch: branchName,
+          ...(currentContent
+            ? {
+                sha: await this.getFileSha(
+                  owner,
+                  repo,
+                  change.path,
+                  branchName
+                ),
+              }
+            : {}),
+        });
+      } catch (error: unknown) {
+        console.error(`Error implementing change for ${change.path}:`, error);
+        throw error;
       }
     }
 
-    return Array.from(repoMentions).join(', ') || 'none explicitly mentioned';
+    // Create pull request
+    const pr = await this.octokit.pulls.create({
+      owner,
+      repo,
+      title: `Fix ${issue.identifier}: ${issue.title}`,
+      body: description,
+      head: branchName,
+      base: 'main', // This should be configurable
+    });
+
+    return {
+      url: pr.data.html_url,
+      number: pr.data.number,
+    };
+  }
+
+  private async getFileSha(
+    owner: string,
+    repo: string,
+    path: string,
+    branch: string
+  ): Promise<string> {
+    const response = await this.octokit.repos.getContent({
+      owner,
+      repo,
+      path,
+      ref: branch,
+    });
+
+    if (!('sha' in response.data)) {
+      throw new Error(`Could not get SHA for ${path}`);
+    }
+
+    return response.data.sha;
   }
 }

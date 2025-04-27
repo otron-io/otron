@@ -1,9 +1,13 @@
 import { Issue, LinearClient, User } from '@linear/sdk';
 import OpenAI from 'openai';
 import { env } from './env.js';
+import { Octokit } from '@octokit/rest';
+import { PRManager } from './pr-manager.js';
+import { CodeAnalyzer } from './code-analysis.js';
 import {
   buildTechnicalAnalysisPrompt,
   buildChangePlanPrompt,
+  buildEnhancedAnalysisPrompt,
 } from './prompts.js';
 
 // Initialize OpenAI client
@@ -18,10 +22,35 @@ interface CodeFile {
 }
 
 export class TechnicalAnalysisService {
-  constructor(private linearClient: LinearClient) {}
+  private octokit: Octokit;
+  private prManager: PRManager;
+  private codeAnalyzer: CodeAnalyzer;
+  private allowedRepositories: string[] = [];
+
+  constructor(private linearClient: LinearClient) {
+    this.octokit = new Octokit({
+      auth: env.GITHUB_TOKEN,
+    });
+
+    this.prManager = new PRManager(linearClient);
+
+    // Parse allowed repositories from env variable
+    if (env.ALLOWED_REPOSITORIES) {
+      this.allowedRepositories = env.ALLOWED_REPOSITORIES.split(',').map((r) =>
+        r.trim()
+      );
+    }
+
+    // Initialize the code analyzer
+    this.codeAnalyzer = new CodeAnalyzer(
+      this.octokit,
+      this.prManager,
+      this.allowedRepositories
+    );
+  }
 
   /**
-   * Generate a technical analysis report for an issue
+   * Generate a technical analysis report for an issue using enhanced code analysis
    */
   async generateTechnicalReport(
     issue: Issue,
@@ -47,8 +76,19 @@ export class TechnicalAnalysisService {
       .map(([repo, count]) => `- ${repo}: ${count} files`)
       .join('\n');
 
+    // Use enhanced analysis to build a deeper understanding of the code
+    const enhancedAnalysis = await this.performEnhancedAnalysis(
+      issue,
+      codeFiles
+    );
+
     // Format code files for analysis, including repository information
-    const codeContext = this.formatCodeForAnalysis(codeFiles);
+    const codeContext = this.formatCodeForAnalysis(
+      enhancedAnalysis.relevantFiles
+    );
+
+    // Prepare enhanced technical context based on the analysis
+    const enhancedContext = this.prepareEnhancedContext(enhancedAnalysis);
 
     // Provide clear context about repository relevance
     const repoContext = `
@@ -58,16 +98,21 @@ The code spans across multiple repositories. Here's the distribution of files:
 ${repoDistributionText}
 
 Important instructions:
-1. Consider ALL repositories equally when analyzing the issue.
-2. Identify which repositories contain the relevant code and which repositories will need changes.
-3. Clearly specify which repository each file belongs to and where changes need to be made.
-4. Do not bias your analysis toward any particular repository - evaluate all repositories based on their technical relevance to the issue.
-5. In your implementation plan, ensure you address changes needed in ALL relevant repositories, not just the one with the most files.
+1. Focus on identifying precisely which repositories ACTUALLY contain the code relevant to the issue.
+2. DO NOT suggest changes in repositories just for the sake of distribution or balance.
+3. Changes should ONLY be made in repositories that genuinely need modification to address the issue.
+4. Pay careful attention to the programming language and framework of each file to ensure changes are made in the correct repository.
+5. If the issue only requires changes in a single repository, only recommend changes in that repository.
+6. Identify the primary repository where the core issue exists, and only suggest additional repository changes if they're absolutely necessary.
 `;
 
-    const fullAdditionalContext = additionalContext
-      ? `${additionalContext}\n\n${repoContext}`
-      : repoContext;
+    const fullAdditionalContext = [
+      additionalContext,
+      repoContext,
+      enhancedContext,
+    ]
+      .filter(Boolean)
+      .join('\n\n');
 
     // Generate the technical report using the AI model
     try {
@@ -92,6 +137,228 @@ Important instructions:
       console.error('Error generating technical report:', error);
       throw new Error('Failed to generate technical analysis report');
     }
+  }
+
+  /**
+   * Perform enhanced code analysis to build a deeper understanding of the codebase
+   */
+  private async performEnhancedAnalysis(
+    issue: Issue,
+    initialFiles: Array<{ path: string; content: string; repository?: string }>
+  ) {
+    // Ensure repository information is present
+    const filesWithRepo = initialFiles.map((file) => {
+      if (!file.repository && this.allowedRepositories.length > 0) {
+        // If no repository specified, use the first allowed repository as a fallback
+        return { ...file, repository: this.allowedRepositories[0] };
+      }
+      return file;
+    });
+
+    // Extract potential stack traces from the issue description
+    const stackTraces = this.extractStackTraces(issue.description || '');
+    let stackTraceFiles: Array<{
+      path: string;
+      content: string;
+      repository: string;
+      lineNumber: number;
+    }> = [];
+
+    if (stackTraces.length > 0) {
+      for (const trace of stackTraces) {
+        const files = await this.codeAnalyzer.parseStackTrace(trace);
+        stackTraceFiles.push(...files);
+      }
+    }
+
+    // Convert stack trace files to regular files but preserve their line numbers for context
+    const stackTraceFilesConverted = stackTraceFiles.map((file) => ({
+      path: file.path,
+      content: this.highlightErrorLine(file.content, file.lineNumber),
+      repository: file.repository,
+    }));
+
+    // Combine initial files with stack trace files
+    const allInitialFiles = [...filesWithRepo, ...stackTraceFilesConverted];
+
+    // Filter out any files that don't have a repository specified
+    const filesWithDefinedRepo = allInitialFiles.filter(
+      (file): file is { path: string; content: string; repository: string } =>
+        typeof file.repository === 'string'
+    );
+
+    // Perform progressive analysis to find more relevant files and understand relationships
+    const analysis = await this.codeAnalyzer.progressiveAnalysis(
+      issue,
+      filesWithDefinedRepo
+    );
+
+    // For key repositories, get the codebase structure for additional context
+    const codebaseStructures: Record<string, string> = {};
+    for (const repo of this.allowedRepositories) {
+      codebaseStructures[repo] = await this.codeAnalyzer.getCodebaseStructure(
+        repo
+      );
+    }
+
+    return {
+      ...analysis,
+      codebaseStructures,
+      stackTraceFiles,
+    };
+  }
+
+  /**
+   * Prepare enhanced context for the AI based on advanced code analysis
+   */
+  private prepareEnhancedContext(analysis: {
+    relevantFiles: Array<{ path: string; content: string; repository: string }>;
+    bugHypothesis: string;
+    callGraph: Map<string, string[]>;
+    functionDetails: Map<string, string>;
+    dataFlowPaths: Map<string, string[]>;
+    relatedCommits: Array<{ sha: string; message: string; url: string }>;
+    codebaseStructures: Record<string, string>;
+    stackTraceFiles: Array<{
+      path: string;
+      content: string;
+      repository: string;
+      lineNumber: number;
+    }>;
+  }): string {
+    let context = `# Enhanced Code Analysis\n\n`;
+
+    // Add bug hypothesis if available
+    if (analysis.bugHypothesis) {
+      context += `## Bug Hypothesis\n${analysis.bugHypothesis}\n\n`;
+    }
+
+    // Add function call relationships
+    context += `## Function Call Relationships\n`;
+    if (analysis.callGraph.size > 0) {
+      context += `The following function relationships were detected:\n\n`;
+
+      // Convert call graph to a more readable format
+      const callGraphEntries = Array.from(analysis.callGraph.entries())
+        .filter(([_, calls]) => calls.length > 0) // Only show functions with calls
+        .slice(0, 10); // Limit to top 10 for brevity
+
+      for (const [func, calls] of callGraphEntries) {
+        const [repo, filePath, funcName] = func.split(/:|#/);
+        context += `- \`${funcName}\` in \`${filePath}\` calls: ${calls.join(
+          ', '
+        )}\n`;
+      }
+      context += `\n`;
+    } else {
+      context += `No clear function relationships detected.\n\n`;
+    }
+
+    // Add data flow information
+    context += `## Data Flow Analysis\n`;
+    if (analysis.dataFlowPaths.size > 0) {
+      context += `The following data elements appear in multiple places:\n\n`;
+
+      for (const [
+        dataElement,
+        references,
+      ] of analysis.dataFlowPaths.entries()) {
+        if (references.length > 1) {
+          // Only show elements with multiple references
+          context += `- \`${dataElement}\` is referenced in:\n`;
+          for (const ref of references.slice(0, 5)) {
+            // Limit to top 5 for brevity
+            context += `  - ${ref}\n`;
+          }
+          if (references.length > 5) {
+            context += `  - ... and ${references.length - 5} more locations\n`;
+          }
+        }
+      }
+      context += `\n`;
+    } else {
+      context += `No clear data flow patterns detected.\n\n`;
+    }
+
+    // Add related commits if available
+    if (analysis.relatedCommits.length > 0) {
+      context += `## Similar Bug Fixes in History\n`;
+      context += `These past commits may be relevant to this issue:\n\n`;
+
+      for (const commit of analysis.relatedCommits.slice(0, 5)) {
+        // Limit to top 5
+        context += `- "${
+          commit.message.split('\n')[0]
+        }" (${commit.sha.substring(0, 7)})\n`;
+      }
+      context += `\n`;
+    }
+
+    // Add stack trace information if available
+    if (analysis.stackTraceFiles.length > 0) {
+      context += `## Error Locations\n`;
+      context += `These files contain lines mentioned in error stack traces:\n\n`;
+
+      for (const file of analysis.stackTraceFiles) {
+        context += `- ${file.repository}:${file.path}:${file.lineNumber}\n`;
+      }
+      context += `\n`;
+    }
+
+    // Add repository structure summaries
+    context += `## Repository Structures\n`;
+    for (const [repo, structure] of Object.entries(
+      analysis.codebaseStructures
+    )) {
+      context += `### ${repo}\n`;
+      context += `${structure.split('\n').slice(0, 10).join('\n')}\n`;
+      if (structure.split('\n').length > 10) {
+        context += `... (structure truncated)\n`;
+      }
+      context += `\n`;
+    }
+
+    return context;
+  }
+
+  /**
+   * Extract stack traces from text
+   */
+  private extractStackTraces(text: string): string[] {
+    const traces: string[] = [];
+
+    // Common stack trace patterns
+    const patterns = [
+      // JavaScript/TypeScript stack traces
+      /Error:[\s\S]*?(?:at\s+[\w.<>]+\s+\((?:[^()]+):(\d+):(\d+)\)[\s\S]*?){2,}/g,
+      // Python tracebacks
+      /Traceback \(most recent call last\):[\s\S]*?File "([^"]+)", line (\d+)[\s\S]*?(?:File "([^"]+)", line (\d+)[\s\S]*?)*\w+Error:/g,
+      // Java stack traces
+      /Exception in thread "[\w-]+" [\w.]+Exception:[\s\S]*?at [\w.]+\([\w.]+\.java:(\d+)\)[\s\S]*?(?:at [\w.]+\([\w.]+\.java:(\d+)\)[\s\S]*?)*/g,
+      // Ruby stack traces
+      /[\w:]+Error.*?:.*?(?:\n\s+from\s+([^:]+):(\d+):in `[^']+'[\s\S]*?){2,}/g,
+    ];
+
+    for (const pattern of patterns) {
+      const matches = text.match(pattern);
+      if (matches) {
+        traces.push(...matches);
+      }
+    }
+
+    return traces;
+  }
+
+  /**
+   * Highlight an error line in a file for better context
+   */
+  private highlightErrorLine(content: string, lineNumber: number): string {
+    const lines = content.split('\n');
+    if (lineNumber > 0 && lineNumber <= lines.length) {
+      // Add a comment indicating this is an error line
+      lines[lineNumber - 1] = lines[lineNumber - 1] + ' // <-- ERROR LINE';
+    }
+    return lines.join('\n');
   }
 
   /**
@@ -144,14 +411,58 @@ Important instructions:
 
     // Add this context to the prompt
     const changePlanContext = `
-# Repository Distribution
+# Repository Information
+
+The code spans across multiple repositories. Here's the distribution of files:
 ${repoContext}
 
-Please consider changes across ALL relevant repositories, not just the one with the most files.
-Specify clearly which repository each change belongs to.
+Important instructions:
+1. Focus only on the repositories that ACTUALLY need to be modified to fix the issue.
+2. DO NOT suggest changes in repositories just for the sake of distribution or balance.
+3. If the issue only requires changes in a single repository, only plan changes in that repository.
+4. Pay careful attention to the programming language and framework of each file to ensure changes are planned in the correct repository.
+5. Always specify the exact repository where each change should be made.
+6. Identify the primary repository where the core issue exists, and only suggest additional repository changes if they're absolutely necessary.
 `;
 
-    // Generate a change plan based on the report
+    // Enhance code files with dependency information
+    const filesWithRepo = codeFiles.map((file) => {
+      if (!file.repository && this.allowedRepositories.length > 0) {
+        return { ...file, repository: this.allowedRepositories[0] };
+      }
+      return file;
+    });
+
+    // Trace dependencies to understand related code
+    const filesWithDependencies = await this.codeAnalyzer.traceCodeDependencies(
+      filesWithRepo.filter((f) => f.repository) as Array<{
+        path: string;
+        content: string;
+        repository: string;
+      }>,
+      1
+    );
+
+    // Build call graph for better understanding of code relationships
+    const { callGraph } = await this.codeAnalyzer.buildFunctionCallGraph(
+      filesWithDependencies
+    );
+
+    // Create a simple visualization of the call graph for the model
+    let callGraphContext = '## Function Call Graph\n';
+
+    const callGraphEntries = Array.from(callGraph.entries())
+      .filter(([_, calls]) => calls.length > 0)
+      .slice(0, 15); // Limit to top 15 for readability
+
+    for (const [func, calls] of callGraphEntries) {
+      const [repo, filePath, funcName] = func.split(/:|#/);
+      callGraphContext += `- Function \`${funcName}\` in \`${filePath}\` calls: ${calls.join(
+        ', '
+      )}\n`;
+    }
+
+    // Generate a change plan based on the report and enhanced context
     const response = await openai.chat.completions.create({
       model: 'gpt-4.1',
       messages: [
@@ -160,13 +471,13 @@ Specify clearly which repository each change belongs to.
           content: buildChangePlanPrompt({
             issue,
             technicalReport,
-            codeFiles,
+            codeFiles: filesWithDependencies,
             formatCodeForAnalysis: this.formatCodeForAnalysis,
           }),
         },
         {
           role: 'user',
-          content: changePlanContext,
+          content: changePlanContext + '\n\n' + callGraphContext,
         },
       ],
       temperature: 0.2,

@@ -214,17 +214,17 @@ Description: [brief description of change]
 
 # IMPORTANT REQUIREMENTS:
 1. File paths must not start with a slash. Make sure all paths are relative to the repository root.
-2. You MUST specify the correct repository (owner/repo) for EVERY change.
-3. Only use repositories from the REPOSITORIES AVAILABLE list.
-4. Use diff format to show only the changes, not entire files.
-5. Include sufficient context around changes (a few lines before/after).
-6. For each change, include a brief description explaining what the change does.
-7. If a file is entirely new, use a diff that adds the whole file.
-8. CRITICAL: Do NOT default to the first repository in the list. Select the appropriate repository based on the technical report and implementation plan.
-9. Double-check that each change is placed in the correct repository. Frontend changes should be in the frontend repository, backend changes in the backend repository, etc.
-10. If the report identifies issues in a specific repository, ensure your changes target that exact repository.
+2. ACCURACY OVER DISTRIBUTION: Only make changes in repositories that ACTUALLY contain the code that needs to be modified.
+3. DO NOT distribute changes across repositories just for the sake of balance - focus on the correct repositories.
+4. Each change must be in the repository that actually contains the file. DO NOT mix up repositories.
+5. Pay careful attention to programming language and framework - frontend code belongs in frontend repos, backend code in backend repos.
+6. If the issue only requires changes in one repository, only make changes in that repository.
+7. Use diff format to show only the changes, not entire files.
+8. Include sufficient context around changes (a few lines before/after).
+9. For each change, include a brief description explaining what the change does.
+10. If a file is entirely new, use a diff that adds the whole file.
 
-Before submitting your response, carefully review which repository each change belongs to. Changes must be implemented in the repository where the code actually exists, regardless of the order repositories are listed.
+Before submitting your response, carefully review which repository each change belongs to. Changes must be implemented in the repository where the code actually exists.
 
 RESPOND WITH ONLY THE CHANGE SPECIFICATIONS AS DESCRIBED ABOVE.
 `;
@@ -286,6 +286,91 @@ Format your response as Markdown with the following structure:
 ## Implementation Plan
 1. [Step 1 with file path]
 2. [Step 2 with file path]
+`;
+}
+
+/**
+ * Builds an enhanced prompt for technical analysis with advanced code understanding
+ */
+export function buildEnhancedAnalysisPrompt(
+  context: TechnicalAnalysisContext
+): string {
+  const { issueContext, additionalContext, codeContext } = context;
+
+  return `# Enhanced Technical Analysis Request
+
+## Issue Information
+${issueContext}
+
+${additionalContext ? `## Additional Context\n${additionalContext}\n` : ''}
+
+## Codebase Files
+${codeContext}
+
+You are a senior developer with expertise in identifying and fixing bugs in complex codebases.
+Your task is to perform a comprehensive analysis of this issue, focusing on the following:
+
+1. Root cause identification
+   - Analyze potential failure points in the code
+   - Identify race conditions, edge cases, or error handling issues
+   - Consider data flow and state management problems
+   - Look for dependency problems or version conflicts
+
+2. Code dependency analysis
+   - Examine how different components interact
+   - Identify interface mismatches or incorrect assumptions between components
+   - Map the full data flow relevant to this issue
+
+3. Bug isolation
+   - Determine the exact file and line numbers most likely containing the bug
+   - Identify when/how the bug is triggered and exact conditions
+   - Evaluate potential side effects of any fix
+
+4. Comprehensive solution design
+   - Describe a detailed, implementation-ready fix
+   - Consider maintainability, performance and security implications
+   - Propose unit tests to verify the fix and prevent regression
+
+Focus on precision - be specific about exact files, functions, and lines of code.
+Consider all provided context, especially dependency information, call graphs, and historical context.
+
+Format your response as Markdown with the following structure:
+
+## Technical Analysis Summary
+
+[Concise, high-level summary of the issue and your findings]
+
+## Root Cause Identification
+
+### Primary Issue
+[Detailed description of the core problem]
+
+### Relevant Code Paths
+[Key functions/methods involved with file paths and line numbers]
+
+## Dependency Analysis
+
+### Component Interactions
+[How different parts of the code interact to cause this issue]
+
+### Data Flow
+[How data moves through the system, where it's transformed, and where errors occur]
+
+## Bug Location
+
+### Specific Files and Lines
+[Exact location(s) of the issue with line numbers]
+
+### Triggering Conditions
+[When and how the bug manifests]
+
+## Solution Design
+
+### Implementation Plan
+[Step-by-step changes needed with exact code modifications]
+
+### Testing Strategy
+[How to verify the fix works as intended]
 `;
 }
 
