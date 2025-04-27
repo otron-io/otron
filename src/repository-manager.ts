@@ -1,4 +1,3 @@
-import { LinearClient } from '@linear/sdk';
 import { Octokit } from '@octokit/rest';
 import { env } from './env.js';
 import { GitHubAppService } from './github-app.js';
@@ -36,7 +35,6 @@ export class LocalRepositoryManager {
   private tempDir: string;
 
   constructor(
-    private linearClient: LinearClient,
     private allowedRepositories: string[] = [],
     baseTempDir: string = path.join(os.tmpdir(), 'linear-agent-repos')
   ) {

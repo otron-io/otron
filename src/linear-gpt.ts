@@ -1,16 +1,11 @@
 import { Issue, LinearClient } from '@linear/sdk';
-import { Octokit } from '@octokit/rest';
 import OpenAI from 'openai';
 import { env } from './env.js';
-import { PRManager } from './pr-manager.js';
 import { LocalRepositoryManager } from './repository-manager.js';
-import { TechnicalAnalysisService } from './technical-analysis.js';
 import {
   buildLinearGptSystemPrompt,
   getAvailableToolsDescription,
-  buildCodeImplementationPrompt,
 } from './prompts.js';
-import { GitHubAppService } from './github-app.js';
 
 // Initialize OpenAI client
 const openai = new OpenAI({
@@ -25,29 +20,19 @@ interface NotificationContext {
 }
 
 export class LinearGPT {
-  private octokit: Octokit;
-  private prManager: PRManager;
-  private technicalAnalysis: TechnicalAnalysisService;
   private allowedRepositories: string[] = [];
-  private githubAppService: GitHubAppService | null = null;
   private localRepoManager: LocalRepositoryManager;
 
   constructor(private linearClient: LinearClient) {
     // Set up GitHub client - only GitHub App authentication is supported
     if (env.GITHUB_APP_ID && env.GITHUB_APP_PRIVATE_KEY) {
-      // GitHub App mode: initialize the service
-      this.githubAppService = GitHubAppService.getInstance();
-      // Initialize with a temporary Octokit that will be replaced per-repo
-      this.octokit = new Octokit();
     } else {
       throw new Error(
         'GitHub App authentication is required. Set GITHUB_APP_ID and GITHUB_APP_PRIVATE_KEY.'
       );
     }
 
-    this.prManager = new PRManager(linearClient);
-    this.technicalAnalysis = new TechnicalAnalysisService(linearClient);
-    this.localRepoManager = new LocalRepositoryManager(linearClient);
+    this.localRepoManager = new LocalRepositoryManager();
 
     // Parse allowed repositories from env variable
     if (env.ALLOWED_REPOSITORIES) {
@@ -55,16 +40,6 @@ export class LinearGPT {
         r.trim()
       );
     }
-  }
-
-  // Add method to get appropriate octokit for a repo
-  private async getOctokitForRepo(repository: string): Promise<Octokit> {
-    if (this.githubAppService) {
-      // Using GitHub App authentication
-      return this.githubAppService.getOctokitForRepo(repository);
-    }
-    // Using PAT authentication (already initialized)
-    return this.octokit;
   }
 
   /**
@@ -116,51 +91,6 @@ export class LinearGPT {
             {
               type: 'function',
               function: {
-                name: 'performTechnicalAnalysis',
-                description:
-                  'Perform a technical analysis of the issue to understand the root cause and potential solutions',
-                parameters: {
-                  type: 'object',
-                  properties: {
-                    issueId: {
-                      type: 'string',
-                      description: 'The ID of the issue to analyze',
-                    },
-                  },
-                  required: ['issueId'],
-                },
-              },
-            },
-            {
-              type: 'function',
-              function: {
-                name: 'implementChanges',
-                description:
-                  'Implement code changes based on technical analysis and create pull requests',
-                parameters: {
-                  type: 'object',
-                  properties: {
-                    issueId: {
-                      type: 'string',
-                      description:
-                        'The ID of the issue to implement changes for',
-                    },
-                    repositories: {
-                      type: 'array',
-                      items: {
-                        type: 'string',
-                      },
-                      description:
-                        'List of repositories to implement changes in (owner/repo format)',
-                    },
-                  },
-                  required: ['issueId'],
-                },
-              },
-            },
-            {
-              type: 'function',
-              function: {
                 name: 'createComment',
                 description: 'Create a comment on a Linear issue',
                 parameters: {
@@ -187,31 +117,46 @@ export class LinearGPT {
             {
               type: 'function',
               function: {
-                name: 'searchRelevantFiles',
+                name: 'searchCodeFiles',
                 description:
-                  'Search for relevant code files related to an issue',
+                  'Search for relevant code files related to keywords',
                 parameters: {
                   type: 'object',
                   properties: {
-                    issueId: {
-                      type: 'string',
-                      description:
-                        'The ID of the issue to find relevant files for',
-                    },
                     repository: {
                       type: 'string',
                       description:
-                        'The repository to search in (owner/repo format)',
+                        'Repository to search in (owner/repo format)',
                     },
-                    keywords: {
-                      type: 'array',
-                      items: {
-                        type: 'string',
-                      },
-                      description: 'Optional list of keywords to search for',
+                    query: {
+                      type: 'string',
+                      description: 'Search query/keywords',
                     },
                   },
-                  required: ['issueId', 'repository'],
+                  required: ['repository', 'query'],
+                },
+              },
+            },
+            {
+              type: 'function',
+              function: {
+                name: 'getFileContent',
+                description:
+                  'Get the content of a specific file from a repository',
+                parameters: {
+                  type: 'object',
+                  properties: {
+                    repository: {
+                      type: 'string',
+                      description:
+                        'Repository containing the file (owner/repo format)',
+                    },
+                    path: {
+                      type: 'string',
+                      description: 'Path to the file within the repository',
+                    },
+                  },
+                  required: ['repository', 'path'],
                 },
               },
             },
@@ -389,6 +334,64 @@ export class LinearGPT {
                 },
               },
             },
+            {
+              type: 'function',
+              function: {
+                name: 'createPullRequest',
+                description: 'Create a pull request for code changes',
+                parameters: {
+                  type: 'object',
+                  properties: {
+                    repository: {
+                      type: 'string',
+                      description: 'Repository in owner/repo format',
+                    },
+                    title: {
+                      type: 'string',
+                      description: 'Title for the pull request',
+                    },
+                    description: {
+                      type: 'string',
+                      description: 'Description/body for the pull request',
+                    },
+                    branch: {
+                      type: 'string',
+                      description: 'Branch name for the changes',
+                    },
+                    baseBranch: {
+                      type: 'string',
+                      description:
+                        'Base branch to create PR against (usually main)',
+                    },
+                    changes: {
+                      type: 'array',
+                      items: {
+                        type: 'object',
+                        properties: {
+                          path: {
+                            type: 'string',
+                            description: 'Path to the file to modify',
+                          },
+                          content: {
+                            type: 'string',
+                            description: 'New content for the file',
+                          },
+                        },
+                        required: ['path', 'content'],
+                      },
+                      description: 'File changes to include in the PR',
+                    },
+                  },
+                  required: [
+                    'repository',
+                    'title',
+                    'description',
+                    'branch',
+                    'changes',
+                  ],
+                },
+              },
+            },
           ],
         });
 
@@ -418,22 +421,25 @@ export class LinearGPT {
 
               // Execute the function based on its name
               try {
-                if (functionName === 'performTechnicalAnalysis') {
-                  await this.performTechnicalAnalysis(issue);
-                  toolResponse = `Successfully performed technical analysis for issue ${issue.identifier}.`;
-                } else if (functionName === 'implementChanges') {
-                  await this.implementChanges(issue);
-                  toolResponse = `Successfully implemented changes for issue ${issue.identifier}.`;
-                } else if (functionName === 'createComment') {
+                if (functionName === 'createComment') {
                   await this.linearClient.createComment({
                     issueId: issue.id,
                     body: functionArgs.comment,
                     parentId: functionArgs.parentCommentId,
                   });
                   toolResponse = `Successfully posted comment on issue ${issue.identifier}.`;
-                } else if (functionName === 'searchRelevantFiles') {
-                  const result = await this.searchRelevantFiles(issue);
-                  toolResponse = `Found ${result.length} relevant files for issue ${issue.identifier}.`;
+                } else if (functionName === 'searchCodeFiles') {
+                  const results = await this.localRepoManager.searchCode(
+                    functionArgs.query,
+                    functionArgs.repository
+                  );
+                  toolResponse = `Found ${results.length} relevant files for query "${functionArgs.query}" in ${functionArgs.repository}.`;
+                } else if (functionName === 'getFileContent') {
+                  const content = await this.localRepoManager.getFileContent(
+                    functionArgs.path,
+                    functionArgs.repository
+                  );
+                  toolResponse = `Retrieved content for ${functionArgs.path} in ${functionArgs.repository}.`;
                 } else if (functionName === 'updateIssueStatus') {
                   await this.updateIssueStatus(
                     functionArgs.issueId,
@@ -478,6 +484,36 @@ export class LinearGPT {
                     functionArgs.priority
                   );
                   toolResponse = `Successfully updated priority of issue ${functionArgs.issueId} to ${functionArgs.priority}.`;
+                } else if (functionName === 'createPullRequest') {
+                  // Create a branch
+                  await this.localRepoManager.createBranch(
+                    functionArgs.branch,
+                    functionArgs.repository,
+                    functionArgs.baseBranch || 'main'
+                  );
+
+                  // Apply each change
+                  for (const change of functionArgs.changes) {
+                    await this.localRepoManager.createOrUpdateFile(
+                      change.path,
+                      change.content,
+                      `Update ${change.path} for PR`,
+                      functionArgs.repository,
+                      functionArgs.branch
+                    );
+                  }
+
+                  // Create pull request
+                  const pullRequest =
+                    await this.localRepoManager.createPullRequest(
+                      functionArgs.title,
+                      functionArgs.description,
+                      functionArgs.branch,
+                      functionArgs.baseBranch || 'main',
+                      functionArgs.repository
+                    );
+
+                  toolResponse = `Successfully created pull request: ${pullRequest.url}`;
                 } else {
                   toolResponse = `Unknown function: ${functionName}`;
                 }
@@ -891,617 +927,6 @@ export class LinearGPT {
   }
 
   /**
-   * Perform a technical analysis of the issue
-   */
-  private async performTechnicalAnalysis(issue: Issue): Promise<void> {
-    try {
-      // 1. Identify relevant code files with repository information
-      const relevantFiles = await this.searchRelevantFiles(issue);
-
-      // Log repository distribution for debugging
-      const repoDistribution = new Map<string, number>();
-      for (const file of relevantFiles) {
-        repoDistribution.set(
-          file.repository,
-          (repoDistribution.get(file.repository) || 0) + 1
-        );
-      }
-      console.log(`Repository distribution for ${issue.identifier}:`);
-      for (const [repo, count] of repoDistribution.entries()) {
-        console.log(`- ${repo}: ${count} files`);
-      }
-
-      // 2. Check for stack trace - this provides valuable context
-      const hasStackTrace = this.containsStackTrace(issue.description || '');
-      if (hasStackTrace) {
-        console.log(`Stack trace detected in issue ${issue.identifier}`);
-      }
-
-      // 3. Generate or get technical report from existing comments
-      let technicalReport = await this.findTechnicalReportInComments(issue);
-
-      if (!technicalReport) {
-        console.log(`Generating technical report for ${issue.identifier}`);
-        technicalReport = await this.generateTechnicalReport(issue);
-
-        // Add the technical report as a comment
-        await this.linearClient.createComment({
-          issueId: issue.id,
-          body: `## Technical Analysis Report\n\n${technicalReport}`,
-        });
-      }
-
-      // 4. Plan code changes using enhanced analysis
-      console.log(`Planning code changes for ${issue.identifier}`);
-      const changePlan = await this.planCodeChanges(issue, technicalReport);
-
-      // Add the change plan as a comment
-      await this.linearClient.createComment({
-        issueId: issue.id,
-        body: `## Implementation Plan\n\n${changePlan}`,
-      });
-
-      // 5. Generate code changes based on technical report and change plan
-      console.log(`Generating code changes for ${issue.identifier}`);
-      const changes = await this.generateCodeChanges(
-        issue.identifier,
-        technicalReport,
-        changePlan.implementationPlan
-      );
-
-      // Validate changes
-      if (!changes || changes.length === 0) {
-        console.log(`No changes generated for ${issue.identifier}`);
-        await this.linearClient.createComment({
-          issueId: issue.id,
-          body: "I couldn't generate any code changes. The issue may be too complex or might require more context.",
-        });
-        return;
-      }
-
-      // 6. Check if changes are in multiple repositories - this is a warning sign
-      const affectedRepositories = new Set(
-        changes.map((change) => change.repository)
-      );
-
-      if (affectedRepositories.size > 1) {
-        console.log(
-          `Warning: Changes span multiple repositories: ${Array.from(
-            affectedRepositories
-          ).join(', ')}`
-        );
-
-        await this.linearClient.createComment({
-          issueId: issue.id,
-          body: `⚠️ The changes I'm about to implement span multiple repositories (${Array.from(
-            affectedRepositories
-          ).join(', ')}). Please review carefully to ensure this is intended.`,
-        });
-      }
-
-      // Group changes by repository
-      const changesByRepo = new Map<
-        string,
-        Array<{ path: string; content: string }>
-      >();
-
-      for (const change of changes) {
-        if (!changesByRepo.has(change.repository)) {
-          changesByRepo.set(change.repository, []);
-        }
-
-        changesByRepo.get(change.repository)!.push({
-          path: change.path,
-          content: change.content,
-        });
-      }
-
-      // 7. Create PRs for each repository
-      for (const [repository, repoChanges] of changesByRepo.entries()) {
-        const repoName = repository.split('/')[1];
-
-        const repositoryChanges = changes.filter(
-          (change) => change.repository === repository
-        );
-
-        if (repositoryChanges.length > 0) {
-          await this.linearClient.createComment({
-            issueId: issue.id,
-            body: `Working on implementing changes in the repository ${repository}. This might take a few minutes...`,
-          });
-
-          try {
-            const branchName =
-              `fix/${issue.identifier.toLowerCase()}-${Date.now()}`.replace(
-                /[^a-zA-Z0-9-_]/g,
-                '-'
-              );
-
-            const pullRequest = await this.createPullRequest(
-              issue,
-              repository,
-              branchName,
-              repositoryChanges,
-              `Fix ${issue.identifier}: ${issue.title}\n\n${changePlan}`
-            );
-
-            // Add PR link as attachment
-            await this.linearClient.createAttachment({
-              issueId: issue.id,
-              title: `PR: ${repoName}`,
-              url: pullRequest.url,
-            });
-
-            await this.updateIssueStatus(issue.identifier, 'In Review');
-          } catch (error: unknown) {
-            console.error(`Error creating PR for ${repository}:`, error);
-            await this.linearClient.createComment({
-              issueId: issue.id,
-              body: `❌ Error creating PR for repository ${repository}: ${
-                error instanceof Error ? error.message : String(error)
-              }`,
-            });
-          }
-        } else {
-          await this.linearClient.createComment({
-            issueId: issue.id,
-            body: `⚠️ No changes were made in repository ${repository}`,
-          });
-        }
-      }
-    } catch (error: unknown) {
-      console.error(
-        `Error implementing changes for ${issue.identifier}:`,
-        error
-      );
-      await this.linearClient.createComment({
-        issueId: issue.id,
-        body: `I encountered an error while implementing changes: ${
-          error instanceof Error ? error.message : 'Unknown error'
-        }`,
-      });
-    }
-  }
-
-  /**
-   * Search for relevant files based on issue keywords using local repository search
-   */
-  private async searchRelevantFiles(
-    issue: Issue
-  ): Promise<Array<{ path: string; repository: string; content?: string }>> {
-    const results: Array<{
-      path: string;
-      repository: string;
-      content?: string;
-    }> = [];
-
-    // Extract keywords from issue title and description
-    const keywords = this.extractKeywords(
-      issue.title + ' ' + (issue.description || '')
-    );
-    if (keywords.length === 0) {
-      return results;
-    }
-
-    // Extract repository names from issue description
-    const repositories = this.extractRepositoriesFromReport(
-      issue.description || ''
-    );
-    const repoNames =
-      repositories === 'none explicitly mentioned'
-        ? this.allowedRepositories
-        : repositories.split(',').map((r) => r.trim());
-
-    for (const repo of repoNames) {
-      if (!this.allowedRepositories.includes(repo)) {
-        continue;
-      }
-
-      for (const keyword of keywords) {
-        try {
-          // Use LocalRepositoryManager to search for files containing the keyword
-          const searchResults = await this.localRepoManager.searchCode(
-            keyword,
-            repo
-          );
-
-          // Add results, avoiding duplicates
-          for (const item of searchResults) {
-            if (
-              !results.some(
-                (r) => r.path === item.path && r.repository === repo
-              )
-            ) {
-              results.push({
-                path: item.path,
-                repository: repo,
-              });
-            }
-          }
-        } catch (error: unknown) {
-          console.error(
-            `Error searching for ${keyword} in ${repo}:`,
-            error instanceof Error ? error.message : String(error)
-          );
-        }
-      }
-    }
-
-    return results;
-  }
-
-  /**
-   * Extract meaningful keywords from text for file searching
-   */
-  private extractKeywords(text: string): string[] {
-    // Remove common words and keep only meaningful terms
-    const words = text
-      .toLowerCase()
-      .replace(/[^\w\s]/g, ' ')
-      .split(/\s+/)
-      .filter(
-        (word) =>
-          word.length > 3 &&
-          ![
-            'the',
-            'and',
-            'that',
-            'have',
-            'for',
-            'not',
-            'with',
-            'you',
-            'this',
-            'but',
-            'his',
-            'from',
-            'they',
-            'say',
-            'her',
-            'she',
-            'will',
-            'one',
-            'all',
-            'would',
-            'there',
-            'their',
-            'what',
-            'out',
-            'about',
-            'who',
-            'get',
-            'which',
-            'when',
-            'make',
-            'can',
-            'like',
-            'time',
-            'just',
-            'him',
-            'know',
-            'take',
-            'people',
-            'into',
-            'year',
-            'your',
-            'good',
-            'some',
-            'could',
-            'them',
-            'see',
-            'other',
-            'than',
-            'then',
-            'now',
-            'look',
-            'only',
-            'come',
-            'its',
-            'over',
-            'think',
-            'also',
-            'back',
-            'after',
-            'use',
-            'two',
-            'how',
-            'our',
-            'work',
-            'first',
-            'well',
-            'way',
-            'even',
-            'new',
-            'want',
-            'because',
-            'any',
-            'these',
-            'give',
-            'day',
-            'most',
-            'user',
-            'error',
-            'bug',
-            'issue',
-            'problem',
-            'fails',
-            'feature',
-          ].includes(word)
-      );
-
-    // Prioritize technical terms (camelCase or snake_case)
-    const technicalTerms = words.filter(
-      (word) =>
-        /[A-Z]/.test(word) || // camelCase
-        word.includes('_') || // snake_case
-        /^[a-z]+\d+$/.test(word) // Words with numbers
-    );
-
-    // Combine technical terms with other meaningful words
-    const uniqueWords = [...new Set([...technicalTerms, ...words])];
-
-    // Return top keywords, prioritizing technical terms
-    return uniqueWords.slice(0, 10);
-  }
-
-  /**
-   * Execute a technical analysis with enhanced code context
-   */
-  async executeTechnicalAnalysis(issue: Issue): Promise<void> {
-    try {
-      // Update status to indicate we're working on the analysis
-      await this.updateIssueStatus(issue.identifier, 'In Progress');
-      await this.linearClient.createComment({
-        issueId: issue.id,
-        body: "🔍 I'm analyzing this issue to provide a technical report...",
-      });
-
-      // Search for relevant files
-      const relevantFiles = await this.searchRelevantFiles(issue);
-      if (relevantFiles.length === 0) {
-        await this.linearClient.createComment({
-          issueId: issue.id,
-          body: "❓ I couldn't find relevant files to analyze based on the issue description. Please provide more specific information about the problem or mention which repositories contain the relevant code.",
-        });
-        await this.updateIssueStatus(issue.identifier, 'Todo');
-        return;
-      }
-
-      // Load content for all files
-      const filesWithContent = await this.loadFileContents(relevantFiles);
-
-      // Check if the issue contains a stack trace
-      const hasStackTrace = this.containsStackTrace(issue.description || '');
-
-      // Build file context for the prompt
-      const fileContext = filesWithContent
-        .map(
-          (file) =>
-            `## ${file.repository}/${file.path}\n\`\`\`\n${file.content}\n\`\`\``
-        )
-        .join('\n\n');
-
-      // Build list of relevant file paths for reference
-      const relevantFilePaths = filesWithContent
-        .map((file) => `${file.repository}/${file.path}`)
-        .join('\n');
-
-      // Generate technical analysis
-      const technicalAnalysisPrompt = await this.buildTechnicalAnalysisPrompt(
-        issue,
-        fileContext,
-        hasStackTrace,
-        relevantFilePaths
-      );
-
-      // Use the AI model to generate the technical report
-      const response = await openai.chat.completions.create({
-        model: 'gpt-4o',
-        messages: [
-          {
-            role: 'system',
-            content: technicalAnalysisPrompt,
-          },
-        ],
-        temperature: 0.3,
-      });
-
-      const technicalReport = response.choices[0].message.content || '';
-
-      // Post the technical report as a comment
-      await this.linearClient.createComment({
-        issueId: issue.id,
-        body: technicalReport,
-      });
-
-      // Update issue status
-      await this.updateIssueStatus(issue.identifier, 'Todo');
-
-      // Add label to indicate analysis is complete
-      await this.addLabel(issue.id, 'technical-analysis');
-    } catch (error: unknown) {
-      console.error(`Error executing technical analysis:`, error);
-      await this.linearClient.createComment({
-        issueId: issue.id,
-        body: `I encountered an error while performing the technical analysis: ${
-          error instanceof Error ? error.message : 'Unknown error'
-        }`,
-      });
-      await this.updateIssueStatus(issue.identifier, 'Todo');
-    }
-  }
-
-  /**
-   * Check if the text contains a stack trace
-   */
-  private containsStackTrace(text: string): boolean {
-    const stackTracePatterns = [
-      /at\s+[\w$.]+\s+\(.*:\d+:\d+\)/i, // JavaScript/TypeScript stack trace
-      /Error:.*\n\s+at\s+/i, // Error followed by stack trace
-      /File ".*", line \d+, in \w+/i, // Python-like stack trace
-      /Exception in thread .*java\.\w+\.\w+/i, // Java exception
-      /Traceback \(most recent call last\):/i, // Python traceback
-    ];
-
-    return stackTracePatterns.some((pattern) => pattern.test(text));
-  }
-
-  /**
-   * Load content for files from local repository clones
-   */
-  private async loadFileContents(
-    files: Array<{ path: string; repository: string; content?: string }>
-  ): Promise<Array<{ path: string; repository: string; content: string }>> {
-    const result: Array<{ path: string; repository: string; content: string }> =
-      [];
-
-    for (const file of files) {
-      // Skip files that already have content
-      if (file.content) {
-        result.push(
-          file as { path: string; repository: string; content: string }
-        );
-        continue;
-      }
-
-      try {
-        // Use localRepoManager to get file content from local repository clone
-        const content = await this.localRepoManager.getFileContent(
-          file.path,
-          file.repository
-        );
-
-        result.push({
-          path: file.path,
-          repository: file.repository,
-          content,
-        });
-      } catch (error: unknown) {
-        console.error(
-          `Error loading content for ${file.repository}/${file.path}:`,
-          error instanceof Error ? error.message : String(error)
-        );
-      }
-    }
-
-    return result;
-  }
-
-  /**
-   * Build a prompt for technical analysis
-   */
-  private async buildTechnicalAnalysisPrompt(
-    issue: Issue,
-    fileContext: string,
-    hasStackTrace: boolean,
-    relevantFilePaths: string
-  ): Promise<string> {
-    const issueContext = `
-# Issue Details
-ID: ${issue.identifier}
-Title: ${issue.title}
-Description:
-${issue.description || 'No description provided'}
-`;
-
-    let additionalContext = '';
-
-    // Add stack trace notice if detected
-    if (hasStackTrace) {
-      additionalContext +=
-        '## Stack Trace Analysis\nThe issue description appears to contain a stack trace. Please analyze it to identify the root cause of the error.\n\n';
-    }
-
-    // Add repo and file information
-    additionalContext += `## Relevant Files\nThese files were identified as potentially relevant to the issue:\n${relevantFilePaths}\n\n`;
-
-    return `# Technical Analysis Request
-
-${issueContext}
-
-${additionalContext}
-
-## Codebase Files
-${fileContext}
-
-Please analyze the provided code snippets in relation to the described issue and provide a comprehensive technical report with:
-
-1. A high-level summary of the issue
-2. The root cause analysis 
-3. Specific problematic code patterns
-4. Recommended fixes with code examples
-5. Implementation plan with specific file changes needed
-
-Format your response as Markdown with the following structure:
-
-## Summary
-
-[Non-technical very short summary grounded in the code]
-
-## Technical Root Cause Analysis
-
-### Core Issues Identified
-1. [Issue 1]
-2. [Issue 2]
-
-### Problematic Code Pattern
-\`\`\`
-[Code Snippet]
-\`\`\`
-
-### Recommended Fixes
-1. [Fix 1]
-2. [Fix 2]
-
-## Implementation Plan
-1. [Step 1 with file path]
-2. [Step 2 with file path]
-`;
-  }
-
-  /**
-   * Extract repositories mentioned in a report string
-   */
-  private extractRepositoriesFromReport(report: string): string {
-    if (!report) {
-      return 'none explicitly mentioned';
-    }
-
-    // Patterns to match repository mentions
-    const repoPatterns = [
-      // Format: "Repository: owner/repo"
-      /repository\s*:\s*([a-zA-Z0-9_.-]+\/[a-zA-Z0-9_.-]+)/gi,
-      // Format: "In owner/repo"
-      /\bin\s+([a-zA-Z0-9_.-]+\/[a-zA-Z0-9_.-]+)/gi,
-      // Format: "owner/repo repository"
-      /\b([a-zA-Z0-9_.-]+\/[a-zA-Z0-9_.-]+)\s+repository\b/gi,
-      // Format: "owner/repo repo"
-      /\b([a-zA-Z0-9_.-]+\/[a-zA-Z0-9_.-]+)\s+repo\b/gi,
-      // Format: "repo: owner/repo"
-      /\brepo\s*:\s*([a-zA-Z0-9_.-]+\/[a-zA-Z0-9_.-]+)/gi,
-      // Format: bare "owner/repo"
-      /\b([a-zA-Z0-9_.-]+\/[a-zA-Z0-9_.-]+)\b/g,
-    ];
-
-    const repositories = new Set<string>();
-
-    // Extract repositories using each pattern
-    for (const pattern of repoPatterns) {
-      let match;
-      while ((match = pattern.exec(report)) !== null) {
-        const repo = match[1];
-        if (this.allowedRepositories.includes(repo)) {
-          repositories.add(repo);
-        }
-      }
-    }
-
-    return repositories.size > 0
-      ? Array.from(repositories).join(', ')
-      : 'none explicitly mentioned';
-  }
-
-  /**
    * Update the priority of a Linear issue
    */
   private async updateIssuePriority(
@@ -1527,225 +952,6 @@ Format your response as Markdown with the following structure:
         `Error updating priority for issue ${issueIdOrIdentifier}:`,
         error instanceof Error ? error.message : String(error)
       );
-    }
-  }
-
-  /**
-   * Implement changes for an issue
-   */
-  private async implementChanges(issue: Issue): Promise<void> {
-    try {
-      // Execute the technical analysis first
-      await this.performTechnicalAnalysis(issue);
-
-      console.log(`Implemented changes for issue ${issue.identifier}`);
-    } catch (error: unknown) {
-      console.error(
-        `Error implementing changes for issue ${issue.identifier}:`,
-        error instanceof Error ? error.message : String(error)
-      );
-      throw error;
-    }
-  }
-
-  /**
-   * Find an existing technical report in the issue comments
-   */
-  private async findTechnicalReportInComments(
-    issue: Issue
-  ): Promise<string | null> {
-    try {
-      // Get comments for the issue
-      const comments = await issue.comments();
-
-      // Look for a comment that contains a technical report
-      for (const comment of comments.nodes) {
-        if (comment.body.includes('## Technical Analysis Report')) {
-          // Extract the report content (everything after the header)
-          const reportContent = comment.body.split(
-            '## Technical Analysis Report\n\n'
-          )[1];
-          if (reportContent) {
-            return reportContent;
-          }
-        }
-      }
-
-      // No technical report found
-      return null;
-    } catch (error) {
-      console.error(
-        `Error finding technical report for issue ${issue.identifier}:`,
-        error
-      );
-      return null;
-    }
-  }
-
-  /**
-   * Generate a technical report for an issue
-   */
-  private async generateTechnicalReport(issue: Issue): Promise<string> {
-    try {
-      // Search for relevant files
-      const relevantFiles = await this.searchRelevantFiles(issue);
-
-      // Load the content for the files
-      const filesWithContent = await this.loadFileContents(relevantFiles);
-
-      // Use the technical analysis service to generate a report
-      const report = await this.technicalAnalysis.generateTechnicalReport(
-        issue,
-        filesWithContent
-      );
-
-      return report;
-    } catch (error: unknown) {
-      console.error(
-        `Error generating technical report for issue ${issue.identifier}:`,
-        error instanceof Error ? error.message : String(error)
-      );
-      return 'Failed to generate technical report due to an error.';
-    }
-  }
-
-  /**
-   * Plan code changes based on a technical report
-   */
-  private async planCodeChanges(
-    issue: Issue,
-    technicalReport: string
-  ): Promise<any> {
-    try {
-      // Search for relevant files
-      const relevantFiles = await this.searchRelevantFiles(issue);
-
-      // Load file contents
-      const filesWithContent = await this.loadFileContents(relevantFiles);
-
-      // Use technical analysis service to plan changes
-      return this.technicalAnalysis.planCodeChanges(
-        issue,
-        technicalReport,
-        filesWithContent
-      );
-    } catch (error: unknown) {
-      console.error(
-        `Error planning code changes for issue ${issue.identifier}:`,
-        error instanceof Error ? error.message : String(error)
-      );
-      throw error;
-    }
-  }
-
-  /**
-   * Generate code changes based on technical report and implementation plan
-   */
-  private async generateCodeChanges(
-    issueId: string,
-    technicalReport: string,
-    implementationPlan: string
-  ): Promise<Array<{ path: string; content: string; repository: string }>> {
-    try {
-      // Get the issue object
-      const issue = await this.linearClient.issue(issueId);
-      if (!issue) {
-        throw new Error(`Issue ${issueId} not found`);
-      }
-
-      // Search for relevant files
-      const relevantFiles = await this.searchRelevantFiles(issue);
-      const filesWithContent = await this.loadFileContents(relevantFiles);
-
-      // Call the AI model to generate code changes
-      const response = await openai.chat.completions.create({
-        model: 'gpt-4.1',
-        messages: [
-          {
-            role: 'system',
-            content: buildCodeImplementationPrompt({
-              issue,
-              technicalReport,
-              changePlan: implementationPlan,
-              filesWithRepoInfo: filesWithContent,
-              allowedRepositories: this.allowedRepositories,
-            }),
-          },
-        ],
-        temperature: 0.2,
-        response_format: { type: 'json_object' },
-      });
-
-      // Parse the response to get code changes
-      const responseText = response.choices[0].message.content;
-      if (!responseText) {
-        return [];
-      }
-
-      const parsedResponse = JSON.parse(responseText);
-      const changes = parsedResponse.changes || [];
-
-      // Validate each change has required fields
-      return changes.filter(
-        (change: any) =>
-          change.path &&
-          change.content &&
-          change.repository &&
-          this.allowedRepositories.includes(change.repository)
-      );
-    } catch (error: unknown) {
-      console.error(
-        `Error generating code changes for issue ${issueId}:`,
-        error instanceof Error ? error.message : String(error)
-      );
-      return [];
-    }
-  }
-
-  /**
-   * Create a pull request with code changes for an issue
-   */
-  private async createPullRequest(
-    issue: Issue,
-    repository: string,
-    branchName: string,
-    changes: Array<{ path: string; content: string }>,
-    commitMessage: string
-  ): Promise<{ url: string; number: number }> {
-    try {
-      // Get default branch for repository
-      const defaultBranch = await this.prManager.getDefaultBranch(repository);
-
-      // Create a new branch for the changes
-      await this.prManager.createBranch(branchName, repository, defaultBranch);
-
-      // Apply each change to the repository
-      for (const change of changes) {
-        await this.prManager.createOrUpdateFile(
-          change.path,
-          change.content,
-          `Update ${change.path} for ${issue.identifier}`,
-          repository,
-          branchName
-        );
-      }
-
-      // Create pull request
-      const pullRequest = await this.prManager.createPullRequest(
-        `Fix ${issue.identifier}: ${issue.title}`,
-        commitMessage,
-        branchName,
-        defaultBranch,
-        repository
-      );
-
-      return pullRequest;
-    } catch (error: unknown) {
-      console.error(
-        `Error creating pull request for issue ${issue.identifier}:`,
-        error instanceof Error ? error.message : String(error)
-      );
-      throw error;
     }
   }
 }
