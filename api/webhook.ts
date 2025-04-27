@@ -356,48 +356,28 @@ async function handleIssueAssigned(
     const issueHistory = await issue.history();
     console.log(`Retrieved history with ${issueHistory.nodes.length} events`);
 
-    // Log all history events for debugging
-    console.log(
-      "All history events:",
-      JSON.stringify(issueHistory.nodes, null, 2),
-    );
-
-    // Log all history entries related to assignee changes for debugging
-    const allAssigneeChanges = issueHistory.nodes.filter(
-      (event: any) =>
-        event.type === "issue" &&
-        event.action === "update" &&
-        event.data &&
-        (event.data.assigneeId !== undefined ||
-          event.fromAssigneeId !== undefined),
+    // Find assignee change events - look for events with toAssigneeId matching our app user
+    const assigneeChangeEvents = issueHistory.nodes.filter(
+      (event: any) => event.toAssigneeId === appUserId,
     );
 
     console.log(
-      "All assignee change events:",
-      JSON.stringify(allAssigneeChanges, null, 2),
+      `Found ${assigneeChangeEvents.length} assignee change events to our app user`,
     );
 
-    // The most recent event should be the current assignment to appUserId
-    // We want the event just before that which changed the assignee
-    let foundPreviousAssignee = false;
-
-    for (const event of allAssigneeChanges) {
-      console.log(
-        `Examining event: ${event.createdAt}, toAssigneeId: ${event.toAssigneeId}, fromAssigneeId: ${event.fromAssigneeId}`,
+    // Get the most recent one (should be only one, but just in case)
+    if (assigneeChangeEvents.length > 0) {
+      // Sort by createdAt desc to get the most recent first
+      assigneeChangeEvents.sort(
+        (a: any, b: any) =>
+          new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime(),
       );
 
-      // If this is the event that assigned to our app user
-      if (event.toAssigneeId === appUserId) {
-        // The fromAssigneeId would be the previous assignee
-        originalAssigneeId = event.fromAssigneeId;
-        foundPreviousAssignee = true;
-        console.log(`Found previous assignee: ${originalAssigneeId}`);
-        break;
-      }
-    }
-
-    if (!foundPreviousAssignee) {
-      console.log("Could not determine previous assignee from history");
+      const mostRecentChange = assigneeChangeEvents[0];
+      originalAssigneeId = mostRecentChange.fromAssigneeId;
+      console.log(`Found original assignee: ${originalAssigneeId}`);
+    } else {
+      console.log("Could not find an event showing assignment to our app user");
     }
 
     // Get context about the issue
