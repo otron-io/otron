@@ -442,7 +442,9 @@ export class LinearGPT {
                     functionArgs.path,
                     functionArgs.repository
                   );
-                  toolResponse = `Retrieved content for ${functionArgs.path} in ${functionArgs.repository}.`;
+                  toolResponse = `Retrieved content for ${functionArgs.path} in ${functionArgs.repository}:
+                  -----------------------------------------------------------------------------------------
+                  ${content}`;
                 } else if (functionName === 'updateIssueStatus') {
                   await this.updateIssueStatus(
                     functionArgs.issueId,
