@@ -3,15 +3,13 @@ import { Octokit } from '@octokit/rest';
 import OpenAI from 'openai';
 import { env } from './env.js';
 import { PRManager } from './pr-manager.js';
+import { LocalRepositoryManager } from './repository-manager.js';
 import { TechnicalAnalysisService } from './technical-analysis.js';
 import {
   buildLinearGptSystemPrompt,
   getAvailableToolsDescription,
-  buildKeywordExtractionPrompt,
   buildCodeImplementationPrompt,
 } from './prompts.js';
-import { z } from 'zod';
-import path from 'path';
 import { GitHubAppService } from './github-app.js';
 
 // Initialize OpenAI client
@@ -32,27 +30,24 @@ export class LinearGPT {
   private technicalAnalysis: TechnicalAnalysisService;
   private allowedRepositories: string[] = [];
   private githubAppService: GitHubAppService | null = null;
+  private localRepoManager: LocalRepositoryManager;
 
   constructor(private linearClient: LinearClient) {
-    // Set up GitHub client
-    if (env.GITHUB_TOKEN) {
-      // Legacy mode: use PAT
-      this.octokit = new Octokit({
-        auth: env.GITHUB_TOKEN,
-      });
-    } else if (env.GITHUB_APP_ID && env.GITHUB_APP_PRIVATE_KEY) {
+    // Set up GitHub client - only GitHub App authentication is supported
+    if (env.GITHUB_APP_ID && env.GITHUB_APP_PRIVATE_KEY) {
       // GitHub App mode: initialize the service
       this.githubAppService = GitHubAppService.getInstance();
       // Initialize with a temporary Octokit that will be replaced per-repo
       this.octokit = new Octokit();
     } else {
       throw new Error(
-        'No GitHub authentication credentials provided. Set either GITHUB_TOKEN or GITHUB_APP_ID and GITHUB_APP_PRIVATE_KEY.'
+        'GitHub App authentication is required. Set GITHUB_APP_ID and GITHUB_APP_PRIVATE_KEY.'
       );
     }
 
     this.prManager = new PRManager(linearClient);
     this.technicalAnalysis = new TechnicalAnalysisService(linearClient);
+    this.localRepoManager = new LocalRepositoryManager(linearClient);
 
     // Parse allowed repositories from env variable
     if (env.ALLOWED_REPOSITORIES) {

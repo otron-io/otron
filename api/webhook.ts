@@ -10,6 +10,9 @@ const redis = new Redis({
   token: env.KV_REST_API_TOKEN,
 });
 
+// 5 minutes
+export const maxDuration = 300;
+
 // Verify webhook signature from Linear
 export function verifySignature(signature: string, body: string): boolean {
   const hmac = crypto.createHmac('sha256', env.WEBHOOK_SIGNING_SECRET);

@@ -5,6 +5,7 @@ import { Octokit } from '@octokit/rest';
 import { PRManager } from './pr-manager.js';
 import { CodeAnalyzer } from './code-analysis.js';
 import { GitHubAppService } from './github-app.js';
+import { LocalRepositoryManager } from './repository-manager.js';
 import {
   buildTechnicalAnalysisPrompt,
   buildChangePlanPrompt,
@@ -26,27 +27,25 @@ export class TechnicalAnalysisService {
   private octokit: Octokit;
   private prManager: PRManager;
   private codeAnalyzer: CodeAnalyzer;
+  private localRepoManager: LocalRepositoryManager;
   private allowedRepositories: string[] = [];
   private githubAppService: GitHubAppService | null = null;
 
   constructor(private linearClient: LinearClient) {
-    if (env.GITHUB_TOKEN) {
-      // Legacy mode: use PAT
-      this.octokit = new Octokit({
-        auth: env.GITHUB_TOKEN,
-      });
-    } else if (env.GITHUB_APP_ID && env.GITHUB_APP_PRIVATE_KEY) {
+    // Only GitHub App authentication is supported
+    if (env.GITHUB_APP_ID && env.GITHUB_APP_PRIVATE_KEY) {
       // GitHub App mode: initialize the service
       this.githubAppService = GitHubAppService.getInstance();
       // Initialize with a temporary Octokit that will be replaced per-repo
       this.octokit = new Octokit();
     } else {
       throw new Error(
-        'No GitHub authentication credentials provided. Set either GITHUB_TOKEN or GITHUB_APP_ID and GITHUB_APP_PRIVATE_KEY.'
+        'GitHub App authentication is required. Set GITHUB_APP_ID and GITHUB_APP_PRIVATE_KEY.'
       );
     }
 
     this.prManager = new PRManager(linearClient);
+    this.localRepoManager = new LocalRepositoryManager(linearClient);
 
     // Parse allowed repositories from env variable
     if (env.ALLOWED_REPOSITORIES) {
@@ -59,6 +58,7 @@ export class TechnicalAnalysisService {
     this.codeAnalyzer = new CodeAnalyzer(
       this.getOctokitForRepo.bind(this),
       this.prManager,
+      this.localRepoManager,
       this.allowedRepositories
     );
   }

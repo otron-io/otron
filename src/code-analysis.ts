@@ -6,7 +6,9 @@ import { Issue } from '@linear/sdk';
 import OpenAI from 'openai';
 import { env } from './env.js';
 import { PRManager } from './pr-manager.js';
+import { LocalRepositoryManager } from './repository-manager.js';
 import * as path from 'path';
+import * as fs from 'fs/promises';
 
 // Define CodeFile interface
 interface CodeFile {
@@ -50,6 +52,7 @@ export class CodeAnalyzer {
   constructor(
     private getOctokit: (repository: string) => Promise<Octokit>,
     private prManager: PRManager,
+    private localRepoManager: LocalRepositoryManager,
     private allowedRepositories: string[]
   ) {}
 
@@ -147,8 +150,8 @@ export class CodeAnalyzer {
         );
         if (!resolvedPath) continue;
 
-        // Fetch the content of the dependency
-        const depContent = await this.prManager.getFileContent(
+        // Fetch the content of the dependency using localRepoManager
+        const depContent = await this.localRepoManager.getFileContent(
           resolvedPath,
           repository
         );
@@ -498,7 +501,10 @@ export class CodeAnalyzer {
       // Determine which repository this file belongs to
       for (const repo of this.allowedRepositories) {
         try {
-          const content = await this.prManager.getFileContent(filePath, repo);
+          const content = await this.localRepoManager.getFileContent(
+            filePath,
+            repo
+          );
 
           results.push({
             path: filePath,
@@ -523,39 +529,33 @@ export class CodeAnalyzer {
    * Build a high-level structure overview of a repository for context
    */
   async getCodebaseStructure(repository: string): Promise<string> {
-    const [owner, repo] = repository.split('/');
-    let structure = '';
-
     try {
-      // Get the octokit instance for this repository
-      const octokit = await this.getOctokit(repository);
+      // Ensure the repository is cloned locally
+      const repoPath = await this.localRepoManager.ensureRepoCloned(repository);
+      let structure = `Repository: ${repository}\nTop-level structure:\n`;
 
-      // Get top-level directories
-      const { data: contents } = await octokit.repos.getContent({
-        owner,
-        repo,
-        path: '',
-      });
+      // Get top-level directories directly from the filesystem
+      const entries = await fs.readdir(repoPath, { withFileTypes: true });
+
+      // Filter out hidden files and git directory
+      const filteredEntries = entries.filter(
+        (entry) => !entry.name.startsWith('.') && entry.name !== 'node_modules'
+      );
 
       // Build a simple tree structure
-      if (Array.isArray(contents)) {
-        structure += `Repository: ${repository}\n`;
-        structure += `Top-level structure:\n`;
-
-        for (const item of contents) {
-          if (item.type === 'dir') {
-            structure += `- 📁 ${item.path}/\n`;
-          } else {
-            structure += `- 📄 ${item.path}\n`;
-          }
+      for (const entry of filteredEntries) {
+        if (entry.isDirectory()) {
+          structure += `- 📁 ${entry.name}/\n`;
+        } else {
+          structure += `- 📄 ${entry.name}\n`;
         }
       }
+
+      return structure;
     } catch (error) {
       console.error(`Error getting structure for ${repository}:`, error);
-      structure = `Could not retrieve structure for ${repository}`;
+      return `Could not retrieve structure for ${repository}`;
     }
-
-    return structure;
   }
 
   /**
@@ -808,19 +808,14 @@ Format as JSON with two arrays: "keyTerms" and "dataElements".`,
 
       for (const repository of this.allowedRepositories) {
         try {
-          const [owner, repo] = repository.split('/');
-
-          // Get octokit instance
-          const octokit = await this.getOctokit(repository);
-
-          // Search for the term in code
-          const searchResults = await octokit.rest.search.code({
-            q: `${term} in:file repo:${owner}/${repo}`,
-            per_page: 5,
-          });
+          // Use localRepoManager for code search
+          const searchResults = await this.localRepoManager.searchCode(
+            term,
+            repository
+          );
 
           // For each result, get the file content
-          for (const item of searchResults.data.items) {
+          for (const item of searchResults) {
             const filePath = item.path;
             const fileKey = `${repository}:${filePath}`;
 
@@ -830,8 +825,8 @@ Format as JSON with two arrays: "keyTerms" and "dataElements".`,
             }
 
             try {
-              // Get file content
-              const content = await this.prManager.getFileContent(
+              // Get file content using localRepoManager
+              const content = await this.localRepoManager.getFileContent(
                 filePath,
                 repository
               );
