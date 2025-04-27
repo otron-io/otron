@@ -5,6 +5,7 @@ import * as fs from 'fs/promises';
 import { Stats } from 'node:fs';
 import path from 'path';
 import os from 'os';
+import { spawn } from 'child_process';
 // @ts-ignore - isomorphic-git doesn't have type definitions in DefinitelyTyped
 import git from 'isomorphic-git';
 // @ts-ignore - isomorphic-git http client
@@ -47,11 +48,45 @@ interface RepoInfo {
   localPath: string;
 }
 
+/**
+ * Run a Git command in a specific directory
+ */
+async function runGitCommand(
+  cwd: string,
+  args: string[]
+): Promise<{ stdout: string; stderr: string }> {
+  return new Promise((resolve, reject) => {
+    const process = spawn('git', args, { cwd });
+    let stdout = '';
+    let stderr = '';
+
+    process.stdout.on('data', (data) => {
+      stdout += data.toString();
+    });
+
+    process.stderr.on('data', (data) => {
+      stderr += data.toString();
+    });
+
+    process.on('close', (code) => {
+      if (code === 0) {
+        resolve({ stdout, stderr });
+      } else {
+        reject(new Error(`Git command failed: ${stderr}`));
+      }
+    });
+
+    process.on('error', (err) => {
+      reject(new Error(`Failed to spawn git process: ${err.message}`));
+    });
+  });
+}
+
 /*
  * LocalRepositoryManager
  *
  * This class manages local git repositories, minimizing GitHub API usage
- * to avoid rate limits. Most operations use isomorphic-git to work with
+ * to avoid rate limits. Most operations use Git commands to work with
  * local repositories.
  *
  * NOTE: A few operations like creating pull requests still require the
@@ -126,6 +161,126 @@ export class LocalRepositoryManager {
       return result.toString();
     } finally {
       this.fileOpSemaphore.release();
+    }
+  }
+
+  /**
+   * Get file content using git cat-file instead of fs.readFile
+   * This is more efficient for git repositories as it reads from git objects
+   */
+  private async gitCatFile(
+    repoPath: string,
+    filePath: string,
+    ref: string = 'HEAD'
+  ): Promise<string> {
+    await this.gitOpSemaphore.acquire();
+    try {
+      const { stdout } = await runGitCommand(repoPath, [
+        'cat-file',
+        '-p',
+        `${ref}:${filePath}`,
+      ]);
+      return stdout;
+    } catch (error) {
+      console.error(`Error reading file ${filePath} with git cat-file:`, error);
+      throw error;
+    } finally {
+      this.gitOpSemaphore.release();
+    }
+  }
+
+  /**
+   * Get a list of all files in a repository using git ls-files
+   * Much faster than walking the directory
+   */
+  private async gitLsFiles(
+    repoPath: string,
+    patterns: string[] = []
+  ): Promise<string[]> {
+    await this.gitOpSemaphore.acquire();
+    try {
+      const args = ['ls-files', '--full-name', '--', ...patterns];
+      const { stdout } = await runGitCommand(repoPath, args);
+      return stdout.trim().split('\n').filter(Boolean);
+    } catch (error) {
+      console.error(`Error listing files with git ls-files:`, error);
+      return [];
+    } finally {
+      this.gitOpSemaphore.release();
+    }
+  }
+
+  /**
+   * Search for patterns in files using git grep
+   * Much more efficient than reading each file separately
+   */
+  private async gitGrep(
+    repoPath: string,
+    pattern: string,
+    filePatterns: string[] = []
+  ): Promise<Array<{ path: string; line: number; content: string }>> {
+    await this.gitOpSemaphore.acquire();
+    try {
+      // Use git grep with line numbers and null-byte output for reliable parsing
+      const args = [
+        'grep',
+        '-n', // Show line numbers
+        '-I', // Ignore binary files
+        '-z', // Use null byte as separator
+        '--no-color', // No color codes
+        pattern,
+        'HEAD', // Search in HEAD
+        '--', // Separator for paths
+        ...filePatterns, // Add file patterns if specified
+      ];
+
+      const { stdout } = await runGitCommand(repoPath, args);
+
+      // Parse the output format: path\0linenumber:content\0
+      const results: Array<{ path: string; line: number; content: string }> =
+        [];
+
+      if (!stdout.trim()) {
+        return results;
+      }
+
+      const entries = stdout.split('\0');
+
+      // Process each entry (path\0linenumber:content)
+      for (let i = 0; i < entries.length - 1; i++) {
+        // Last entry is empty due to trailing \0
+        const entry = entries[i];
+        if (!entry) continue;
+
+        // Format is "path:line:content"
+        const firstColon = entry.indexOf(':');
+        if (firstColon === -1) continue;
+
+        const path = entry.substring(0, firstColon);
+        const rest = entry.substring(firstColon + 1);
+
+        const secondColon = rest.indexOf(':');
+        if (secondColon === -1) continue;
+
+        const lineStr = rest.substring(0, secondColon);
+        const content = rest.substring(secondColon + 1);
+
+        const line = parseInt(lineStr, 10);
+        if (isNaN(line)) continue;
+
+        results.push({
+          path,
+          line,
+          content: content.trim(),
+        });
+      }
+
+      return results;
+    } catch (error) {
+      console.error(`Error searching with git grep:`, error);
+      return [];
+    } finally {
+      this.gitOpSemaphore.release();
     }
   }
 
@@ -235,13 +390,21 @@ export class LocalRepositoryManager {
             loaded: number;
             total?: number;
           }) => {
-            // Only log progress every 10%
-            if (progress.phase && progress.loaded % 10 === 0) {
-              console.log(
-                `Clone progress: ${progress.phase} ${Math.round(
-                  (progress.loaded / (progress.total || 100)) * 100
-                )}%`
+            // Handle progress reporting in a better way
+            if (progress.phase === 'Analyzing workdir') {
+              // Only log occasionally for this phase to avoid spam
+              if (progress.loaded % 100 === 0) {
+                console.log(
+                  `Clone progress: ${progress.phase} (processing files...)`
+                );
+              }
+            } else if (progress.phase && progress.loaded % 10 === 0) {
+              // For other phases, cap at 100%
+              const percentage = Math.min(
+                100,
+                Math.round((progress.loaded / (progress.total || 100)) * 100)
               );
+              console.log(`Clone progress: ${progress.phase} ${percentage}%`);
             }
           },
         });
@@ -290,8 +453,8 @@ export class LocalRepositoryManager {
   }
 
   /**
-   * Search for code in the local repository using JavaScript regex
-   * instead of git grep which is not available in serverless environments
+   * Search for code in the local repository using git grep
+   * instead of reading all files individually
    */
   async searchCode(
     query: string,
@@ -303,74 +466,154 @@ export class LocalRepositoryManager {
 
     try {
       const repoPath = repoInfo.localPath;
-      const results: Array<{ path: string; line: number; content: string }> =
-        [];
 
-      // Walk the repository and search each file
-      const files = await this.walkDirectory(
-        '',
-        repoFullName,
-        (filepath: string) =>
-          !filepath.includes('node_modules') && !filepath.includes('.git')
-      );
+      // Search using git grep instead of reading each file
+      console.log(`Searching for "${query}" in ${repoFullName} using git grep`);
 
-      const searchRegex = new RegExp(query, 'i');
+      // Attempt to use git-grep for searching (much faster)
+      // Define file types to search in to reduce search scope
+      const filePatterns = [
+        '*.js',
+        '*.jsx',
+        '*.ts',
+        '*.tsx', // JavaScript/TypeScript
+        '*.py',
+        '*.rb',
+        '*.php',
+        '*.java', // Other popular languages
+        '*.go',
+        '*.c',
+        '*.cpp',
+        '*.h',
+        '*.cs', // More languages
+        '*.json',
+        '*.yml',
+        '*.yaml', // Config files
+        '*.md',
+        '*.txt', // Documentation
+      ];
 
-      // Limit the number of files searched to avoid too many open files
-      const MAX_FILES_TO_SEARCH = 100;
-      const filesToSearch = files.slice(0, MAX_FILES_TO_SEARCH);
+      // Progressive search approach:
+      // 1. First try exact pattern with git grep (fastest)
+      // 2. If no results, try a more flexible regex pattern
+      // 3. If still no results, fall back to filename search
 
-      if (files.length > MAX_FILES_TO_SEARCH) {
-        console.log(
-          `Limiting search to ${MAX_FILES_TO_SEARCH} out of ${files.length} files to avoid EMFILE errors`
-        );
+      // Step 1: Try direct git grep with exact pattern
+      let results = await this.gitGrep(repoPath, query, filePatterns);
+
+      // Step 2: If no results, try a more flexible search
+      if (results.length === 0 && query.length > 3) {
+        console.log('No exact matches, trying more flexible search...');
+        // Create a more flexible pattern by breaking up the query
+        const words = query.split(/\s+/).filter((w) => w.length > 3);
+
+        // Try searching for individual words from the query
+        for (const word of words) {
+          const wordResults = await this.gitGrep(repoPath, word, filePatterns);
+          results.push(...wordResults);
+
+          // If we found enough results, stop searching
+          if (results.length >= 20) break;
+        }
       }
 
-      // Process files in batches to avoid too many open files
-      const BATCH_SIZE = 10;
-      for (let i = 0; i < filesToSearch.length; i += BATCH_SIZE) {
-        const batch = filesToSearch.slice(i, i + BATCH_SIZE);
-        const batchPromises = batch.map(async (file: string) => {
-          try {
-            const fullPath = path.join(repoPath, file);
-            const content = await this.safeReadFile(fullPath, {
-              encoding: 'utf-8',
-            });
-            const lines = content.split('\n');
+      // Step 3: If still no results, try searching in filenames
+      if (results.length === 0) {
+        console.log('No content matches, searching in filenames...');
+        const files = await this.gitLsFiles(repoPath);
 
-            for (let i = 0; i < lines.length; i++) {
-              const line = lines[i];
-              if (searchRegex.test(line)) {
-                results.push({
-                  path: file,
-                  line: i + 1,
-                  content: line.trim(),
-                });
-              }
-            }
+        // Find files that match parts of the query
+        const words = query.toLowerCase().split(/\s+/);
+        const matchingFiles = files
+          .filter((file) => {
+            const lowerFile = file.toLowerCase();
+            return words.some((word) => lowerFile.includes(word));
+          })
+          .slice(0, 20);
+
+        // For each matching file, add it to results with a sample line
+        for (const file of matchingFiles) {
+          try {
+            // Read just the first few lines of the file to get a sample
+            const content = await this.gitCatFile(repoPath, file);
+            const firstLine = content.split('\n')[0] || 'File matched by name';
+
+            results.push({
+              path: file,
+              line: 1,
+              content: firstLine.trim(),
+            });
           } catch (err) {
-            // Skip files that can't be read as text
+            // Skip files we can't read
             console.log(
               `Error reading file ${file}: ${
                 err instanceof Error ? err.message : String(err)
               }`
             );
-            return null;
           }
-        });
-
-        await Promise.all(batchPromises);
+        }
       }
 
-      return results;
+      // Sort results by relevance (exact matches first, then by path similarity to query)
+      results.sort((a, b) => {
+        // Exact content matches get highest priority
+        const aExact = a.content.includes(query);
+        const bExact = b.content.includes(query);
+
+        if (aExact && !bExact) return -1;
+        if (!aExact && bExact) return 1;
+
+        // Then prioritize by filename matches
+        const aFileMatch = a.path.includes(query);
+        const bFileMatch = b.path.includes(query);
+
+        if (aFileMatch && !bFileMatch) return -1;
+        if (!aFileMatch && bFileMatch) return 1;
+
+        // Finally sort by path
+        return a.path.localeCompare(b.path);
+      });
+
+      // Limit to most relevant results
+      return results.slice(0, 50);
     } catch (error) {
       console.error(`Error searching code in ${repoFullName}:`, error);
-      return [];
+
+      // Fall back to lightweight file search if grep fails
+      console.log('Falling back to file name search only...');
+      try {
+        const repoPath = repoInfo.localPath;
+        const files = await this.gitLsFiles(repoPath);
+
+        // Find files that might be relevant based on name
+        const relevantFiles = files
+          .filter((file) => {
+            const lowercaseFile = file.toLowerCase();
+            const lowercaseQuery = query.toLowerCase();
+            return (
+              lowercaseFile.includes(lowercaseQuery) ||
+              query
+                .split(/\s+/)
+                .some((word) => lowercaseFile.includes(word.toLowerCase()))
+            );
+          })
+          .slice(0, 20);
+
+        return relevantFiles.map((file) => ({
+          path: file,
+          line: 1,
+          content: 'File matched by name',
+        }));
+      } catch (fallbackError) {
+        console.error('Fallback search also failed:', fallbackError);
+        return [];
+      }
     }
   }
 
   /**
    * Get the content of a file from the local repository
+   * Uses git cat-file instead of fs.readFile
    */
   async getFileContent(
     filePath: string,
@@ -382,87 +625,106 @@ export class LocalRepositoryManager {
 
     try {
       const repoPath = repoInfo.localPath;
-      const fullPath = path.join(repoPath, filePath);
 
-      await this.fileOpSemaphore.acquire();
-      try {
-        const result = await fs.readFile(fullPath, 'utf-8');
-        return result.toString();
-      } finally {
-        this.fileOpSemaphore.release();
-      }
+      // Use git cat-file to get file content
+      // This is more efficient than reading from the file system
+      return await this.gitCatFile(repoPath, filePath);
     } catch (error) {
       console.error(
-        `Error reading file ${filePath} from ${repoFullName}:`,
+        `Error reading file ${filePath} from ${repoFullName} with git cat-file:`,
         error
       );
-      throw error;
+
+      // Fall back to regular file system if git cat-file fails
+      console.log('Falling back to regular file reading...');
+      try {
+        const repoPath = repoInfo.localPath;
+        const fullPath = path.join(repoPath, filePath);
+
+        await this.fileOpSemaphore.acquire();
+        try {
+          const result = await fs.readFile(fullPath, 'utf-8');
+          return result.toString();
+        } finally {
+          this.fileOpSemaphore.release();
+        }
+      } catch (fallbackError) {
+        console.error('Fallback file reading also failed:', fallbackError);
+        throw error; // Throw the original error
+      }
     }
   }
 
   /**
    * Walk a directory recursively to find all files with an optional filter
+   * This method is deprecated - use gitLsFiles instead for better performance
    */
   async walkDirectory(
     dirPath: string,
     repoFullName: string,
     filter?: (filePath: string) => boolean
   ): Promise<string[]> {
+    console.log('Note: walkDirectory is deprecated, consider using gitLsFiles');
     await this.ensureRepoCloned(repoFullName);
     const repoInfo = this.clonedRepos.get(repoFullName);
     if (!repoInfo) throw new Error(`Repository ${repoFullName} not found`);
 
-    const repoPath = repoInfo.localPath;
-    const fullPath = path.join(repoPath, dirPath);
+    // Try to use git ls-files first (much faster)
+    try {
+      const repoPath = repoInfo.localPath;
+      const fullPath = path.join(repoPath, dirPath);
+      const relDir = dirPath ? `${dirPath}/` : '';
 
-    const results: string[] = [];
+      // Use git ls-files to get all files
+      const files = await this.gitLsFiles(repoPath);
 
-    async function walk(dir: string, relativePath: string): Promise<void> {
-      const entries = await fs.readdir(dir, { withFileTypes: true });
+      // Filter files based on the provided path and filter function
+      return files
+        .filter((file) => file.startsWith(relDir))
+        .filter((file) => !filter || filter(file));
+    } catch (error) {
+      console.error(
+        'Git ls-files failed, falling back to directory walk:',
+        error
+      );
 
-      for (const entry of entries) {
-        const entryPath = path.join(dir, entry.name);
-        const entryRelativePath = path.join(relativePath, entry.name);
+      // Fall back to original implementation
+      const repoPath = repoInfo.localPath;
+      const fullPath = path.join(repoPath, dirPath);
 
-        if (entry.isDirectory()) {
-          // Skip node_modules and .git directories
-          if (entry.name === 'node_modules' || entry.name === '.git') {
-            continue;
-          }
-          await walk(entryPath, entryRelativePath);
-        } else if (entry.isFile()) {
-          if (!filter || filter(entryRelativePath)) {
-            results.push(entryRelativePath);
+      const results: string[] = [];
+
+      async function walk(dir: string, relativePath: string): Promise<void> {
+        const entries = await fs.readdir(dir, { withFileTypes: true });
+
+        for (const entry of entries) {
+          const entryPath = path.join(dir, entry.name);
+          const entryRelativePath = path.join(relativePath, entry.name);
+
+          if (entry.isDirectory()) {
+            // Skip node_modules and .git directories
+            if (entry.name === 'node_modules' || entry.name === '.git') {
+              continue;
+            }
+            await walk(entryPath, entryRelativePath);
+          } else if (entry.isFile()) {
+            if (!filter || filter(entryRelativePath)) {
+              results.push(entryRelativePath);
+            }
           }
         }
       }
-    }
 
-    try {
-      await walk(fullPath, '');
-      return results;
-    } catch (error) {
-      console.error(
-        `Error walking directory ${dirPath} in ${repoFullName}:`,
-        error
-      );
-      throw error;
-    }
-  }
-
-  /**
-   * Clean up temporary directories
-   */
-  async cleanup(): Promise<void> {
-    try {
-      await fs.rm(this.tempDir, { recursive: true, force: true });
-      this.clonedRepos.clear();
-      console.log(`Cleaned up temporary directory ${this.tempDir}`);
-    } catch (error) {
-      console.error(
-        `Error cleaning up temporary directory ${this.tempDir}:`,
-        error
-      );
+      try {
+        await walk(fullPath, '');
+        return results;
+      } catch (walkError) {
+        console.error(
+          `Error walking directory ${dirPath} in ${repoFullName}:`,
+          walkError
+        );
+        throw walkError;
+      }
     }
   }
 
@@ -477,23 +739,57 @@ export class LocalRepositoryManager {
     }
 
     try {
-      const [owner, repo] = repoFullName.split('/');
-      const octokit = await this.getOctokitForRepo(repoFullName);
+      // Ensure repo is cloned
+      await this.ensureRepoCloned(repoFullName);
+      const repoPath = repoInfo?.localPath!;
 
-      const { data } = await octokit.repos.get({ owner, repo });
-      const defaultBranch = data.default_branch;
+      // Try to get default branch from git directly
+      await this.gitOpSemaphore.acquire();
+      try {
+        const { stdout } = await runGitCommand(repoPath, [
+          'symbolic-ref',
+          '--short',
+          'HEAD',
+        ]);
 
-      // Cache the default branch
-      if (repoInfo) {
-        repoInfo.defaultBranch = defaultBranch;
-        this.clonedRepos.set(repoFullName, repoInfo);
+        const defaultBranch = stdout.trim();
+
+        // Cache the default branch
+        if (repoInfo) {
+          repoInfo.defaultBranch = defaultBranch;
+          this.clonedRepos.set(repoFullName, repoInfo);
+        }
+
+        return defaultBranch;
+      } finally {
+        this.gitOpSemaphore.release();
       }
-
-      return defaultBranch;
     } catch (error) {
-      console.error(`Error getting default branch for ${repoFullName}:`, error);
-      // Fall back to main as default branch
-      return 'main';
+      console.error(`Error getting default branch from git:`, error);
+
+      // Fall back to GitHub API
+      try {
+        const [owner, repo] = repoFullName.split('/');
+        const octokit = await this.getOctokitForRepo(repoFullName);
+
+        const { data } = await octokit.repos.get({ owner, repo });
+        const defaultBranch = data.default_branch;
+
+        // Cache the default branch
+        if (repoInfo) {
+          repoInfo.defaultBranch = defaultBranch;
+          this.clonedRepos.set(repoFullName, repoInfo);
+        }
+
+        return defaultBranch;
+      } catch (apiError) {
+        console.error(
+          `Error getting default branch for ${repoFullName}:`,
+          apiError
+        );
+        // Fall back to main as default branch
+        return 'main';
+      }
     }
   }
 
@@ -516,12 +812,8 @@ export class LocalRepositoryManager {
 
     await this.gitOpSemaphore.acquire();
     try {
-      // Checkout base branch first
-      await git.checkout({
-        fs,
-        dir: repoPath,
-        ref: baseRef,
-      });
+      // Use git command for better reliability
+      await runGitCommand(repoPath, ['checkout', baseRef]);
 
       // Fetch latest from remote
       const octokit = await this.getOctokitForRepo(repoFullName);
@@ -531,22 +823,11 @@ export class LocalRepositoryManager {
           ? auth.token
           : '';
 
-      await git.fetch({
-        fs,
-        http,
-        dir: repoPath,
-        url: `https://x-access-token:${token}@github.com/${repoFullName}.git`,
-        ref: baseRef,
-        singleBranch: true,
-      });
+      const remote = `https://x-access-token:${token}@github.com/${repoFullName}.git`;
+      await runGitCommand(repoPath, ['fetch', 'origin', baseRef, '--depth=1']);
 
-      // Create new branch from current HEAD
-      await git.branch({
-        fs,
-        dir: repoPath,
-        ref: branchName,
-        checkout: true,
-      });
+      // Create and checkout the new branch
+      await runGitCommand(repoPath, ['checkout', '-b', branchName]);
 
       console.log(
         `Created and checked out branch ${branchName} in ${repoFullName}`
@@ -593,23 +874,19 @@ export class LocalRepositoryManager {
 
     await this.gitOpSemaphore.acquire();
     try {
+      // Make sure we're on the right branch
+      await runGitCommand(repoPath, ['checkout', branch]);
+
       // Add file to git
-      await git.add({
-        fs,
-        dir: repoPath,
-        filepath: filePath,
-      });
+      await runGitCommand(repoPath, ['add', filePath]);
 
       // Commit changes
-      await git.commit({
-        fs,
-        dir: repoPath,
-        message: commitMessage,
-        author: {
-          name: 'Linear Agent',
-          email: 'agent@example.com',
-        },
-      });
+      await runGitCommand(repoPath, [
+        'commit',
+        '-m',
+        commitMessage,
+        '--author=Linear Agent <agent@example.com>',
+      ]);
 
       console.log(
         `Changes to ${filePath} committed to ${repoFullName}/${branch}`
@@ -623,13 +900,16 @@ export class LocalRepositoryManager {
           ? auth.token
           : '';
 
-      await git.push({
-        fs,
-        http,
-        dir: repoPath,
-        url: `https://x-access-token:${token}@github.com/${repoFullName}.git`,
-        ref: branch,
-      });
+      // Configure remote URL with token
+      await runGitCommand(repoPath, [
+        'remote',
+        'set-url',
+        'origin',
+        `https://x-access-token:${token}@github.com/${repoFullName}.git`,
+      ]);
+
+      // Push changes
+      await runGitCommand(repoPath, ['push', 'origin', branch]);
 
       console.log(`Changes to ${filePath} pushed to ${repoFullName}/${branch}`);
     } catch (error) {
@@ -675,6 +955,22 @@ export class LocalRepositoryManager {
     } catch (error) {
       console.error(`Error creating pull request in ${repoFullName}:`, error);
       throw error;
+    }
+  }
+
+  /**
+   * Clean up temporary directories
+   */
+  async cleanup(): Promise<void> {
+    try {
+      await fs.rm(this.tempDir, { recursive: true, force: true });
+      this.clonedRepos.clear();
+      console.log(`Cleaned up temporary directory ${this.tempDir}`);
+    } catch (error) {
+      console.error(
+        `Error cleaning up temporary directory ${this.tempDir}:`,
+        error
+      );
     }
   }
 }
