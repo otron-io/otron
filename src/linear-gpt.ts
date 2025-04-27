@@ -1064,7 +1064,7 @@ export class LinearGPT {
   }
 
   /**
-   * Search for relevant files based on keywords from an issue
+   * Search for relevant files based on issue keywords using local repository search
    */
   private async searchRelevantFiles(
     issue: Issue
@@ -1097,21 +1097,16 @@ export class LinearGPT {
         continue;
       }
 
-      const [owner, name] = repo.split('/');
-
       for (const keyword of keywords) {
         try {
-          // Get the octokit instance for this repository
-          const octokit = await this.getOctokitForRepo(repo);
-
-          // Search for files containing the keyword
-          const searchResponse = await octokit.rest.search.code({
-            q: `repo:${repo} ${keyword}`,
-            per_page: 10,
-          });
+          // Use LocalRepositoryManager to search for files containing the keyword
+          const searchResults = await this.localRepoManager.searchCode(
+            keyword,
+            repo
+          );
 
           // Add results, avoiding duplicates
-          for (const item of searchResponse.data.items) {
+          for (const item of searchResults) {
             if (
               !results.some(
                 (r) => r.path === item.path && r.repository === repo
@@ -1352,7 +1347,7 @@ export class LinearGPT {
   }
 
   /**
-   * Load the content of files from GitHub
+   * Load content for files from local repository clones
    */
   private async loadFileContents(
     files: Array<{ path: string; repository: string; content?: string }>
@@ -1370,33 +1365,17 @@ export class LinearGPT {
       }
 
       try {
-        const [owner, repo] = file.repository.split('/');
-        // Get the octokit instance for this repository
-        const octokit = await this.getOctokitForRepo(file.repository);
+        // Use localRepoManager to get file content from local repository clone
+        const content = await this.localRepoManager.getFileContent(
+          file.path,
+          file.repository
+        );
 
-        const response = await octokit.repos.getContent({
-          owner,
-          repo,
+        result.push({
           path: file.path,
+          repository: file.repository,
+          content,
         });
-
-        // Handle file content
-        if ('content' in response.data && 'encoding' in response.data) {
-          let content = '';
-          if (response.data.encoding === 'base64') {
-            content = Buffer.from(response.data.content, 'base64').toString(
-              'utf-8'
-            );
-          } else {
-            content = response.data.content;
-          }
-
-          result.push({
-            path: file.path,
-            repository: file.repository,
-            content,
-          });
-        }
       } catch (error: unknown) {
         console.error(
           `Error loading content for ${file.repository}/${file.path}:`,

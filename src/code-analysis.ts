@@ -1,6 +1,3 @@
-import { Octokit } from '@octokit/rest';
-import '@octokit/plugin-rest-endpoint-methods';
-import '@octokit/plugin-paginate-rest';
 import { Issue } from '@linear/sdk';
 import OpenAI from 'openai';
 import { env } from './env.js';
@@ -8,13 +5,16 @@ import { PRManager } from './pr-manager.js';
 import { LocalRepositoryManager } from './repository-manager.js';
 import * as path from 'path';
 import * as fs from 'fs/promises';
+import { exec } from 'child_process';
+import { promisify } from 'util';
+
+const execAsync = promisify(exec);
 
 // Define CodeFile interface
 interface CodeFile {
   path: string;
   repository: string;
   content: string;
-  url?: string; // Make url optional to match existing usage
 }
 
 // Add the necessary interfaces
@@ -35,7 +35,6 @@ interface CodebaseAnalysis {
 interface CodeSearchResult {
   repository: string;
   path: string;
-  url: string;
   score: number;
 }
 
@@ -49,7 +48,6 @@ const openai = new OpenAI({
  */
 export class CodeAnalyzer {
   constructor(
-    private getOctokit: (repository: string) => Promise<Octokit>,
     private prManager: PRManager,
     private localRepoManager: LocalRepositoryManager,
     private allowedRepositories: string[]
@@ -500,6 +498,7 @@ export class CodeAnalyzer {
       // Determine which repository this file belongs to
       for (const repo of this.allowedRepositories) {
         try {
+          // Try to get the file content from the local repo
           const content = await this.localRepoManager.getFileContent(
             filePath,
             repo
@@ -558,12 +557,13 @@ export class CodeAnalyzer {
   }
 
   /**
-   * Get statistics about file types in a repository
+   * Get statistics about file types in a repository using local git operations
    */
   async getFileStatistics(
     repository: string
   ): Promise<{ totalFiles: number; filesByExtension: Record<string, number> }> {
     try {
+      const repoPath = await this.localRepoManager.ensureRepoCloned(repository);
       const extensions = [
         '.js',
         '.ts',
@@ -583,24 +583,20 @@ export class CodeAnalyzer {
       const filesByExtension: Record<string, number> = {};
       let totalFiles = 0;
 
+      // Use git ls-files to count files by extension
       for (const ext of extensions) {
         try {
-          const octokit = await this.getOctokit(repository);
-          const response = await octokit.rest.search.code({
-            q: `extension:${ext.substring(1)} repo:${repository}`,
-            per_page: 100,
-          });
+          const { stdout } = await execAsync(
+            `cd ${repoPath} && git ls-files | grep -i '\\${ext}$' | wc -l`
+          );
+          const count = parseInt(stdout.trim(), 10);
 
-          const count = response.data.total_count;
           if (count > 0) {
             filesByExtension[ext] = count;
             totalFiles += count;
           }
         } catch (error) {
-          console.error(
-            `Error searching for ${ext} files in ${repository}:`,
-            error
-          );
+          console.error(`Error counting ${ext} files in ${repository}:`, error);
         }
       }
 
@@ -608,6 +604,135 @@ export class CodeAnalyzer {
     } catch (error) {
       console.error(`Error getting file statistics for ${repository}:`, error);
       return { totalFiles: 0, filesByExtension: {} };
+    }
+  }
+
+  /**
+   * Get languages used in the repository based on file extensions
+   */
+  async getLanguages(repository: string): Promise<Record<string, number>> {
+    try {
+      const { totalFiles, filesByExtension } = await this.getFileStatistics(
+        repository
+      );
+
+      // Map file extensions to languages and calculate percentages
+      const extensionToLanguage: Record<string, string> = {
+        '.js': 'JavaScript',
+        '.jsx': 'JavaScript',
+        '.ts': 'TypeScript',
+        '.tsx': 'TypeScript',
+        '.py': 'Python',
+        '.java': 'Java',
+        '.rb': 'Ruby',
+        '.go': 'Go',
+        '.php': 'PHP',
+        '.cs': 'C#',
+        '.cpp': 'C++',
+        '.html': 'HTML',
+        '.css': 'CSS',
+        '.json': 'JSON',
+      };
+
+      const languages: Record<string, number> = {};
+
+      for (const [ext, count] of Object.entries(filesByExtension)) {
+        const language = extensionToLanguage[ext] || 'Other';
+        languages[language] = (languages[language] || 0) + count;
+      }
+
+      return languages;
+    } catch (error) {
+      console.error(`Error getting languages for ${repository}:`, error);
+      return {};
+    }
+  }
+
+  /**
+   * Get top contributors using local git operations
+   */
+  async getTopContributors(
+    repository: string
+  ): Promise<{ name: string; commits: number }[]> {
+    try {
+      const repoPath = await this.localRepoManager.ensureRepoCloned(repository);
+
+      // Use git shortlog to get contributors
+      const { stdout } = await execAsync(
+        `cd ${repoPath} && git shortlog -sn --no-merges | head -10`
+      );
+
+      const contributors: { name: string; commits: number }[] = [];
+
+      // Parse the shortlog output
+      // Format is: numCommits\tAuthor Name
+      const lines = stdout.trim().split('\n');
+      for (const line of lines) {
+        const match = line.trim().match(/^\s*(\d+)\s+(.+)$/);
+        if (match) {
+          contributors.push({
+            name: match[2],
+            commits: parseInt(match[1], 10),
+          });
+        }
+      }
+
+      return contributors;
+    } catch (error) {
+      console.error(`Error getting contributors for ${repository}:`, error);
+      return [];
+    }
+  }
+
+  /**
+   * Get commit frequency using local git operations
+   */
+  async getCommitFrequency(
+    repository: string
+  ): Promise<{ week: string; commits: number }[]> {
+    try {
+      const repoPath = await this.localRepoManager.ensureRepoCloned(repository);
+
+      // Get commits by week for the last 10 weeks
+      const { stdout } = await execAsync(
+        `cd ${repoPath} && git log --format=format:%ai --no-merges -n 1000`
+      );
+
+      const dates = stdout
+        .trim()
+        .split('\n')
+        .map((line) => line.substring(0, 10));
+
+      // Group by week
+      const weekCounts = new Map<string, number>();
+      const now = new Date();
+
+      // Initialize with the last 10 weeks
+      for (let i = 0; i < 10; i++) {
+        const weekStart = new Date(now);
+        weekStart.setDate(now.getDate() - i * 7);
+        const weekString = weekStart.toISOString().split('T')[0];
+        weekCounts.set(weekString, 0);
+      }
+
+      // Count commits per week
+      for (const date of dates) {
+        const weekStart = new Date(date);
+        weekStart.setDate(weekStart.getDate() - weekStart.getDay()); // Set to start of week (Sunday)
+        const weekString = weekStart.toISOString().split('T')[0];
+
+        weekCounts.set(weekString, (weekCounts.get(weekString) || 0) + 1);
+      }
+
+      // Convert to array and sort by date
+      const result = Array.from(weekCounts.entries())
+        .map(([week, commits]) => ({ week, commits }))
+        .sort((a, b) => a.week.localeCompare(b.week));
+
+      return result;
+    } catch (error) {
+      console.error(`Error getting commit frequency for ${repository}:`, error);
+      return [];
     }
   }
 
@@ -784,7 +909,7 @@ Format as JSON with two arrays: "keyTerms" and "dataElements".`,
   }
 
   /**
-   * Search for additional files based on key terms
+   * Search for additional files based on key terms using local operations
    */
   private async searchFilesBasedOnTerms(
     terms: string[]
@@ -799,7 +924,7 @@ Format as JSON with two arrays: "keyTerms" and "dataElements".`,
     // Use the most specific terms first (typically longer terms are more specific)
     const sortedTerms = [...terms].sort((a, b) => b.length - a.length);
 
-    // Limit to top 5 most specific terms to avoid too many API calls
+    // Limit to top 5 most specific terms to avoid too many operations
     const searchTerms = sortedTerms.slice(0, 5);
 
     for (const term of searchTerms) {
@@ -807,16 +932,23 @@ Format as JSON with two arrays: "keyTerms" and "dataElements".`,
 
       for (const repository of this.allowedRepositories) {
         try {
-          // Use localRepoManager for code search
-          const searchResults = await this.localRepoManager.searchCode(
-            term,
+          const repoPath = await this.localRepoManager.ensureRepoCloned(
             repository
           );
 
+          // Use git grep to search for the term
+          const escapedTerm = this.escapeRegExp(term);
+          const { stdout } = await execAsync(
+            `cd ${repoPath} && git grep -l "${escapedTerm}" -- "*.js" "*.ts" "*.jsx" "*.tsx" "*.py" "*.rb" "*.java" | head -20`
+          );
+
+          if (!stdout.trim()) continue;
+
+          const filePaths = stdout.trim().split('\n');
+
           // For each result, get the file content
-          for (const item of searchResults) {
-            const filePath = item.path;
-            const fileKey = `${repository}:${filePath}`;
+          for (const filePath of filePaths) {
+            const fileKey = `${repository}:${filePath.trim()}`;
 
             // Skip if we already have this file
             if (processedFiles.has(fileKey)) {
@@ -826,12 +958,12 @@ Format as JSON with two arrays: "keyTerms" and "dataElements".`,
             try {
               // Get file content using localRepoManager
               const content = await this.localRepoManager.getFileContent(
-                filePath,
+                filePath.trim(),
                 repository
               );
 
               results.push({
-                path: filePath,
+                path: filePath.trim(),
                 content,
                 repository,
               });
@@ -906,7 +1038,7 @@ Format as JSON with two arrays: "keyTerms" and "dataElements".`,
   }
 
   /**
-   * Find similar bug patterns in commit history
+   * Find similar bug patterns in commit history using local git commands
    */
   private async findSimilarBugCommits(
     keyTerms: string[]
@@ -927,10 +1059,10 @@ Format as JSON with two arrays: "keyTerms" and "dataElements".`,
 
     for (const repository of this.allowedRepositories) {
       try {
+        const repoPath = await this.localRepoManager.ensureRepoCloned(
+          repository
+        );
         const [owner, repo] = repository.split('/');
-
-        // Get the octokit instance
-        const octokit = await this.getOctokit(repository);
 
         // Combine key terms with bug terms for search
         for (const bugTerm of bugTerms) {
@@ -939,16 +1071,24 @@ Format as JSON with two arrays: "keyTerms" and "dataElements".`,
             if (!keyTerm || keyTerm.length < 3) continue; // Skip very short terms
 
             try {
-              const { data: commits } = await octokit.rest.search.commits({
-                q: `repo:${owner}/${repo} ${bugTerm} ${keyTerm}`,
-                per_page: 5,
-              });
+              // Use git log to search commit messages
+              const escapedBugTerm = this.escapeRegExp(bugTerm);
+              const escapedKeyTerm = this.escapeRegExp(keyTerm);
+              const { stdout } = await execAsync(
+                `cd ${repoPath} && git log --grep="${escapedBugTerm}" --grep="${escapedKeyTerm}" --format=format:"%H||%an||%ad||%s" -n 5`
+              );
 
-              for (const item of commits.items) {
+              if (!stdout.trim()) continue;
+
+              const commits = stdout.trim().split('\n');
+
+              for (const commit of commits) {
+                const [sha, author, date, message] = commit.split('||');
+
                 results.push({
-                  sha: item.sha,
-                  message: item.commit.message,
-                  url: item.html_url,
+                  sha,
+                  message,
+                  url: `https://github.com/${owner}/${repo}/commit/${sha}`,
                 });
 
                 // Limit the total number of commits
@@ -1015,25 +1155,36 @@ Format as JSON with two arrays: "keyTerms" and "dataElements".`,
     repository: string
   ): Promise<CodeFile[]> {
     const results: CodeFile[] = [];
-    const [owner, repo] = repository.split('/');
 
     try {
-      // Get the octokit instance
-      const octokit = await this.getOctokit(repository);
+      const repoPath = await this.localRepoManager.ensureRepoCloned(repository);
 
-      // Search for all files in the repository
-      const { data } = await octokit.rest.search.code({
-        q: `repo:${repository} ${keywords.join(' ')}`,
-        per_page: 100,
-      });
+      // Build a grep command that searches for all keywords
+      const grepPattern = keywords.map((k) => this.escapeRegExp(k)).join('|');
+      const { stdout } = await execAsync(
+        `cd ${repoPath} && git grep -l -E "${grepPattern}" -- "*.js" "*.ts" "*.jsx" "*.tsx" "*.py" "*.rb" "*.java" | head -100`
+      );
 
-      for (const item of data.items) {
-        results.push({
-          path: item.path,
-          url: item.html_url,
-          repository,
-          content: '',
-        });
+      if (!stdout.trim()) return results;
+
+      const filePaths = stdout.trim().split('\n');
+
+      // Load content for each file
+      for (const filePath of filePaths) {
+        try {
+          const content = await this.localRepoManager.getFileContent(
+            filePath.trim(),
+            repository
+          );
+
+          results.push({
+            path: filePath.trim(),
+            repository,
+            content,
+          });
+        } catch (error) {
+          console.error(`Error reading file ${filePath}:`, error);
+        }
       }
     } catch (error) {
       console.error(
@@ -1059,22 +1210,27 @@ Format as JSON with two arrays: "keyTerms" and "dataElements".`,
         return terms;
       }
 
-      // Get octokit instance
-      const octokit = await this.getOctokit(repository);
+      const repoPath = await this.localRepoManager.ensureRepoCloned(repository);
 
       for (const keyword of keywords) {
         if (keyword.length < 3) continue; // Skip very short terms
 
-        const { data } = await octokit.rest.search.code({
-          q: `repo:${repository} ${keyword}`,
-          per_page: 5,
-        });
+        try {
+          const escapedKeyword = this.escapeRegExp(keyword);
+          const { stdout } = await execAsync(
+            `cd ${repoPath} && git grep -l -w "${escapedKeyword}" | wc -l`
+          );
 
-        if (data.total_count > 0) {
-          terms.push(keyword);
+          const count = parseInt(stdout.trim(), 10);
+
+          if (count > 0) {
+            terms.push(keyword);
+          }
+
+          if (terms.length >= 10) break; // Limit to 10 terms
+        } catch (error) {
+          console.error(`Error searching for keyword ${keyword}:`, error);
         }
-
-        if (terms.length >= 10) break; // Limit to 10 terms
       }
     } catch (error) {
       console.error(
@@ -1090,28 +1246,19 @@ Format as JSON with two arrays: "keyTerms" and "dataElements".`,
     repository: string,
     filePath: string
   ): Promise<string[]> {
-    const [owner, repo] = repository.split('/');
     const bugFixes: string[] = [];
 
     try {
-      // Get octokit instance
-      const octokit = await this.getOctokit(repository);
+      const repoPath = await this.localRepoManager.ensureRepoCloned(repository);
 
-      const query = `repo:${repository} path:${filePath} fix bug issue type:commit`;
+      // Look for bug-related terms in commit messages that touch this file
+      const { stdout } = await execAsync(
+        `cd ${repoPath} && git log --grep="\\(fix\\|bug\\|issue\\|error\\)" --format=format:"%h: %s" -- "${filePath}" | head -5`
+      );
 
-      const { data } = await octokit.rest.search.commits({
-        q: query,
-        per_page: 5,
-        sort: 'committer-date',
-        order: 'desc',
-      });
-
-      for (const item of data.items) {
-        const message = item.commit.message;
-        const sha = item.sha;
-        bugFixes.push(
-          `Commit ${sha.substring(0, 7)}: ${message.split('\n')[0]}`
-        );
+      if (stdout.trim()) {
+        const lines = stdout.trim().split('\n');
+        bugFixes.push(...lines);
       }
     } catch (error) {
       console.error(
@@ -1206,19 +1353,11 @@ Format as JSON with two arrays: "keyTerms" and "dataElements".`,
 
   async analyzeCodebase(repository: string): Promise<CodebaseAnalysis> {
     try {
-      const [owner, repo] = repository.split('/');
       const fileStats = await this.getFileStatistics(repository);
       const languages = await this.getLanguages(repository);
       const contributors = await this.getTopContributors(repository);
       const commitFrequency = await this.getCommitFrequency(repository);
-
-      // Get recent commits
-      const octokit = await this.getOctokit(repository);
-      const { data: commits } = await octokit.rest.repos.listCommits({
-        owner,
-        repo,
-        per_page: 10,
-      });
+      const recentCommits = await this.getRecentCommits(repository);
 
       return {
         repository,
@@ -1226,12 +1365,7 @@ Format as JSON with two arrays: "keyTerms" and "dataElements".`,
         languages,
         contributors,
         commitFrequency,
-        recentCommits: commits.map((commit) => ({
-          sha: commit.sha,
-          message: commit.commit.message,
-          author: commit.commit.author?.name || 'Unknown',
-          date: commit.commit.author?.date || new Date().toISOString(),
-        })),
+        recentCommits,
       };
     } catch (error) {
       console.error(`Error analyzing codebase for ${repository}:`, error);
@@ -1246,90 +1380,84 @@ Format as JSON with two arrays: "keyTerms" and "dataElements".`,
     }
   }
 
+  /**
+   * Get recent commits using local git operations
+   */
+  private async getRecentCommits(repository: string): Promise<
+    Array<{
+      sha: string;
+      message: string;
+      author: string;
+      date: string;
+    }>
+  > {
+    try {
+      const repoPath = await this.localRepoManager.ensureRepoCloned(repository);
+      const [owner, repo] = repository.split('/');
+
+      // Get recent commits
+      const { stdout } = await execAsync(
+        `cd ${repoPath} && git log --format=format:"%H||%an||%ad||%s" -n 10`
+      );
+
+      if (!stdout.trim()) return [];
+
+      const commits = stdout
+        .trim()
+        .split('\n')
+        .map((line) => {
+          const [sha, author, date, message] = line.split('||');
+          return {
+            sha,
+            message,
+            author,
+            date,
+          };
+        });
+
+      return commits;
+    } catch (error) {
+      console.error(`Error getting recent commits for ${repository}:`, error);
+      return [];
+    }
+  }
+
+  /**
+   * Search code in the repository using local git grep
+   */
   async searchCode(
     repository: string,
     query: string,
     fileExtension?: string
   ): Promise<CodeSearchResult[]> {
     try {
-      const octokit = await this.getOctokit(repository);
-      let q = `repo:${repository} ${query}`;
+      const repoPath = await this.localRepoManager.ensureRepoCloned(repository);
+      const escapedQuery = this.escapeRegExp(query);
 
+      // Build the git grep command
+      let grepCommand = `cd ${repoPath} && git grep -l "${escapedQuery}"`;
+
+      // Add file extension filter if specified
       if (fileExtension) {
-        q += ` extension:${fileExtension}`;
+        grepCommand += ` -- "*.${fileExtension}"`;
       }
 
-      const response = await octokit.rest.search.code({
-        q,
-        per_page: 10,
-      });
+      // Limit results
+      grepCommand += ' | head -20';
 
-      return response.data.items.map((item) => ({
+      const { stdout } = await execAsync(grepCommand);
+
+      if (!stdout.trim()) return [];
+
+      // Process results
+      const filePaths = stdout.trim().split('\n');
+      return filePaths.map((path, index) => ({
         repository,
-        path: item.path,
-        url: item.html_url,
-        score: item.score,
+        path: path.trim(),
+        score: 100 - index, // Simulate a score (higher = better match)
       }));
     } catch (error) {
       console.error(`Error searching code in ${repository}:`, error);
-      return [];
-    }
-  }
-
-  async getLanguages(repository: string): Promise<Record<string, number>> {
-    try {
-      const [owner, repo] = repository.split('/');
-      const octokit = await this.getOctokit(repository);
-      const { data } = await octokit.rest.repos.listLanguages({
-        owner,
-        repo,
-      });
-      return data;
-    } catch (error) {
-      console.error(`Error getting languages for ${repository}:`, error);
-      return {};
-    }
-  }
-
-  async getTopContributors(
-    repository: string
-  ): Promise<{ name: string; commits: number }[]> {
-    try {
-      const [owner, repo] = repository.split('/');
-      const octokit = await this.getOctokit(repository);
-      const { data } = await octokit.rest.repos.listContributors({
-        owner,
-        repo,
-        per_page: 10,
-      });
-
-      return data.map((contributor) => ({
-        name: contributor.login || 'Anonymous',
-        commits: contributor.contributions,
-      }));
-    } catch (error) {
-      console.error(`Error getting contributors for ${repository}:`, error);
-      return [];
-    }
-  }
-
-  async getCommitFrequency(
-    repository: string
-  ): Promise<{ week: string; commits: number }[]> {
-    try {
-      const [owner, repo] = repository.split('/');
-      const octokit = await this.getOctokit(repository);
-      const { data } = await octokit.rest.repos.getCommitActivityStats({
-        owner,
-        repo,
-      });
-
-      return data.map((week) => ({
-        week: new Date(week.week * 1000).toISOString().split('T')[0],
-        commits: week.total,
-      }));
-    } catch (error) {
-      console.error(`Error getting commit frequency for ${repository}:`, error);
       return [];
     }
   }

@@ -18,9 +18,16 @@ interface RepoInfo {
   localPath: string;
 }
 
-/**
- * LocalRepositoryManager for working with repositories on the local filesystem
- * using isomorphic-git instead of shell commands to be compatible with serverless environments
+/*
+ * LocalRepositoryManager
+ *
+ * This class manages local git repositories, minimizing GitHub API usage
+ * to avoid rate limits. Most operations use isomorphic-git to work with
+ * local repositories.
+ *
+ * NOTE: A few operations like creating pull requests still require the
+ * GitHub API, as these cannot be performed using local git operations alone.
+ * These methods are clearly marked.
  */
 export class LocalRepositoryManager {
   private octokit: Octokit;
@@ -187,7 +194,7 @@ export class LocalRepositoryManager {
   }
 
   /**
-   * Get the default branch for a repository
+   * Get the default branch for a repository from the local clone
    */
   async getDefaultBranch(repoFullName: string): Promise<string> {
     const repoInfo = this.clonedRepos.get(repoFullName);
@@ -202,26 +209,63 @@ export class LocalRepositoryManager {
     }
 
     try {
-      // Get the default branch from GitHub API
-      const [owner, repo] = repoFullName.split('/');
-      const octokit = await this.getOctokitForRepo(repoFullName);
+      const repoPath = info!.localPath;
 
-      const { data } = await octokit.repos.get({
-        owner,
-        repo,
-      });
-
-      const defaultBranch = data.default_branch;
-
-      // Update repoInfo with default branch
-      if (this.clonedRepos.has(repoFullName) && info) {
-        this.clonedRepos.set(repoFullName, {
-          ...info,
-          defaultBranch,
+      // Try to find the current branch first
+      try {
+        const currentBranch = await git.currentBranch({
+          fs,
+          dir: repoPath,
         });
+
+        if (currentBranch) {
+          // Update repoInfo with default branch
+          if (this.clonedRepos.has(repoFullName) && info) {
+            this.clonedRepos.set(repoFullName, {
+              ...info,
+              defaultBranch: currentBranch.toString(),
+            });
+          }
+
+          return currentBranch.toString();
+        }
+      } catch (err) {
+        console.log(`Couldn't get current branch: ${err}`);
       }
 
-      return defaultBranch;
+      // Fallback: Check for common default branch names by seeing which one exists
+      for (const branch of ['main', 'master', 'develop']) {
+        try {
+          // Check if the branch exists in .git/refs/heads
+          try {
+            const branchPath = path.join(
+              repoPath,
+              '.git',
+              'refs',
+              'heads',
+              branch
+            );
+            await fs.access(branchPath);
+
+            // If we get here, the branch exists
+            if (this.clonedRepos.has(repoFullName) && info) {
+              this.clonedRepos.set(repoFullName, {
+                ...info,
+                defaultBranch: branch,
+              });
+            }
+
+            return branch;
+          } catch (accessErr) {
+            // Branch file doesn't exist, continue to next branch
+          }
+        } catch (err) {
+          // Error checking branch, try next one
+        }
+      }
+
+      // Ultimate fallback
+      return 'main';
     } catch (error) {
       console.error(`Error getting default branch for ${repoFullName}:`, error);
       // Fallback to 'main' if we can't determine the default branch
@@ -506,7 +550,7 @@ export class LocalRepositoryManager {
 
   /**
    * Create a pull request
-   * Note: This still requires the GitHub API
+   * NOTE: This operation requires the GitHub API and cannot be replaced with local git operations
    */
   async createPullRequest(
     title: string,
@@ -698,8 +742,7 @@ export class LocalRepositoryManager {
   }
 
   /**
-   * Get the git history for a file using the GitHub API
-   * since we can't use git log in serverless environments
+   * Get the git history for a file using local git operations
    */
   async getFileHistory(
     filePath: string,
@@ -708,29 +751,97 @@ export class LocalRepositoryManager {
   ): Promise<
     Array<{ commit: string; author: string; date: string; message: string }>
   > {
-    const [owner, repo] = repoFullName.split('/');
+    await this.ensureRepoCloned(repoFullName);
+    const repoInfo = this.clonedRepos.get(repoFullName);
+    if (!repoInfo) throw new Error(`Repository ${repoFullName} not found`);
 
     try {
-      const octokit = await this.getOctokitForRepo(repoFullName);
+      const repoPath = repoInfo.localPath;
+      const commits: Array<{
+        commit: string;
+        author: string;
+        date: string;
+        message: string;
+      }> = [];
 
-      const { data } = await octokit.repos.listCommits({
-        owner,
-        repo,
-        path: filePath,
-        per_page: limit,
+      // Get the commit history using isomorphic-git
+      const logResults = await git.log({
+        fs,
+        dir: repoPath,
+        depth: limit,
+        filepath: filePath,
       });
 
-      return data.map((item) => ({
-        commit: item.sha,
-        author: item.commit.author?.name || item.author?.login || 'Unknown',
-        date: item.commit.author?.date || new Date().toISOString(),
-        message: item.commit.message,
+      return logResults.map((commit) => ({
+        commit: commit.oid,
+        author: commit.commit.author.name,
+        date: new Date(commit.commit.author.timestamp * 1000).toISOString(),
+        message: commit.commit.message,
       }));
     } catch (error) {
       console.error(
         `Error getting history for ${filePath} in ${repoFullName}:`,
         error
       );
+      return [];
+    }
+  }
+
+  /**
+   * Search commit messages and content using local git operations
+   */
+  async searchCommits(
+    searchTerm: string,
+    repoFullName: string,
+    limit: number = 10
+  ): Promise<
+    Array<{
+      sha: string;
+      commit: {
+        message: string;
+        author: { name: string; date: string };
+        stats: { total: number };
+      };
+    }>
+  > {
+    await this.ensureRepoCloned(repoFullName);
+    const repoInfo = this.clonedRepos.get(repoFullName);
+    if (!repoInfo) throw new Error(`Repository ${repoFullName} not found`);
+
+    try {
+      const repoPath = repoInfo.localPath;
+
+      // Use git.log to get commits
+      const logResults = await git.log({
+        fs,
+        dir: repoPath,
+        depth: 100, // Get more than we need for filtering
+      });
+
+      // Filter commits based on search term
+      const searchTermLower = searchTerm.toLowerCase();
+      const filteredCommits = logResults
+        .filter((commit) =>
+          commit.commit.message.toLowerCase().includes(searchTermLower)
+        )
+        .slice(0, limit);
+
+      // Format to match the expected interface
+      return filteredCommits.map((commit) => ({
+        sha: commit.oid,
+        commit: {
+          message: commit.commit.message,
+          author: {
+            name: commit.commit.author.name,
+            date: new Date(commit.commit.author.timestamp * 1000).toISOString(),
+          },
+          stats: {
+            total: 1, // We don't have actual stats, so use placeholder
+          },
+        },
+      }));
+    } catch (error) {
+      console.error(`Error searching commits in ${repoFullName}:`, error);
       return [];
     }
   }
