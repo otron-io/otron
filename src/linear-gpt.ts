@@ -143,6 +143,29 @@ export class LinearGPT {
             {
               type: 'function',
               function: {
+                name: 'getDirectoryStructure',
+                description:
+                  'Get the directory structure of a repository or specific path',
+                parameters: {
+                  type: 'object',
+                  properties: {
+                    repository: {
+                      type: 'string',
+                      description: 'Repository to explore (owner/repo format)',
+                    },
+                    path: {
+                      type: 'string',
+                      description:
+                        'Path within the repository to explore (optional)',
+                    },
+                  },
+                  required: ['repository'],
+                },
+              },
+            },
+            {
+              type: 'function',
+              function: {
                 name: 'getFileContent',
                 description:
                   'Get the content of a specific file from a repository',
@@ -460,6 +483,28 @@ export class LinearGPT {
 
                   // Set the tool response
                   toolResponse = formattedResults;
+                } else if (functionName === 'getDirectoryStructure') {
+                  const directoryStructure =
+                    await this.localRepoManager.getDirectoryStructure(
+                      functionArgs.repository,
+                      functionArgs.path
+                    );
+
+                  // Format the directory structure as a string
+                  let formattedStructure = `Directory structure for ${
+                    functionArgs.path || 'root'
+                  } in ${functionArgs.repository}:\n\n`;
+
+                  // Add each file/directory to the response
+                  directoryStructure.forEach((item) => {
+                    const icon = item.type === 'dir' ? '📁' : '📄';
+                    const size = item.size
+                      ? ` (${Math.round(item.size / 1024)}KB)`
+                      : '';
+                    formattedStructure += `${icon} ${item.path}${size}\n`;
+                  });
+
+                  toolResponse = formattedStructure;
                 } else if (functionName === 'getFileContent') {
                   const content = await this.localRepoManager.getFileContent(
                     functionArgs.path,

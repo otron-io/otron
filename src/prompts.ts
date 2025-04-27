@@ -79,6 +79,7 @@ LINEAR TOOLS:
 
 GITHUB TOOLS:
 - Search code across repositories
+- Browse directory structure
 - Read file content
 - Create branch
 - Modify files
@@ -88,6 +89,8 @@ GITHUB TOOLS:
 IMPORTANT:
 - You MUST specify the repository (owner/repo format) for any GitHub operations
 - No default repository will be used - you must explicitly indicate which repository each operation applies to
+- When browsing directories, you can specify a path or browse from the root
+- Code searches are limited to 5 files maximum
 
 You can decide which tools to use based on the context and what would be most helpful.`;
 }
