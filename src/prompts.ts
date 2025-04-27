@@ -59,10 +59,7 @@ IMPORTANT:
 - If someone is requesting a technical analysis, perform one
 - If someone is asking for implementation or saying "please proceed" after an analysis, implement the changes
 - Make sure to use the appropriate tools for the job
-- ALWAYS specify which repository to use for any code-related operations (analysis or changes)
-- If you intend to take any action, comment on the issue first with your plan
-
-Your final response that contains no tool calls will be posted as a comment on the issue you are assigned to or as a reply to the comment that triggered this. This should typically be a summmary of what you have done as there will be no further action from you after this.`;
+- ALWAYS specify which repository to use for any code-related operations (analysis or changes)`;
 }
 
 /**
