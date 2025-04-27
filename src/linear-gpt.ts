@@ -80,7 +80,7 @@ export class LinearGPT {
       // Tool use loop - continue until model stops making tool calls
       let hasMoreToolCalls = true;
       let toolCallCount = 0;
-      const MAX_TOOL_CALLS = 10; // Maximum number of tool calls to prevent infinite loops
+      const MAX_TOOL_CALLS = 50; // Maximum number of tool calls to prevent infinite loops
 
       while (hasMoreToolCalls && toolCallCount < MAX_TOOL_CALLS) {
         // Use OpenAI's client
