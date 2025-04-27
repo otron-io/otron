@@ -370,7 +370,7 @@ export class LinearGPT {
       while (hasMoreToolCalls && toolCallCount < MAX_TOOL_CALLS) {
         // Use Anthropic's client with type assertions
         const response = await anthropic.messages.create({
-          model: 'claude-3-7-sonnet-20240307',
+          model: 'claude-3-7-sonnet-latest',
           max_tokens: 4096,
           system: systemMessage as any,
           messages: messages as any,
