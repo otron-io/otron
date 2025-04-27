@@ -128,7 +128,10 @@ export class LocalRepositoryManager {
           url: `https://github.com/${repoFullName}.git`,
           singleBranch: true,
           depth: 1, // Shallow clone for better performance
-          onAuth: () => ({ username: token as string }),
+          onAuth: () => ({
+            username: token as string,
+            password: '', // Use token as username for GitHub OAuth tokens
+          }),
         });
 
         // Store repository info
@@ -169,7 +172,10 @@ export class LocalRepositoryManager {
                 dir: repoPath,
                 ref: currentBranch,
                 singleBranch: true,
-                onAuth: () => ({ username: token as string }),
+                onAuth: () => ({
+                  username: token as string,
+                  password: '', // Use token as username for GitHub OAuth tokens
+                }),
               });
             }
 
@@ -311,7 +317,10 @@ export class LocalRepositoryManager {
         dir: repoPath,
         ref: defaultBranch,
         singleBranch: true,
-        onAuth: () => ({ username: token as string }),
+        onAuth: () => ({
+          username: token as string,
+          password: '', // Use token as username for GitHub OAuth tokens
+        }),
       });
 
       // Create and checkout new branch
@@ -533,7 +542,10 @@ export class LocalRepositoryManager {
         dir: repoPath,
         remote: 'origin',
         ref: pushBranch,
-        onAuth: () => ({ username: token as string }),
+        onAuth: () => ({
+          username: token as string,
+          password: '', // Use token as username for GitHub OAuth tokens
+        }),
       });
 
       console.log(`Pushed changes to ${pushBranch} in ${repoFullName}`);
