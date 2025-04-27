@@ -120,18 +120,14 @@ export class LocalRepositoryManager {
           );
         }
 
-        // Clone the repository using isomorphic-git
+        // Clone the repository using isomorphic-git with token in URL
         await git.clone({
           fs,
           http,
           dir: repoPath,
-          url: `https://github.com/${repoFullName}.git`,
+          url: `https://${token}@github.com/${repoFullName}.git`,
           singleBranch: true,
           depth: 1, // Shallow clone for better performance
-          onAuth: () => ({
-            username: token as string,
-            password: '', // Use token as username for GitHub OAuth tokens
-          }),
         });
 
         // Store repository info
@@ -142,7 +138,7 @@ export class LocalRepositoryManager {
         });
 
         return repoPath;
-      } catch (error) {
+      } catch (error: any) {
         // If the directory exists and has content, try pulling latest changes
         try {
           const files = await fs.readdir(repoPath);
@@ -172,10 +168,7 @@ export class LocalRepositoryManager {
                 dir: repoPath,
                 ref: currentBranch,
                 singleBranch: true,
-                onAuth: () => ({
-                  username: token as string,
-                  password: '', // Use token as username for GitHub OAuth tokens
-                }),
+                url: `https://${token}@github.com/${repoFullName}.git`,
               });
             }
 
@@ -193,8 +186,37 @@ export class LocalRepositoryManager {
           throw error;
         }
       }
-    } catch (error) {
+    } catch (error: any) {
       console.error(`Error cloning repository ${repoFullName}:`, error);
+
+      // Add additional debug information for auth errors
+      if (error.code === 'HttpError' && error.data?.statusCode === 401) {
+        // Log token info without exposing the full token
+        const octokit = await this.getOctokitForRepo(repoFullName);
+        const auth = await octokit.auth();
+        const token =
+          typeof auth === 'object' && auth !== null && 'token' in auth
+            ? auth.token
+            : '';
+
+        console.error(
+          `Authentication error for ${repoFullName}. Token length: ${
+            typeof token === 'string' ? token.length : 0
+          }`
+        );
+
+        // Check if GitHub App authentication is being used
+        if (this.githubAppService) {
+          console.error(
+            'GitHub App authentication is being used. Check app permissions and installation.'
+          );
+        } else {
+          console.error(
+            'Token-based authentication is being used. Check if token has correct permissions.'
+          );
+        }
+      }
+
       throw error;
     }
   }
@@ -317,10 +339,7 @@ export class LocalRepositoryManager {
         dir: repoPath,
         ref: defaultBranch,
         singleBranch: true,
-        onAuth: () => ({
-          username: token as string,
-          password: '', // Use token as username for GitHub OAuth tokens
-        }),
+        url: `https://${token}@github.com/${repoFullName}.git`,
       });
 
       // Create and checkout new branch
@@ -542,10 +561,7 @@ export class LocalRepositoryManager {
         dir: repoPath,
         remote: 'origin',
         ref: pushBranch,
-        onAuth: () => ({
-          username: token as string,
-          password: '', // Use token as username for GitHub OAuth tokens
-        }),
+        url: `https://${token}@github.com/${repoFullName}.git`,
       });
 
       console.log(`Pushed changes to ${pushBranch} in ${repoFullName}`);
