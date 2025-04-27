@@ -75,4 +75,4 @@ npm install
 npm run dev
 ```
 
-Built with Vercel AI SDK, Linear API, Upstash Redis, Claude/GPT-4, and GitHub API integration.
+Built with Vercel AI SDK, Linear API, Upstash Redis, Claude/gpt-4.1, and GitHub API integration.

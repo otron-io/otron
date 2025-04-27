@@ -1,6 +1,6 @@
 // Export all services from a central file
 import { TechnicalAnalysisService } from './technical-analysis.js';
 import { PRManager } from './pr-manager.js';
-import { DeveloperAgent } from './code-execution.js';
+import { LinearGPT } from './linear-gpt.js';
 
-export { TechnicalAnalysisService, PRManager, DeveloperAgent };
+export { TechnicalAnalysisService, PRManager, LinearGPT };

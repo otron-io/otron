@@ -1,13 +1,13 @@
-import { openai } from "@ai-sdk/openai";
-import type { Issue, LinearClient } from "@linear/sdk";
-import { generateText } from "ai";
+import { openai } from '@ai-sdk/openai';
+import type { Issue, LinearClient } from '@linear/sdk';
+import { generateText } from 'ai';
 
-const model = openai("gpt-4.1-mini");
+const model = openai('gpt-4.1.1-mini');
 
 // Function to get context about an issue
 export async function getIssueContext(
   issue: Issue,
-  linearClient: LinearClient,
+  linearClient: LinearClient
 ): Promise<string> {
   // Get team
   const team = await issue.team;
@@ -15,15 +15,15 @@ export async function getIssueContext(
   // Get comments (just a few recent ones)
   const comments = await issue.comments({ first: 3 });
   const commentData = comments.nodes
-    .map((c) => `${c.user?.name || "Unknown"}: ${c.body}`)
-    .join("\n\n");
+    .map((c) => `${c.user?.name || 'Unknown'}: ${c.body}`)
+    .join('\n\n');
 
   // Build simple context string
   let context = `Issue: ${issue.identifier} - ${issue.title}
-Team: ${team ? team.name : "Unknown"}
+Team: ${team ? team.name : 'Unknown'}
 Priority: ${getPriorityText(issue.priority)}
-State: ${issue?.state?.name || "Unknown"}
-Description: ${issue.description || "No description provided"}
+State: ${issue?.state?.name || 'Unknown'}
+Description: ${issue.description || 'No description provided'}
 `;
 
   // Add comments if any
@@ -37,7 +37,7 @@ Description: ${issue.description || "No description provided"}
 // Function to respond to messages based on context
 export async function respondToMessage(
   question: string,
-  context: string,
+  context: string
 ): Promise<string> {
   const { text } = await generateText({
     model,
@@ -66,16 +66,16 @@ Guidelines:
 function getPriorityText(priority: number | null): string {
   switch (priority) {
     case 0:
-      return "No Priority";
+      return 'No Priority';
     case 1:
-      return "Urgent";
+      return 'Urgent';
     case 2:
-      return "High";
+      return 'High';
     case 3:
-      return "Medium";
+      return 'Medium';
     case 4:
-      return "Low";
+      return 'Low';
     default:
-      return "Unknown";
+      return 'Unknown';
   }
 }

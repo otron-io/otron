@@ -1,10 +1,15 @@
-import { openai } from '@ai-sdk/openai';
 import { Issue, LinearClient, User } from '@linear/sdk';
-import { generateText } from 'ai';
+import OpenAI from 'openai';
 import { env } from './env.js';
+import {
+  buildTechnicalAnalysisPrompt,
+  buildChangePlanPrompt,
+} from './prompts.js';
 
-// Initialize Claude model (using OpenAI interface for now, will replace with Claude when added)
-const model = openai('gpt-4.1');
+// Initialize OpenAI client
+const openai = new OpenAI({
+  apiKey: env.OPENAI_API_KEY,
+});
 
 interface CodeFile {
   path: string;
@@ -29,18 +34,22 @@ export class TechnicalAnalysisService {
     const codeContext = this.formatCodeForAnalysis(codeFiles);
 
     // Generate the technical report using the AI model
-    const { text } = await generateText({
-      model,
-      prompt: this.buildTechnicalReportPrompt(
-        issueContext,
-        codeContext,
-        additionalContext || ''
-      ),
+    const response = await openai.chat.completions.create({
+      model: 'gpt-4.1',
+      messages: [
+        {
+          role: 'system',
+          content: buildTechnicalAnalysisPrompt({
+            issueContext,
+            additionalContext: additionalContext || '',
+            codeContext,
+          }),
+        },
+      ],
       temperature: 0.2,
-      maxTokens: 2000,
     });
 
-    return text;
+    return response.choices[0].message.content || '';
   }
 
   /**
@@ -76,22 +85,34 @@ export class TechnicalAnalysisService {
     branchName: string;
   }> {
     // Generate a change plan based on the report
-    const { text } = await generateText({
-      model,
-      prompt: this.buildChangePlanPrompt(issue, technicalReport, codeFiles),
+    const response = await openai.chat.completions.create({
+      model: 'gpt-4.1',
+      messages: [
+        {
+          role: 'system',
+          content: buildChangePlanPrompt({
+            issue,
+            technicalReport,
+            codeFiles,
+            formatCodeForAnalysis: this.formatCodeForAnalysis,
+          }),
+        },
+      ],
       temperature: 0.2,
-      maxTokens: 1500,
+      max_tokens: 1500,
     });
 
+    const changePlan = response.choices[0].message.content || '';
+
     // Parse the files to modify from the plan
-    const filesToModify = this.extractFilesToModify(text);
+    const filesToModify = this.extractFilesToModify(changePlan);
 
     // Generate a branch name for the changes
     const branchName = this.generateBranchName(issue);
 
     return {
       filesToModify,
-      changePlan: text,
+      changePlan,
       branchName,
     };
   }
@@ -191,125 +212,44 @@ Description: ${issue.description || 'No description provided'}
   /**
    * Format code files for analysis
    */
-  private formatCodeForAnalysis(codeFiles: CodeFile[]): string {
+  public formatCodeForAnalysis(codeFiles: CodeFile[]): string {
     return codeFiles
       .map((file) => `File: ${file.path}\n\`\`\`\n${file.content}\n\`\`\`\n`)
       .join('\n\n');
   }
 
   /**
-   * Build the prompt for generating a technical report
-   */
-  private buildTechnicalReportPrompt(
-    issueContext: string,
-    codeContext: string,
-    additionalContext: string
-  ): string {
-    return `# Technical Analysis Request
-
-## Issue Information
-${issueContext}
-
-${additionalContext ? `## Additional Context\n${additionalContext}\n` : ''}
-
-## Codebase Files
-${codeContext}
-
-Please analyze the provided code snippets in relation to the described issue and provide a comprehensive technical report with:
-
-1. A high-level summary of the issue
-2. The root cause analysis 
-3. Specific problematic code patterns
-4. Recommended fixes with code examples
-5. Implementation plan with specific file changes needed
-
-Format your response as Markdown with the following structure:
-
-## Summary
-
-[Non-technical very short summary grounded in the code]
-
-## Technical Root Cause Analysis
-
-### Core Issues Identified
-1. [Issue 1]
-2. [Issue 2]
-
-### Problematic Code Pattern
-\`\`\`
-[Code Snippet]
-\`\`\`
-
-### Recommended Fixes
-1. [Fix 1]
-2. [Fix 2]
-
-## Implementation Plan
-1. [Step 1 with file path]
-2. [Step 2 with file path]
-`;
-  }
-
-  /**
-   * Build prompt for generating a concrete change plan
-   */
-  private buildChangePlanPrompt(
-    issue: Issue,
-    technicalReport: string,
-    codeFiles: CodeFile[]
-  ): string {
-    return `# Implementation Planning Request
-
-## Issue Information
-ID: ${issue.identifier}
-Title: ${issue.title}
-Description: ${issue.description || 'No description provided'}
-
-## Technical Report
-${technicalReport}
-
-## Relevant Code Files
-${this.formatCodeForAnalysis(codeFiles)}
-
-Based on the technical report and the code files, please create a concrete implementation plan:
-
-1. List all files that need to be modified
-2. For each file, describe the exact changes required (be specific about function/method names, lines or sections to modify)
-3. Outline any new functions, methods, or components that need to be created
-4. Consider edge cases and testing implications
-
-Format your response as a Markdown document with clear sections for each file being modified.
-`;
-  }
-
-  /**
    * Extract files to modify from the change plan
    */
   private extractFilesToModify(changePlan: string): string[] {
-    // Simple regex to extract file paths from markdown headings
-    const fileMatches = changePlan.match(/##\s+([a-zA-Z0-9_\-\.\/]+)/g);
-    if (!fileMatches) return [];
+    // Simple regex to extract file paths mentioned in the plan
+    const fileRegex =
+      /(?:file|modify|update|create|in|at):\s*`?([^`\s]+\.(?:ts|js|tsx|jsx|md|json|yaml|yml|html|css|scss))`?/gi;
+    const matches = [...changePlan.matchAll(fileRegex)];
 
-    return fileMatches.map((match) => {
-      const filePath = match.replace(/##\s+/, '').trim();
-      return filePath;
+    // Extract unique file paths
+    const filePaths = new Set<string>();
+    matches.forEach((match) => {
+      if (match[1]) {
+        filePaths.add(match[1]);
+      }
     });
+
+    return Array.from(filePaths);
   }
 
   /**
-   * Generate a branch name based on the issue
+   * Generate a branch name for the changes
    */
   private generateBranchName(issue: Issue): string {
+    // Generate a branch name based on issue ID and title
     const sanitizedTitle = issue.title
       .toLowerCase()
-      .replace(/[^a-z0-9]/g, '-')
-      .replace(/-+/g, '-')
-      .replace(/^-|-$/g, '');
+      .replace(/[^\w\s-]/g, '')
+      .replace(/\s+/g, '-')
+      .substring(0, 30);
 
-    return `fix/${issue.identifier.toLowerCase()}-${sanitizedTitle}`.substring(
-      0,
-      60
-    );
+    return `fix/${issue.identifier.toLowerCase()}-${sanitizedTitle}`;
   }
 
   /**

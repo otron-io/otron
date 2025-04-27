@@ -8,7 +8,7 @@ interface CodeChange {
   path: string;
   content: string;
   message: string;
-  repository?: string; // New field to specify which repository this change belongs to
+  repository: string; // Required field to specify which repository this change belongs to
 }
 
 interface Repository {
@@ -20,28 +20,12 @@ interface Repository {
 export class PRManager {
   private octokit: Octokit;
   private repositories: Map<string, Repository> = new Map();
-  private defaultRepo: Repository;
 
-  constructor(
-    private linearClient: LinearClient,
-    defaultOwner: string = env.REPO_OWNER,
-    defaultRepo: string = env.REPO_NAME,
-    defaultBaseBranch: string = env.REPO_BASE_BRANCH
-  ) {
+  constructor(private linearClient: LinearClient) {
     // Initialize GitHub client
     this.octokit = new Octokit({
       auth: env.GITHUB_TOKEN,
     });
-
-    // Set up default repository
-    this.defaultRepo = {
-      owner: defaultOwner,
-      repo: defaultRepo,
-      baseBranch: defaultBaseBranch,
-    };
-
-    // Add default repository to the map
-    this.repositories.set(`${defaultOwner}/${defaultRepo}`, this.defaultRepo);
 
     // Parse allowed repositories
     if (env.ALLOWED_REPOSITORIES) {
@@ -65,18 +49,31 @@ export class PRManager {
           baseBranch: 'main', // Default to 'main' for other repositories
         });
       }
+    } else {
+      // Add the repository from env variables
+      const repoFullName = `${env.REPO_OWNER}/${env.REPO_NAME}`;
+      this.repositories.set(repoFullName, {
+        owner: env.REPO_OWNER,
+        repo: env.REPO_NAME,
+        baseBranch: env.REPO_BASE_BRANCH,
+      });
     }
   }
 
   /**
-   * Gets repository info, defaulting to the primary repository if not found
+   * Gets repository info, throwing an error if not found
    */
-  private getRepoInfo(repoFullName?: string): Repository {
+  private getRepoInfo(repoFullName: string): Repository {
     if (!repoFullName) {
-      return this.defaultRepo;
+      throw new Error('Repository name must be specified');
     }
 
-    return this.repositories.get(repoFullName) || this.defaultRepo;
+    const repo = this.repositories.get(repoFullName);
+    if (!repo) {
+      throw new Error(`Repository not found or not allowed: ${repoFullName}`);
+    }
+
+    return repo;
   }
 
   /**
@@ -84,9 +81,13 @@ export class PRManager {
    */
   async getFileContent(
     path: string,
-    branch?: string,
-    repoFullName?: string
+    repoFullName: string,
+    branch?: string
   ): Promise<string> {
+    if (!repoFullName) {
+      throw new Error('Repository must be specified for getFileContent');
+    }
+
     const repo = this.getRepoInfo(repoFullName);
     const branchToUse = branch || repo.baseBranch;
 
@@ -123,7 +124,11 @@ export class PRManager {
   /**
    * Creates a new branch for implementing changes
    */
-  async createBranch(branchName: string, repoFullName?: string): Promise<void> {
+  async createBranch(branchName: string, repoFullName: string): Promise<void> {
+    if (!repoFullName) {
+      throw new Error('Repository must be specified for createBranch');
+    }
+
     const repo = this.getRepoInfo(repoFullName);
 
     try {
@@ -165,10 +170,15 @@ export class PRManager {
     const changesByRepo = new Map<string, CodeChange[]>();
 
     for (const change of changes) {
-      // Determine which repository this change belongs to
-      const repoKey =
-        change.repository ||
-        `${this.defaultRepo.owner}/${this.defaultRepo.repo}`;
+      // Require repository to be specified
+      if (!change.repository) {
+        console.warn(
+          `Skipping change for unspecified repository: ${change.path}`
+        );
+        continue;
+      }
+
+      const repoKey = change.repository;
 
       // Skip if it's for a repository we don't have access to
       if (!this.repositories.has(repoKey)) {
@@ -199,6 +209,34 @@ export class PRManager {
     sanitizedPath = sanitizedPath.replace(/\\/g, '/');
 
     return sanitizedPath;
+  }
+
+  /**
+   * Implements changes in multiple repositories
+   */
+  async implementChanges(
+    branchName: string,
+    changes: CodeChange[]
+  ): Promise<void> {
+    const changesByRepo = this.organizeChangesByRepo(changes);
+
+    // Create branches and implement changes for each repository
+    for (const [repoFullName, repoChanges] of changesByRepo.entries()) {
+      try {
+        // Create branch in this repository
+        await this.createBranch(branchName, repoFullName);
+
+        // Implement changes in this repository
+        await this.implementChangesInRepo(
+          repoFullName,
+          branchName,
+          repoChanges
+        );
+      } catch (error) {
+        console.error(`Error implementing changes in ${repoFullName}:`, error);
+        throw error;
+      }
+    }
   }
 
   /**
@@ -248,16 +286,16 @@ export class PRManager {
           message: change.message,
           content: Buffer.from(change.content).toString('base64'),
           branch: branchName,
-          sha: fileSha, // Only needed for updates, not for new files
+          sha: fileSha,
         });
-      }
 
-      console.log(
-        `Pushed ${changes.length} file changes to branch: ${branchName} in ${repo.owner}/${repo.repo}`
-      );
+        console.log(
+          `Updated/created file: ${sanitizedPath} in ${repo.owner}/${repo.repo}`
+        );
+      }
     } catch (error) {
       console.error(
-        `Error implementing changes to branch: ${branchName} in ${repo.owner}/${repo.repo}`,
+        `Error implementing changes in ${repo.owner}/${repo.repo}:`,
         error
       );
       throw error;
@@ -265,27 +303,7 @@ export class PRManager {
   }
 
   /**
-   * Implements changes across multiple repositories
-   */
-  async implementChanges(
-    branchName: string,
-    changes: CodeChange[]
-  ): Promise<void> {
-    // Organize changes by repository
-    const changesByRepo = this.organizeChangesByRepo(changes);
-
-    // Implement changes in each repository
-    for (const [repoFullName, repoChanges] of changesByRepo.entries()) {
-      // Create branch in this repository
-      await this.createBranch(branchName, repoFullName);
-
-      // Implement the changes
-      await this.implementChangesInRepo(repoFullName, branchName, repoChanges);
-    }
-  }
-
-  /**
-   * Creates a pull request in a specific repository
+   * Creates a PR in a specific repository
    */
   private async createPRInRepo(
     issue: Issue,
@@ -296,39 +314,34 @@ export class PRManager {
     const repo = this.getRepoInfo(repoFullName);
 
     try {
-      // Create PR title from issue
-      const prTitle = `[${issue.identifier}] ${issue.title}`;
-
       // Create the PR
-      const response = await this.octokit.pulls.create({
+      const pr = await this.octokit.pulls.create({
         owner: repo.owner,
         repo: repo.repo,
-        title: prTitle,
+        title: `${issue.identifier}: ${issue.title}`,
         body: description,
         head: branchName,
         base: repo.baseBranch,
+        draft: false,
       });
 
       console.log(
-        `Created PR: ${prTitle} from ${branchName} to ${repo.baseBranch} in ${repo.owner}/${repo.repo}`
+        `Created PR: ${pr.data.html_url} in ${repo.owner}/${repo.repo}`
       );
 
       return {
-        url: response.data.html_url,
-        number: response.data.number,
-        repoFullName,
+        url: pr.data.html_url,
+        number: pr.data.number,
+        repoFullName: repoFullName,
       };
     } catch (error) {
-      console.error(
-        `Error creating PR from branch: ${branchName} in ${repo.owner}/${repo.repo}`,
-        error
-      );
+      console.error(`Error creating PR in ${repo.owner}/${repo.repo}:`, error);
       throw error;
     }
   }
 
   /**
-   * Creates pull requests across multiple repositories
+   * Creates pull requests in specified repositories
    */
   async createPullRequests(
     issue: Issue,
@@ -336,22 +349,13 @@ export class PRManager {
     description: string,
     repoNames: string[]
   ): Promise<Array<{ url: string; number: number; repoFullName: string }>> {
-    const results: Array<{
+    const prs: Array<{
       url: string;
       number: number;
       repoFullName: string;
     }> = [];
 
-    // Create PRs in each repository
     for (const repoName of repoNames) {
-      // Skip repositories we don't have access to
-      if (!this.repositories.has(repoName)) {
-        console.warn(
-          `Skipping PR creation for unauthorized repository: ${repoName}`
-        );
-        continue;
-      }
-
       try {
         const pr = await this.createPRInRepo(
           issue,
@@ -359,70 +363,60 @@ export class PRManager {
           branchName,
           description
         );
-        results.push(pr);
+        prs.push(pr);
       } catch (error) {
-        console.error(`Failed to create PR in ${repoName}:`, error);
-        // Continue to the next repository rather than failing completely
+        console.error(`Error creating PR in ${repoName}:`, error);
+        // Continue with other repositories
       }
     }
 
-    return results;
+    return prs;
   }
 
   /**
-   * Updates the Linear issue with the PR information
+   * Links pull requests to a Linear issue
    */
   async linkPullRequestsToIssue(
     issue: Issue,
     prs: Array<{ url: string; number: number; repoFullName: string }>
   ): Promise<void> {
+    // Only proceed if we have PRs
+    if (prs.length === 0) {
+      return;
+    }
+
     try {
-      if (prs.length === 0) {
-        await this.linearClient.createComment({
-          issueId: issue.id,
-          body: `I tried to create pull requests but was unable to do so. Please check the logs for more details.`,
-        });
-        return;
-      }
+      // Format PR links for the comment
+      const prLinks = prs
+        .map((pr) => {
+          const [owner, repo] = pr.repoFullName.split('/');
+          return `- [PR #${pr.number} in ${owner}/${repo}](${pr.url})`;
+        })
+        .join('\n');
 
-      // Build a message with all PRs
-      let message =
-        prs.length === 1
-          ? `I've created a pull request with the proposed solution:\n\n`
-          : `I've created ${prs.length} pull requests with the proposed solutions:\n\n`;
-
-      // Add each PR to the message
-      for (const pr of prs) {
-        message += `- [${pr.repoFullName} PR #${pr.number}](${pr.url})\n`;
-      }
-
-      message += `\nPlease review the changes and provide feedback.`;
-
-      // Add the comment to the issue
+      // Add the comment with PR links to the issue
       await this.linearClient.createComment({
         issueId: issue.id,
-        body: message,
+        body: `I've created the following pull requests to implement the changes:\n\n${prLinks}`,
       });
 
-      // Update issue status if needed (assuming "In Review" state exists)
-      const states = await this.linearClient.workflowStates();
-      const inReviewState = states.nodes.find((s) =>
-        s.name.toLowerCase().includes('review')
-      );
-
-      if (inReviewState) {
-        await issue.update({ stateId: inReviewState.id });
+      // Create URL attachments for each PR
+      for (const pr of prs) {
+        const [owner, repo] = pr.repoFullName.split('/');
+        // Add as comment with link
+        await this.linearClient.createComment({
+          issueId: issue.id,
+          body: `[PR #${pr.number} in ${owner}/${repo}](${pr.url})`,
+        });
       }
-
-      console.log(`Linked ${prs.length} PRs to issue ${issue.identifier}`);
     } catch (error) {
-      console.error(`Error linking PRs to issue ${issue.identifier}:`, error);
-      throw error;
+      console.error('Error linking PRs to Linear issue:', error);
+      // Don't throw here, as the PRs are already created
     }
   }
 
   /**
-   * End-to-end process to implement changes and create PRs in multiple repositories
+   * Implements changes across repositories and creates pull requests
    */
   async implementAndCreatePRs(
     issue: Issue,
@@ -430,57 +424,34 @@ export class PRManager {
     changes: CodeChange[],
     description: string
   ): Promise<Array<{ url: string; number: number; repoFullName: string }>> {
-    // Get all repositories that have changes
-    const changesByRepo = this.organizeChangesByRepo(changes);
-    const repoNames = Array.from(changesByRepo.keys());
-
-    if (repoNames.length === 0) {
-      console.warn('No changes to implement in any repository');
+    if (changes.length === 0) {
+      console.log('No changes to implement');
       return [];
     }
 
-    // Implement all changes
-    await this.implementChanges(branchName, changes);
+    try {
+      // Implement changes in all repositories
+      await this.implementChanges(branchName, changes);
 
-    // Create PRs in each repository with changes
-    const prs = await this.createPullRequests(
-      issue,
-      branchName,
-      description,
-      repoNames
-    );
+      // Determine which repositories had changes
+      const changesByRepo = this.organizeChangesByRepo(changes);
+      const repoNames = Array.from(changesByRepo.keys());
 
-    // Link the PRs to the Linear issue
-    await this.linkPullRequestsToIssue(issue, prs);
+      // Create PRs in those repositories
+      const prs = await this.createPullRequests(
+        issue,
+        branchName,
+        description,
+        repoNames
+      );
 
-    return prs;
-  }
+      // Link PRs to the Linear issue
+      await this.linkPullRequestsToIssue(issue, prs);
 
-  /**
-   * Legacy method for backward compatibility
-   */
-  async implementAndCreatePR(
-    issue: Issue,
-    branchName: string,
-    changes: CodeChange[],
-    description: string
-  ): Promise<{ url: string; number: number }> {
-    const prs = await this.implementAndCreatePRs(
-      issue,
-      branchName,
-      changes,
-      description
-    );
-
-    // Return first PR or mock response if none created
-    if (prs.length > 0) {
-      const { url, number } = prs[0];
-      return { url, number };
+      return prs;
+    } catch (error) {
+      console.error('Error implementing changes and creating PRs:', error);
+      throw error;
     }
-
-    return {
-      url: `https://github.com/${this.defaultRepo.owner}/${this.defaultRepo.repo}/pull/0`,
-      number: 0,
-    };
   }
 }
