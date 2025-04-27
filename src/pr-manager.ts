@@ -49,14 +49,6 @@ export class PRManager {
           baseBranch: 'main', // Default to 'main' for other repositories
         });
       }
-    } else {
-      // Add the repository from env variables
-      const repoFullName = `${env.REPO_OWNER}/${env.REPO_NAME}`;
-      this.repositories.set(repoFullName, {
-        owner: env.REPO_OWNER,
-        repo: env.REPO_NAME,
-        baseBranch: env.REPO_BASE_BRANCH,
-      });
     }
   }
 

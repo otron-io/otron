@@ -14,8 +14,6 @@ export const env = createEnv({
 
     // New environment variables for the autonomous developer agent
     GITHUB_TOKEN: z.string().min(1),
-    REPO_OWNER: z.string().min(1),
-    REPO_NAME: z.string().min(1),
     REPO_BASE_BRANCH: z.string().min(1).default('main'),
     CLAUDE_API_KEY: z.string().min(1).optional(),
     ALLOWED_REPOSITORIES: z.string().optional(),

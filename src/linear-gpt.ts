@@ -43,9 +43,6 @@ export class LinearGPT {
       this.allowedRepositories = env.ALLOWED_REPOSITORIES.split(',').map((r) =>
         r.trim()
       );
-    } else {
-      // If no specific repositories are defined, use the repo from env
-      this.allowedRepositories = [`${env.REPO_OWNER}/${env.REPO_NAME}`];
     }
   }
 
