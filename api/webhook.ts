@@ -79,8 +79,6 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
           console.log("Processing issue assigned to agent");
           await handleIssueAssigned(payload, linearClient, appUserId);
           break;
-        default:
-          console.log(`Unhandled action: ${payload.action}`);
       }
     }
 
@@ -346,23 +344,15 @@ async function handleIssueAssigned(
   let originalAssigneeId: string | null | undefined = null;
 
   try {
-    console.log(`Processing issue assignment for issue: ${issueId}`);
-
     // Get the issue
     const issue = await linearClient.issue(issueId);
-    console.log(`Current issue assignee: ${issue.assigneeId}`);
 
     // Get the issue history to find the previous assignee
     const issueHistory = await issue.history();
-    console.log(`Retrieved history with ${issueHistory.nodes.length} events`);
 
     // Find assignee change events - look for events with toAssigneeId matching our app user
     const assigneeChangeEvents = issueHistory.nodes.filter(
       (event: any) => event.toAssigneeId === appUserId,
-    );
-
-    console.log(
-      `Found ${assigneeChangeEvents.length} assignee change events to our app user`,
     );
 
     // Get the most recent one (should be only one, but just in case)
@@ -411,17 +401,9 @@ async function handleIssueAssigned(
 
     // Re-assign to original assignee if we found one and it's different from the app user
     if (originalAssigneeId && originalAssigneeId !== appUserId) {
-      console.log(
-        `Reassigning issue from ${appUserId} to original assignee ${originalAssigneeId}`,
-      );
       await linearClient.updateIssue(issueId, {
         assigneeId: originalAssigneeId,
       });
-      console.log(`Successfully reassigned issue to ${originalAssigneeId}`);
-    } else {
-      console.log(
-        `Not reassigning issue. Original assignee: ${originalAssigneeId}, App user: ${appUserId}`,
-      );
     }
   } catch (error) {
     console.error("Error handling assigned issue:", error);
