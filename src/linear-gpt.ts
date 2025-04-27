@@ -62,372 +62,429 @@ export class LinearGPT {
       // Setup the system tools the model can use
       const availableTools = getAvailableToolsDescription();
 
-      // Use OpenAI's client directly
-      const response = await openai.chat.completions.create({
-        model: 'gpt-4.1',
-        messages: [
-          {
-            role: 'system',
-            content: buildLinearGptSystemPrompt({
-              notificationType,
-              commentId,
-              issueContext,
-              availableTools,
-              allowedRepositories: this.allowedRepositories,
-            }),
-          },
-          {
-            role: 'user',
-            content:
-              'Please analyze this issue and determine the best action to take.',
-          },
-        ],
-        temperature: 0.2,
-        tools: [
-          {
-            type: 'function',
-            function: {
-              name: 'performTechnicalAnalysis',
-              description:
-                'Perform a technical analysis of the issue to understand the root cause and potential solutions',
-              parameters: {
-                type: 'object',
-                properties: {
-                  issueId: {
-                    type: 'string',
-                    description: 'The ID of the issue to analyze',
-                  },
-                },
-                required: ['issueId'],
-              },
-            },
-          },
-          {
-            type: 'function',
-            function: {
-              name: 'implementChanges',
-              description:
-                'Implement code changes based on technical analysis and create pull requests',
-              parameters: {
-                type: 'object',
-                properties: {
-                  issueId: {
-                    type: 'string',
-                    description: 'The ID of the issue to implement changes for',
-                  },
-                  repositories: {
-                    type: 'array',
-                    items: {
+      // Create conversation history
+      const messages: Array<OpenAI.Chat.ChatCompletionMessageParam> = [
+        {
+          role: 'system',
+          content: buildLinearGptSystemPrompt({
+            notificationType,
+            commentId,
+            issueContext,
+            availableTools,
+            allowedRepositories: this.allowedRepositories,
+          }),
+        },
+        {
+          role: 'user',
+          content:
+            'Please analyze this issue and determine the best action to take.',
+        },
+      ];
+
+      // Tool use loop - continue until model stops making tool calls
+      let hasMoreToolCalls = true;
+
+      while (hasMoreToolCalls) {
+        // Use OpenAI's client
+        const response = await openai.chat.completions.create({
+          model: 'gpt-4.1',
+          messages,
+          temperature: 0.2,
+          tool_choice: 'auto',
+          parallel_tool_calls: false,
+          tools: [
+            {
+              type: 'function',
+              function: {
+                name: 'performTechnicalAnalysis',
+                description:
+                  'Perform a technical analysis of the issue to understand the root cause and potential solutions',
+                parameters: {
+                  type: 'object',
+                  properties: {
+                    issueId: {
                       type: 'string',
+                      description: 'The ID of the issue to analyze',
                     },
-                    description:
-                      'List of repositories to implement changes in (owner/repo format)',
                   },
+                  required: ['issueId'],
                 },
-                required: ['issueId'],
               },
             },
-          },
-          {
-            type: 'function',
-            function: {
-              name: 'createComment',
-              description: 'Create a comment on a Linear issue',
-              parameters: {
-                type: 'object',
-                properties: {
-                  issueId: {
-                    type: 'string',
-                    description: 'The ID of the issue to comment on',
-                  },
-                  comment: {
-                    type: 'string',
-                    description: 'The comment text to post',
-                  },
-                  parentCommentId: {
-                    type: 'string',
-                    description:
-                      'Optional parent comment ID if this is a reply',
-                  },
-                },
-                required: ['issueId', 'comment'],
-              },
-            },
-          },
-          {
-            type: 'function',
-            function: {
-              name: 'searchRelevantFiles',
-              description: 'Search for relevant code files related to an issue',
-              parameters: {
-                type: 'object',
-                properties: {
-                  issueId: {
-                    type: 'string',
-                    description:
-                      'The ID of the issue to find relevant files for',
-                  },
-                  repository: {
-                    type: 'string',
-                    description:
-                      'The repository to search in (owner/repo format)',
-                  },
-                  keywords: {
-                    type: 'array',
-                    items: {
+            {
+              type: 'function',
+              function: {
+                name: 'implementChanges',
+                description:
+                  'Implement code changes based on technical analysis and create pull requests',
+                parameters: {
+                  type: 'object',
+                  properties: {
+                    issueId: {
                       type: 'string',
+                      description:
+                        'The ID of the issue to implement changes for',
                     },
-                    description: 'Optional list of keywords to search for',
+                    repositories: {
+                      type: 'array',
+                      items: {
+                        type: 'string',
+                      },
+                      description:
+                        'List of repositories to implement changes in (owner/repo format)',
+                    },
                   },
+                  required: ['issueId'],
                 },
-                required: ['issueId', 'repository'],
               },
             },
-          },
-          {
-            type: 'function',
-            function: {
-              name: 'updateIssueStatus',
-              description: 'Update the status of an issue in Linear',
-              parameters: {
-                type: 'object',
-                properties: {
-                  issueId: {
-                    type: 'string',
-                    description: 'The ID of the issue to update',
+            {
+              type: 'function',
+              function: {
+                name: 'createComment',
+                description: 'Create a comment on a Linear issue',
+                parameters: {
+                  type: 'object',
+                  properties: {
+                    issueId: {
+                      type: 'string',
+                      description: 'The ID of the issue to comment on',
+                    },
+                    comment: {
+                      type: 'string',
+                      description: 'The comment text to post',
+                    },
+                    parentCommentId: {
+                      type: 'string',
+                      description:
+                        'Optional parent comment ID if this is a reply',
+                    },
                   },
-                  status: {
-                    type: 'string',
-                    description:
-                      'The new status name (e.g., "Todo", "In Progress", "Done", "Backlog")',
-                  },
+                  required: ['issueId', 'comment'],
                 },
-                required: ['issueId', 'status'],
               },
             },
-          },
-          {
-            type: 'function',
-            function: {
-              name: 'addLabel',
-              description: 'Add a label to an issue in Linear',
-              parameters: {
-                type: 'object',
-                properties: {
-                  issueId: {
-                    type: 'string',
-                    description: 'The ID of the issue to update',
+            {
+              type: 'function',
+              function: {
+                name: 'searchRelevantFiles',
+                description:
+                  'Search for relevant code files related to an issue',
+                parameters: {
+                  type: 'object',
+                  properties: {
+                    issueId: {
+                      type: 'string',
+                      description:
+                        'The ID of the issue to find relevant files for',
+                    },
+                    repository: {
+                      type: 'string',
+                      description:
+                        'The repository to search in (owner/repo format)',
+                    },
+                    keywords: {
+                      type: 'array',
+                      items: {
+                        type: 'string',
+                      },
+                      description: 'Optional list of keywords to search for',
+                    },
                   },
-                  label: {
-                    type: 'string',
-                    description: 'The name of the label to add',
-                  },
+                  required: ['issueId', 'repository'],
                 },
-                required: ['issueId', 'label'],
               },
             },
-          },
-          {
-            type: 'function',
-            function: {
-              name: 'removeLabel',
-              description: 'Remove a label from an issue in Linear',
-              parameters: {
-                type: 'object',
-                properties: {
-                  issueId: {
-                    type: 'string',
-                    description: 'The ID of the issue to update',
+            {
+              type: 'function',
+              function: {
+                name: 'updateIssueStatus',
+                description: 'Update the status of an issue in Linear',
+                parameters: {
+                  type: 'object',
+                  properties: {
+                    issueId: {
+                      type: 'string',
+                      description: 'The ID of the issue to update',
+                    },
+                    status: {
+                      type: 'string',
+                      description:
+                        'The new status name (e.g., "Todo", "In Progress", "Done", "Backlog")',
+                    },
                   },
-                  label: {
-                    type: 'string',
-                    description: 'The name of the label to remove',
-                  },
+                  required: ['issueId', 'status'],
                 },
-                required: ['issueId', 'label'],
               },
             },
-          },
-          {
-            type: 'function',
-            function: {
-              name: 'assignIssue',
-              description: 'Assign an issue to a team member in Linear',
-              parameters: {
-                type: 'object',
-                properties: {
-                  issueId: {
-                    type: 'string',
-                    description: 'The ID of the issue to assign',
+            {
+              type: 'function',
+              function: {
+                name: 'addLabel',
+                description: 'Add a label to an issue in Linear',
+                parameters: {
+                  type: 'object',
+                  properties: {
+                    issueId: {
+                      type: 'string',
+                      description: 'The ID of the issue to update',
+                    },
+                    label: {
+                      type: 'string',
+                      description: 'The name of the label to add',
+                    },
                   },
-                  assigneeEmail: {
-                    type: 'string',
-                    description: 'The email of the user to assign the issue to',
-                  },
+                  required: ['issueId', 'label'],
                 },
-                required: ['issueId', 'assigneeEmail'],
               },
             },
-          },
-          {
-            type: 'function',
-            function: {
-              name: 'createIssue',
-              description: 'Create a new issue in Linear',
-              parameters: {
-                type: 'object',
-                properties: {
-                  teamId: {
-                    type: 'string',
-                    description: 'The ID of the team to create the issue in',
+            {
+              type: 'function',
+              function: {
+                name: 'removeLabel',
+                description: 'Remove a label from an issue in Linear',
+                parameters: {
+                  type: 'object',
+                  properties: {
+                    issueId: {
+                      type: 'string',
+                      description: 'The ID of the issue to update',
+                    },
+                    label: {
+                      type: 'string',
+                      description: 'The name of the label to remove',
+                    },
                   },
-                  title: {
-                    type: 'string',
-                    description: 'The title of the issue',
-                  },
-                  description: {
-                    type: 'string',
-                    description: 'The description of the issue',
-                  },
-                  status: {
-                    type: 'string',
-                    description:
-                      'The status name for the new issue (e.g., "Todo", "In Progress")',
-                  },
-                  priority: {
-                    type: 'integer',
-                    description:
-                      'The priority of the issue (1=Urgent, 2=High, 3=Medium, 4=Low)',
-                  },
-                  parentIssueId: {
-                    type: 'string',
-                    description:
-                      'Optional ID of a parent issue (for sub-issues)',
-                  },
+                  required: ['issueId', 'label'],
                 },
-                required: ['teamId', 'title', 'description'],
               },
             },
-          },
-          {
-            type: 'function',
-            function: {
-              name: 'addIssueAttachment',
-              description: 'Add a URL attachment to an issue in Linear',
-              parameters: {
-                type: 'object',
-                properties: {
-                  issueId: {
-                    type: 'string',
-                    description: 'The ID of the issue to add the attachment to',
+            {
+              type: 'function',
+              function: {
+                name: 'assignIssue',
+                description: 'Assign an issue to a team member in Linear',
+                parameters: {
+                  type: 'object',
+                  properties: {
+                    issueId: {
+                      type: 'string',
+                      description: 'The ID of the issue to assign',
+                    },
+                    assigneeEmail: {
+                      type: 'string',
+                      description:
+                        'The email of the user to assign the issue to',
+                    },
                   },
-                  url: {
-                    type: 'string',
-                    description: 'The URL to attach',
-                  },
-                  title: {
-                    type: 'string',
-                    description: 'A title for the attachment',
-                  },
+                  required: ['issueId', 'assigneeEmail'],
                 },
-                required: ['issueId', 'url', 'title'],
               },
             },
-          },
-          {
-            type: 'function',
-            function: {
-              name: 'updateIssuePriority',
-              description: 'Update the priority of an issue in Linear',
-              parameters: {
-                type: 'object',
-                properties: {
-                  issueId: {
-                    type: 'string',
-                    description: 'The ID of the issue to update',
+            {
+              type: 'function',
+              function: {
+                name: 'createIssue',
+                description: 'Create a new issue in Linear',
+                parameters: {
+                  type: 'object',
+                  properties: {
+                    teamId: {
+                      type: 'string',
+                      description: 'The ID of the team to create the issue in',
+                    },
+                    title: {
+                      type: 'string',
+                      description: 'The title of the issue',
+                    },
+                    description: {
+                      type: 'string',
+                      description: 'The description of the issue',
+                    },
+                    status: {
+                      type: 'string',
+                      description:
+                        'The status name for the new issue (e.g., "Todo", "In Progress")',
+                    },
+                    priority: {
+                      type: 'integer',
+                      description:
+                        'The priority of the issue (1=Urgent, 2=High, 3=Medium, 4=Low)',
+                    },
+                    parentIssueId: {
+                      type: 'string',
+                      description:
+                        'Optional ID of a parent issue (for sub-issues)',
+                    },
                   },
-                  priority: {
-                    type: 'integer',
-                    description:
-                      'The priority level (1=Urgent, 2=High, 3=Medium, 4=Low)',
-                  },
+                  required: ['teamId', 'title', 'description'],
                 },
-                required: ['issueId', 'priority'],
               },
             },
-          },
-        ],
-      });
+            {
+              type: 'function',
+              function: {
+                name: 'addIssueAttachment',
+                description: 'Add a URL attachment to an issue in Linear',
+                parameters: {
+                  type: 'object',
+                  properties: {
+                    issueId: {
+                      type: 'string',
+                      description:
+                        'The ID of the issue to add the attachment to',
+                    },
+                    url: {
+                      type: 'string',
+                      description: 'The URL to attach',
+                    },
+                    title: {
+                      type: 'string',
+                      description: 'A title for the attachment',
+                    },
+                  },
+                  required: ['issueId', 'url', 'title'],
+                },
+              },
+            },
+            {
+              type: 'function',
+              function: {
+                name: 'updateIssuePriority',
+                description: 'Update the priority of an issue in Linear',
+                parameters: {
+                  type: 'object',
+                  properties: {
+                    issueId: {
+                      type: 'string',
+                      description: 'The ID of the issue to update',
+                    },
+                    priority: {
+                      type: 'integer',
+                      description:
+                        'The priority level (1=Urgent, 2=High, 3=Medium, 4=Low)',
+                    },
+                  },
+                  required: ['issueId', 'priority'],
+                },
+              },
+            },
+          ],
+        });
 
-      // Extract the model's response text
-      const responseMessage = response.choices[0].message;
-      const responseText = responseMessage.content || '';
+        // Extract the model's response text
+        const responseMessage = response.choices[0].message;
+        const responseText = responseMessage.content || '';
 
-      // Check if there's a tool call in the response
-      if (responseMessage.tool_calls && responseMessage.tool_calls.length > 0) {
-        // Handle tool calls
-        for (const toolCall of responseMessage.tool_calls) {
-          if (toolCall.type === 'function') {
-            const functionName = toolCall.function.name;
-            const functionArgs = JSON.parse(toolCall.function.arguments);
+        // Check if there's a tool call in the response
+        if (
+          responseMessage.tool_calls &&
+          responseMessage.tool_calls.length > 0
+        ) {
+          // Add the model's response to conversation history
+          messages.push(
+            responseMessage as OpenAI.Chat.ChatCompletionMessageParam
+          );
 
-            // Execute the function based on its name
-            if (functionName === 'performTechnicalAnalysis') {
-              await this.performTechnicalAnalysis(issue);
-            } else if (functionName === 'implementChanges') {
-              await this.implementChanges(issue);
-            } else if (functionName === 'createComment') {
-              await this.linearClient.createComment({
-                issueId: issue.id,
-                body: functionArgs.comment,
-                parentId: functionArgs.parentCommentId,
-              });
-            } else if (functionName === 'searchRelevantFiles') {
-              // This is usually called internally by other functions
-              // but we could handle it here if needed
-              console.log('Model requested to search files directly');
-            } else if (functionName === 'updateIssueStatus') {
-              await this.updateIssueStatus(
-                functionArgs.issueId,
-                functionArgs.status
-              );
-            } else if (functionName === 'addLabel') {
-              await this.addLabel(functionArgs.issueId, functionArgs.label);
-            } else if (functionName === 'removeLabel') {
-              await this.removeLabel(functionArgs.issueId, functionArgs.label);
-            } else if (functionName === 'assignIssue') {
-              await this.assignIssue(
-                functionArgs.issueId,
-                functionArgs.assigneeEmail
-              );
-            } else if (functionName === 'createIssue') {
-              await this.createIssue(
-                functionArgs.teamId,
-                functionArgs.title,
-                functionArgs.description,
-                functionArgs.status,
-                functionArgs.priority,
-                functionArgs.parentIssueId
-              );
-            } else if (functionName === 'addIssueAttachment') {
-              await this.addIssueAttachment(
-                functionArgs.issueId,
-                functionArgs.url,
-                functionArgs.title
-              );
-            } else if (functionName === 'updateIssuePriority') {
-              await this.updateIssuePriority(
-                functionArgs.issueId,
-                functionArgs.priority
-              );
+          // Process each tool call
+          for (const toolCall of responseMessage.tool_calls) {
+            if (toolCall.type === 'function') {
+              const functionName = toolCall.function.name;
+              const functionArgs = JSON.parse(toolCall.function.arguments);
+              let toolResponse = '';
+
+              // Execute the function based on its name
+              try {
+                if (functionName === 'performTechnicalAnalysis') {
+                  await this.performTechnicalAnalysis(issue);
+                  toolResponse = `Successfully performed technical analysis for issue ${issue.identifier}.`;
+                } else if (functionName === 'implementChanges') {
+                  await this.implementChanges(issue);
+                  toolResponse = `Successfully implemented changes for issue ${issue.identifier}.`;
+                } else if (functionName === 'createComment') {
+                  await this.linearClient.createComment({
+                    issueId: issue.id,
+                    body: functionArgs.comment,
+                    parentId: functionArgs.parentCommentId,
+                  });
+                  toolResponse = `Successfully posted comment on issue ${issue.identifier}.`;
+                } else if (functionName === 'searchRelevantFiles') {
+                  const result = await this.searchRelevantFiles(issue);
+                  toolResponse = `Found ${result.length} relevant files for issue ${issue.identifier}.`;
+                } else if (functionName === 'updateIssueStatus') {
+                  await this.updateIssueStatus(
+                    functionArgs.issueId,
+                    functionArgs.status
+                  );
+                  toolResponse = `Successfully updated status of issue ${functionArgs.issueId} to "${functionArgs.status}".`;
+                } else if (functionName === 'addLabel') {
+                  await this.addLabel(functionArgs.issueId, functionArgs.label);
+                  toolResponse = `Successfully added label "${functionArgs.label}" to issue ${functionArgs.issueId}.`;
+                } else if (functionName === 'removeLabel') {
+                  await this.removeLabel(
+                    functionArgs.issueId,
+                    functionArgs.label
+                  );
+                  toolResponse = `Successfully removed label "${functionArgs.label}" from issue ${functionArgs.issueId}.`;
+                } else if (functionName === 'assignIssue') {
+                  await this.assignIssue(
+                    functionArgs.issueId,
+                    functionArgs.assigneeEmail
+                  );
+                  toolResponse = `Successfully assigned issue ${functionArgs.issueId} to ${functionArgs.assigneeEmail}.`;
+                } else if (functionName === 'createIssue') {
+                  await this.createIssue(
+                    functionArgs.teamId,
+                    functionArgs.title,
+                    functionArgs.description,
+                    functionArgs.status,
+                    functionArgs.priority,
+                    functionArgs.parentIssueId
+                  );
+                  toolResponse = `Successfully created new issue "${functionArgs.title}".`;
+                } else if (functionName === 'addIssueAttachment') {
+                  await this.addIssueAttachment(
+                    functionArgs.issueId,
+                    functionArgs.url,
+                    functionArgs.title
+                  );
+                  toolResponse = `Successfully added attachment "${functionArgs.title}" to issue ${functionArgs.issueId}.`;
+                } else if (functionName === 'updateIssuePriority') {
+                  await this.updateIssuePriority(
+                    functionArgs.issueId,
+                    functionArgs.priority
+                  );
+                  toolResponse = `Successfully updated priority of issue ${functionArgs.issueId} to ${functionArgs.priority}.`;
+                } else {
+                  toolResponse = `Unknown function: ${functionName}`;
+                }
+              } catch (error) {
+                toolResponse = `Error executing ${functionName}: ${
+                  error instanceof Error ? error.message : 'Unknown error'
+                }`;
+              }
+
+              // Add tool response to conversation
+              messages.push({
+                role: 'tool',
+                tool_call_id: toolCall.id,
+                content: toolResponse,
+              } as OpenAI.Chat.ChatCompletionToolMessageParam);
             }
           }
-        }
-      }
+        } else {
+          // No tool calls, exit the loop
+          hasMoreToolCalls = false;
 
-      // Post any text response as a comment
-      if (responseText) {
-        await this.executeResponse(responseText, issue, commentId);
+          // If there's a text response, post it as a comment
+          if (responseText) {
+            await this.linearClient.createComment({
+              issueId: issue.id,
+              body: responseText,
+              parentId: commentId,
+            });
+          }
+        }
       }
     } catch (error: unknown) {
       console.error(`Error in LinearGPT processing:`, error);
@@ -789,43 +846,6 @@ export class LinearGPT {
     } catch (error) {
       console.error(`Error adding attachment:`, error);
       throw error;
-    }
-  }
-
-  /**
-   * Execute the actions indicated in the model's response
-   */
-  private async executeResponse(
-    response: string,
-    issue: Issue,
-    commentId?: string
-  ): Promise<void> {
-    // First, post the response as a comment
-    await this.linearClient.createComment({
-      issueId: issue.id,
-      body: response,
-      parentId: commentId,
-    });
-
-    // Then extract and execute actions from the response
-    // This is a simplified implementation - in production,
-    // you would parse the response to determine specific actions
-
-    if (
-      response.toLowerCase().includes('technical analysis') ||
-      response.toLowerCase().includes('analyze code')
-    ) {
-      // The model wants to do a technical analysis
-      await this.performTechnicalAnalysis(issue);
-    }
-
-    if (
-      response.toLowerCase().includes('implement changes') ||
-      response.toLowerCase().includes('create pr') ||
-      response.toLowerCase().includes('create a pull request')
-    ) {
-      // The model wants to implement changes
-      await this.implementChanges(issue);
     }
   }
 
