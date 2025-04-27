@@ -33,23 +33,36 @@ export class TechnicalAnalysisService {
     // Format code files for analysis
     const codeContext = this.formatCodeForAnalysis(codeFiles);
 
-    // Generate the technical report using the AI model
-    const response = await openai.chat.completions.create({
-      model: 'gpt-4.1',
-      messages: [
-        {
-          role: 'system',
-          content: buildTechnicalAnalysisPrompt({
-            issueContext,
-            additionalContext: additionalContext || '',
-            codeContext,
-          }),
-        },
-      ],
-      temperature: 0.2,
-    });
+    // Add extra context about repository identification
+    const repoContext = `Please pay special attention to identifying which repositories contain the relevant code and which repositories will need changes. Clearly specify which repository each file belongs to and where changes need to be made.`;
 
-    return response.choices[0].message.content || '';
+    const fullAdditionalContext = additionalContext
+      ? `${additionalContext}\n\n${repoContext}`
+      : repoContext;
+
+    // Generate the technical report using the AI model
+    try {
+      const response = await openai.chat.completions.create({
+        model: 'gpt-4.1',
+        messages: [
+          {
+            role: 'system',
+            content: buildTechnicalAnalysisPrompt({
+              issueContext,
+              additionalContext: fullAdditionalContext,
+              codeContext,
+            }),
+          },
+        ],
+        temperature: 0.3, // Slightly more creative
+      });
+
+      const report = response.choices[0].message.content || '';
+      return report;
+    } catch (error) {
+      console.error('Error generating technical report:', error);
+      throw new Error('Failed to generate technical analysis report');
+    }
   }
 
   /**

@@ -203,12 +203,17 @@ Description: [brief description of change]
 
 # IMPORTANT REQUIREMENTS:
 1. File paths must not start with a slash. Make sure all paths are relative to the repository root.
-2. You MUST specify the repository (owner/repo) for EVERY change.
+2. You MUST specify the correct repository (owner/repo) for EVERY change.
 3. Only use repositories from the REPOSITORIES AVAILABLE list.
 4. Use diff format to show only the changes, not entire files.
 5. Include sufficient context around changes (a few lines before/after).
 6. For each change, include a brief description explaining what the change does.
 7. If a file is entirely new, use a diff that adds the whole file.
+8. CRITICAL: Do NOT default to the first repository in the list. Select the appropriate repository based on the technical report and implementation plan.
+9. Double-check that each change is placed in the correct repository. Frontend changes should be in the frontend repository, backend changes in the backend repository, etc.
+10. If the report identifies issues in a specific repository, ensure your changes target that exact repository.
+
+Before submitting your response, carefully review which repository each change belongs to. Changes must be implemented in the repository where the code actually exists, regardless of the order repositories are listed.
 
 RESPOND WITH ONLY THE CHANGE SPECIFICATIONS AS DESCRIBED ABOVE.
 `;

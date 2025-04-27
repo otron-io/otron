@@ -966,6 +966,9 @@ export class LinearGPT {
 
         if (technicalReportComment) {
           technicalReport = technicalReportComment.body;
+          console.log(
+            `Using existing technical report for ${issue.identifier}`
+          );
         } else {
           // Generate a new technical report
           technicalReport =
@@ -973,6 +976,14 @@ export class LinearGPT {
               issue,
               relevantFiles
             );
+
+          // Log the technical report for debugging
+          console.log(
+            `Generated new technical report for ${issue.identifier}. ` +
+              `Report identifies repositories: ${this.extractRepositoriesFromReport(
+                technicalReport
+              )}`
+          );
 
           // Post the report
           await this.technicalAnalysis.postReportToIssue(
@@ -1529,5 +1540,30 @@ export class LinearGPT {
       console.error(`Error updating issue priority:`, error);
       throw error;
     }
+  }
+
+  /**
+   * Extract repository mentions from a technical report
+   * This helps debug which repositories are being identified during analysis
+   */
+  private extractRepositoriesFromReport(report: string): string {
+    const repoMentions: Set<string> = new Set();
+
+    // Match patterns like "repository: owner/repo" or "in the owner/repo repository"
+    const repoPatterns = [
+      /(?:repository|repo):\s*([a-zA-Z0-9_-]+\/[a-zA-Z0-9_-]+)/gi,
+      /in\s+the\s+([a-zA-Z0-9_-]+\/[a-zA-Z0-9_-]+)\s+(?:repository|repo)/gi,
+      /([a-zA-Z0-9_-]+\/[a-zA-Z0-9_-]+)\s+(?:repository|repo)/gi,
+      /file\s+in\s+([a-zA-Z0-9_-]+\/[a-zA-Z0-9_-]+)/gi,
+    ];
+
+    for (const pattern of repoPatterns) {
+      let match;
+      while ((match = pattern.exec(report)) !== null) {
+        repoMentions.add(match[1]);
+      }
+    }
+
+    return Array.from(repoMentions).join(', ') || 'none explicitly mentioned';
   }
 }
