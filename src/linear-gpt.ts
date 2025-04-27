@@ -70,7 +70,7 @@ export class LinearGPT {
         {
           role: 'user',
           content:
-            'Please analyze this issue and determine the best action to take.',
+            'If you have been assigned to this issue, please gather all necessary context and take the appropriate actions. If you are responding to a comment, respond or follow the instructions given.',
         },
       ];
 
