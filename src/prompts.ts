@@ -135,13 +135,24 @@ export function buildCodeImplementationPrompt(
     allowedRepositories,
   } = context;
 
+  // Limit file content size to avoid generating too large responses
   const codeFilesText = filesWithRepoInfo
-    .map(
-      (file) => `Path: ${file.path}
+    .map((file) => {
+      // Truncate very large files to a reasonable size
+      const maxContentLength = 10000;
+      let fileContent = file.content;
+      let truncationNote = '';
+
+      if (fileContent.length > maxContentLength) {
+        fileContent = fileContent.substring(0, maxContentLength);
+        truncationNote = `\n[File truncated due to size. Original length: ${file.content.length} characters]`;
+      }
+
+      return `Path: ${file.path}
 \`\`\`
-${file.content}
-\`\`\``
-    )
+${fileContent}${truncationNote}
+\`\`\``;
+    })
     .join('\n\n');
 
   return `
@@ -171,8 +182,27 @@ IMPORTANT REQUIREMENTS:
 1. File paths must not start with a slash. Make sure all path values are relative to the repository root without a leading slash.
 2. You MUST specify the repository field for EVERY change. No default repository will be used.
 3. Only use repositories from the REPOSITORIES AVAILABLE list.
+4. Ensure your JSON is properly formatted with escaped quotes in strings.
+5. Do not include any explanation text before or after the JSON.
+6. Do not use JavaScript comments in the JSON.
+7. Generate valid JSON that can be parsed with JSON.parse().
+8. Keep string content properly escaped, especially when including code with quotes.
 
-Respond with ONLY a valid JSON array of change objects without explanation.`;
+Respond with ONLY a valid JSON array of change objects, formatted like this:
+[
+  {
+    "path": "path/to/file.js",
+    "content": "complete file content with properly escaped quotes and newlines",
+    "message": "Descriptive commit message",
+    "repository": "owner/repo"
+  },
+  {
+    "path": "another/file.js",
+    "content": "complete file content",
+    "message": "Another commit message",
+    "repository": "owner/repo"
+  }
+]`;
 }
 
 interface TechnicalAnalysisContext {

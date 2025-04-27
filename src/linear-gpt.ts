@@ -1209,50 +1209,142 @@ export class LinearGPT {
           .replace(/```$/, '')
           .trim();
 
-        // Try to parse the JSON
-        const changes = JSON.parse(parsedJson) as Array<{
-          path: string;
-          content: string;
-          message: string;
-          repository?: string;
-        }>;
+        // Log for debugging
+        console.log(`Attempting to parse JSON of length ${parsedJson.length}`);
+
+        // Handle potential JSON string escaping issues by trying multiple parsing approaches
+        let changes;
+        try {
+          // First try standard JSON parsing
+          changes = JSON.parse(parsedJson) as Array<{
+            path: string;
+            content: string;
+            message: string;
+            repository?: string;
+          }>;
+        } catch (initialParseError) {
+          console.warn(
+            'Initial JSON parse failed, attempting to fix common issues:',
+            initialParseError
+          );
+
+          // Try to fix unescaped quotes and other common JSON issues
+          // Sometimes the model leaves unescaped quotes in the content
+          try {
+            // Some models might produce invalid JSON with JavaScript line comments
+            parsedJson = parsedJson.replace(/\/\/.*$/gm, '');
+
+            // Split content into chunks to identify where the problem might be
+            if (parsedJson.length > 16000) {
+              console.log(
+                'Large JSON detected, will process in smaller chunks if needed'
+              );
+            }
+
+            // If JSON is too large, try to extract just the array structure
+            if (parsedJson.length > 32000) {
+              // Extract just the array brackets and parse that first to validate structure
+              const arrayMatch = parsedJson.match(/^\s*\[([\s\S]*)\]\s*$/);
+              if (arrayMatch) {
+                // Process each object in the array separately
+                const objectMatches = arrayMatch[1].split(/},\s*{/g);
+                const reconstructedArray = [];
+
+                for (let i = 0; i < objectMatches.length; i++) {
+                  let objStr = objectMatches[i];
+                  if (i > 0) objStr = '{' + objStr;
+                  if (i < objectMatches.length - 1) objStr += '}';
+
+                  try {
+                    // Try to parse each object individually
+                    const obj = JSON.parse(objStr);
+                    reconstructedArray.push(obj);
+                  } catch (objError) {
+                    console.error(
+                      `Error parsing object at index ${i}:`,
+                      objError
+                    );
+                  }
+                }
+
+                if (reconstructedArray.length > 0) {
+                  changes = reconstructedArray;
+                  console.log(
+                    `Reconstructed ${changes.length} objects from partial parsing`
+                  );
+                } else {
+                  throw new Error('Failed to parse any objects in the array');
+                }
+              } else {
+                throw new Error(
+                  'Could not identify array structure in response'
+                );
+              }
+            } else {
+              // Last resort: try eval with Function to parse the JSON-like structure
+              // This is a potential security risk but we're only parsing AI-generated content
+              const sanitizedJson = parsedJson
+                .replace(/\\/g, '\\\\')
+                .replace(/`/g, '\\`');
+              changes = Function(`"use strict"; return (${sanitizedJson})`)();
+              console.log('Used alternative parsing method successfully');
+            }
+          } catch (fallbackError) {
+            console.error('All JSON parsing attempts failed:', fallbackError);
+            throw initialParseError; // Throw the original error for clarity
+          }
+        }
 
         // Log successful parsing
         console.log(`Successfully parsed ${changes.length} code changes`);
 
         // Validate each change has the required fields and sanitize paths
         const validChanges = changes
-          .filter((change) => {
-            const isValid =
-              typeof change.path === 'string' &&
-              change.path.length > 0 &&
-              typeof change.content === 'string' &&
-              change.content.length > 0 &&
-              typeof change.message === 'string' &&
-              change.message.length > 0 &&
-              typeof change.repository === 'string' &&
-              change.repository.length > 0;
+          .filter(
+            (change: {
+              path?: string;
+              content?: string;
+              message?: string;
+              repository?: string;
+            }) => {
+              const isValid =
+                typeof change.path === 'string' &&
+                change.path.length > 0 &&
+                typeof change.content === 'string' &&
+                change.content.length > 0 &&
+                typeof change.message === 'string' &&
+                change.message.length > 0 &&
+                typeof change.repository === 'string' &&
+                change.repository.length > 0;
 
-            if (!isValid) {
-              console.warn(
-                `Skipping invalid change for path: ${
-                  change.path || 'unknown'
-                } - repository must be specified`
-              );
+              if (!isValid) {
+                console.warn(
+                  `Skipping invalid change for path: ${
+                    change.path || 'unknown'
+                  } - repository must be specified`
+                );
+              }
+
+              return isValid;
             }
-
-            return isValid;
-          })
-          .map((change) => {
-            // Sanitize the path to ensure it doesn't start with a slash
-            // Ensure repository is always defined
-            return {
-              path: this.sanitizePath(change.path),
-              content: change.content,
-              message: change.message,
-              repository: change.repository as string, // Force it to be a string since we filtered out undefined
-            };
-          });
+          )
+          .map(
+            (change: {
+              path: string;
+              content: string;
+              message: string;
+              repository: string;
+            }) => {
+              // Sanitize the path to ensure it doesn't start with a slash
+              // Ensure repository is always defined
+              return {
+                path: this.sanitizePath(change.path),
+                content: change.content,
+                message: change.message,
+                repository: change.repository, // We've already validated it's a string
+              };
+            }
+          );
 
         if (validChanges.length === 0) {
           throw new Error('No valid code changes were generated');
