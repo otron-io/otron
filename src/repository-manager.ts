@@ -4,12 +4,14 @@ import { env } from './env.js';
 import { GitHubAppService } from './github-app.js';
 import * as fs from 'fs/promises';
 import { Stats } from 'node:fs';
-import { exec } from 'child_process';
 import path from 'path';
 import os from 'os';
-import { promisify } from 'util';
-
-const execAsync = promisify(exec);
+// @ts-ignore - isomorphic-git doesn't have type definitions in DefinitelyTyped
+import git from 'isomorphic-git';
+// @ts-ignore - isomorphic-git http client
+import http from 'isomorphic-git/http/node/index.js';
+import { createWriteStream } from 'node:fs';
+import { pipeline } from 'node:stream/promises';
 
 interface RepoInfo {
   owner: string;
@@ -20,7 +22,7 @@ interface RepoInfo {
 
 /**
  * LocalRepositoryManager for working with repositories on the local filesystem
- * to reduce GitHub API calls
+ * using isomorphic-git instead of shell commands to be compatible with serverless environments
  */
 export class LocalRepositoryManager {
   private octokit: Octokit;
@@ -69,7 +71,7 @@ export class LocalRepositoryManager {
   }
 
   /**
-   * Ensure a repository is cloned locally
+   * Ensure a repository is cloned locally using isomorphic-git
    */
   async ensureRepoCloned(repoFullName: string): Promise<string> {
     if (this.clonedRepos.has(repoFullName)) {
@@ -94,39 +96,92 @@ export class LocalRepositoryManager {
 
       // Create owner directory if it doesn't exist
       await fs.mkdir(ownerPath, { recursive: true });
+      await fs.mkdir(repoPath, { recursive: true });
 
-      // Clone the repository
       console.log(`Cloning ${repoFullName} to ${repoPath}`);
+
       try {
-        await execAsync(
-          `git clone https://github.com/${repoFullName}.git ${repoPath}`
-        );
-      } catch (error: unknown) {
-        // Check if error is because the directory already exists
-        if (
-          typeof error === 'object' &&
-          error !== null &&
-          'stderr' in error &&
-          typeof error.stderr === 'string' &&
-          error.stderr.includes('already exists and is not an empty directory')
-        ) {
-          console.log(
-            `Repository already cloned at ${repoPath}, pulling latest changes`
+        // Get access token for the repo
+        const octokit = await this.getOctokitForRepo(repoFullName);
+        const auth = await octokit.auth();
+        const token =
+          typeof auth === 'object' && auth !== null && 'token' in auth
+            ? auth.token
+            : '';
+
+        if (!token) {
+          throw new Error(
+            `Could not get authentication token for repository ${repoFullName}`
           );
-          await execAsync(`cd ${repoPath} && git pull`);
-        } else {
+        }
+
+        // Clone the repository using isomorphic-git
+        await git.clone({
+          fs,
+          http,
+          dir: repoPath,
+          url: `https://github.com/${repoFullName}.git`,
+          singleBranch: true,
+          depth: 1, // Shallow clone for better performance
+          onAuth: () => ({ username: token as string }),
+        });
+
+        // Store repository info
+        this.clonedRepos.set(repoFullName, {
+          owner,
+          repo,
+          localPath: repoPath,
+        });
+
+        return repoPath;
+      } catch (error) {
+        // If the directory exists and has content, try pulling latest changes
+        try {
+          const files = await fs.readdir(repoPath);
+          if (files.length > 0) {
+            console.log(
+              `Repository already cloned at ${repoPath}, pulling latest changes`
+            );
+
+            // Get the current branch
+            const currentBranch = await git.currentBranch({
+              fs,
+              dir: repoPath,
+            });
+
+            if (currentBranch) {
+              // Get access token for the repo
+              const octokit = await this.getOctokitForRepo(repoFullName);
+              const auth = await octokit.auth();
+              const token =
+                typeof auth === 'object' && auth !== null && 'token' in auth
+                  ? auth.token
+                  : '';
+
+              await git.pull({
+                fs,
+                http,
+                dir: repoPath,
+                ref: currentBranch,
+                singleBranch: true,
+                onAuth: () => ({ username: token as string }),
+              });
+            }
+
+            // Add repo info to the map
+            this.clonedRepos.set(repoFullName, {
+              owner,
+              repo,
+              localPath: repoPath,
+            });
+
+            return repoPath;
+          }
+          throw error;
+        } catch (dirError) {
           throw error;
         }
       }
-
-      // Store repository info
-      this.clonedRepos.set(repoFullName, {
-        owner,
-        repo,
-        localPath: repoPath,
-      });
-
-      return repoPath;
     } catch (error) {
       console.error(`Error cloning repository ${repoFullName}:`, error);
       throw error;
@@ -149,11 +204,16 @@ export class LocalRepositoryManager {
     }
 
     try {
-      const repoPath = info?.localPath || path.join(this.tempDir, repoFullName);
-      const { stdout } = await execAsync(
-        `cd ${repoPath} && git remote show origin | grep 'HEAD branch' | cut -d' ' -f5`
-      );
-      const defaultBranch = stdout.trim();
+      // Get the default branch from GitHub API
+      const [owner, repo] = repoFullName.split('/');
+      const octokit = await this.getOctokitForRepo(repoFullName);
+
+      const { data } = await octokit.repos.get({
+        owner,
+        repo,
+      });
+
+      const defaultBranch = data.default_branch;
 
       // Update repoInfo with default branch
       if (this.clonedRepos.has(repoFullName) && info) {
@@ -181,20 +241,44 @@ export class LocalRepositoryManager {
   ): Promise<void> {
     await this.ensureRepoCloned(repoFullName);
     const repoInfo = this.clonedRepos.get(repoFullName);
+    if (!repoInfo) throw new Error(`Repository ${repoFullName} not found`);
 
     try {
-      const repoPath =
-        repoInfo?.localPath || path.join(this.tempDir, repoFullName);
+      const repoPath = repoInfo.localPath;
       const defaultBranch =
         baseBranch || (await this.getDefaultBranch(repoFullName));
 
       // Checkout default branch and pull latest changes
-      await execAsync(
-        `cd ${repoPath} && git checkout ${defaultBranch} && git pull`
-      );
+      await git.checkout({
+        fs,
+        dir: repoPath,
+        ref: defaultBranch,
+      });
+
+      // Get access token for the repo
+      const octokit = await this.getOctokitForRepo(repoFullName);
+      const auth = await octokit.auth();
+      const token =
+        typeof auth === 'object' && auth !== null && 'token' in auth
+          ? auth.token
+          : '';
+
+      await git.pull({
+        fs,
+        http,
+        dir: repoPath,
+        ref: defaultBranch,
+        singleBranch: true,
+        onAuth: () => ({ username: token as string }),
+      });
 
       // Create and checkout new branch
-      await execAsync(`cd ${repoPath} && git checkout -b ${branchName}`);
+      await git.branch({
+        fs,
+        dir: repoPath,
+        ref: branchName,
+        checkout: true,
+      });
 
       console.log(
         `Created and checked out branch ${branchName} in ${repoFullName}`
@@ -217,10 +301,10 @@ export class LocalRepositoryManager {
   ): Promise<string> {
     await this.ensureRepoCloned(repoFullName);
     const repoInfo = this.clonedRepos.get(repoFullName);
+    if (!repoInfo) throw new Error(`Repository ${repoFullName} not found`);
 
     try {
-      const repoPath =
-        repoInfo?.localPath || path.join(this.tempDir, repoFullName);
+      const repoPath = repoInfo.localPath;
       const fullPath = path.join(repoPath, filePath);
 
       return await fs.readFile(fullPath, 'utf-8');
@@ -245,24 +329,42 @@ export class LocalRepositoryManager {
   ): Promise<void> {
     await this.ensureRepoCloned(repoFullName);
     const repoInfo = this.clonedRepos.get(repoFullName);
+    if (!repoInfo) throw new Error(`Repository ${repoFullName} not found`);
 
     try {
-      const repoPath =
-        repoInfo?.localPath || path.join(this.tempDir, repoFullName);
+      const repoPath = repoInfo.localPath;
       const fullPath = path.join(repoPath, filePath);
 
       // Ensure directory exists
       await fs.mkdir(path.dirname(fullPath), { recursive: true });
 
       // Checkout the specified branch
-      await execAsync(`cd ${repoPath} && git checkout ${branch}`);
+      await git.checkout({
+        fs,
+        dir: repoPath,
+        ref: branch,
+      });
 
       // Write the file
       await fs.writeFile(fullPath, content);
 
       // Add the file and commit it
-      await execAsync(`cd ${repoPath} && git add "${filePath}"`);
-      await execAsync(`cd ${repoPath} && git commit -m "${commitMessage}"`);
+      await git.add({
+        fs,
+        dir: repoPath,
+        filepath: filePath,
+      });
+
+      const name = 'Linear Agent';
+      const email = 'linear-agent@example.com';
+
+      await git.commit({
+        fs,
+        dir: repoPath,
+        message: commitMessage,
+        author: { name, email },
+        committer: { name, email },
+      });
 
       console.log(`Created/updated file ${filePath} in ${repoFullName}`);
     } catch (error) {
@@ -284,21 +386,46 @@ export class LocalRepositoryManager {
   ): Promise<void> {
     await this.ensureRepoCloned(repoFullName);
     const repoInfo = this.clonedRepos.get(repoFullName);
+    if (!repoInfo) throw new Error(`Repository ${repoFullName} not found`);
 
     try {
-      const repoPath =
-        repoInfo?.localPath || path.join(this.tempDir, repoFullName);
+      const repoPath = repoInfo.localPath;
 
       // Checkout the branch if specified
       if (branch) {
-        await execAsync(`cd ${repoPath} && git checkout ${branch}`);
+        await git.checkout({
+          fs,
+          dir: repoPath,
+          ref: branch,
+        });
       }
 
+      // Get status to find modified files
+      const status = await git.statusMatrix({ fs, dir: repoPath });
+
       // Add all changes
-      await execAsync(`cd ${repoPath} && git add .`);
+      for (const [filepath, , worktreeStatus] of status) {
+        if (worktreeStatus !== 1) {
+          // If file is modified in working dir
+          await git.add({
+            fs,
+            dir: repoPath,
+            filepath,
+          });
+        }
+      }
 
       // Commit changes
-      await execAsync(`cd ${repoPath} && git commit -m "${message}"`);
+      const name = 'Linear Agent';
+      const email = 'linear-agent@example.com';
+
+      await git.commit({
+        fs,
+        dir: repoPath,
+        message,
+        author: { name, email },
+        committer: { name, email },
+      });
 
       console.log(
         `Committed changes to ${branch || 'current branch'} in ${repoFullName}`
@@ -320,27 +447,52 @@ export class LocalRepositoryManager {
   async pushChanges(repoFullName: string, branch?: string): Promise<void> {
     await this.ensureRepoCloned(repoFullName);
     const repoInfo = this.clonedRepos.get(repoFullName);
+    if (!repoInfo) throw new Error(`Repository ${repoFullName} not found`);
 
     try {
-      const repoPath =
-        repoInfo?.localPath || path.join(this.tempDir, repoFullName);
+      const repoPath = repoInfo.localPath;
 
       // Checkout the branch if specified
       if (branch) {
-        await execAsync(`cd ${repoPath} && git checkout ${branch}`);
+        await git.checkout({
+          fs,
+          dir: repoPath,
+          ref: branch,
+        });
       }
 
       // Get current branch if not specified
       let pushBranch = branch;
       if (!pushBranch) {
-        const { stdout } = await execAsync(
-          `cd ${repoPath} && git branch --show-current`
+        pushBranch = (await git.currentBranch({
+          fs,
+          dir: repoPath,
+        })) as string;
+      }
+
+      // Get access token for the repo
+      const octokit = await this.getOctokitForRepo(repoFullName);
+      const auth = await octokit.auth();
+      const token =
+        typeof auth === 'object' && auth !== null && 'token' in auth
+          ? auth.token
+          : '';
+
+      if (!token) {
+        throw new Error(
+          `Could not get authentication token for repository ${repoFullName}`
         );
-        pushBranch = stdout.trim();
       }
 
       // Push changes
-      await execAsync(`cd ${repoPath} && git push origin ${pushBranch}`);
+      await git.push({
+        fs,
+        http,
+        dir: repoPath,
+        remote: 'origin',
+        ref: pushBranch,
+        onAuth: () => ({ username: token as string }),
+      });
 
       console.log(`Pushed changes to ${pushBranch} in ${repoFullName}`);
     } catch (error) {
@@ -403,10 +555,10 @@ export class LocalRepositoryManager {
   ): Promise<string[]> {
     await this.ensureRepoCloned(repoFullName);
     const repoInfo = this.clonedRepos.get(repoFullName);
+    if (!repoInfo) throw new Error(`Repository ${repoFullName} not found`);
 
     try {
-      const repoPath =
-        repoInfo?.localPath || path.join(this.tempDir, repoFullName);
+      const repoPath = repoInfo.localPath;
       const fullPath = path.join(repoPath, dirPath);
 
       const files = await fs.readdir(fullPath);
@@ -426,10 +578,10 @@ export class LocalRepositoryManager {
   async getFileStats(filePath: string, repoFullName: string): Promise<Stats> {
     await this.ensureRepoCloned(repoFullName);
     const repoInfo = this.clonedRepos.get(repoFullName);
+    if (!repoInfo) throw new Error(`Repository ${repoFullName} not found`);
 
     try {
-      const repoPath =
-        repoInfo?.localPath || path.join(this.tempDir, repoFullName);
+      const repoPath = repoInfo.localPath;
       const fullPath = path.join(repoPath, filePath);
 
       return await fs.stat(fullPath);
@@ -452,8 +604,9 @@ export class LocalRepositoryManager {
   ): Promise<string[]> {
     await this.ensureRepoCloned(repoFullName);
     const repoInfo = this.clonedRepos.get(repoFullName);
-    const repoPath =
-      repoInfo?.localPath || path.join(this.tempDir, repoFullName);
+    if (!repoInfo) throw new Error(`Repository ${repoFullName} not found`);
+
+    const repoPath = repoInfo.localPath;
     const fullPath = path.join(repoPath, dirPath);
 
     const results: string[] = [];
@@ -492,7 +645,8 @@ export class LocalRepositoryManager {
   }
 
   /**
-   * Search for code in the local repository
+   * Search for code in the local repository using JavaScript regex
+   * instead of git grep which is not available in serverless environments
    */
   async searchCode(
     query: string,
@@ -500,60 +654,54 @@ export class LocalRepositoryManager {
   ): Promise<Array<{ path: string; line: number; content: string }>> {
     await this.ensureRepoCloned(repoFullName);
     const repoInfo = this.clonedRepos.get(repoFullName);
+    if (!repoInfo) throw new Error(`Repository ${repoFullName} not found`);
 
     try {
-      const repoPath =
-        repoInfo?.localPath || path.join(this.tempDir, repoFullName);
-
-      // Use git grep for efficient searching
-      const { stdout } = await execAsync(
-        `cd ${repoPath} && git grep -n "${query}"`
-      );
-
-      if (!stdout.trim()) {
-        return [];
-      }
-
+      const repoPath = repoInfo.localPath;
       const results: Array<{ path: string; line: number; content: string }> =
         [];
 
-      // Parse grep output
-      const lines = stdout.split('\n');
-      for (const line of lines) {
-        if (!line.trim()) continue;
+      // Walk the repository and search each file
+      const files = await this.walkDirectory(
+        '',
+        repoFullName,
+        (filepath) =>
+          !filepath.includes('node_modules') && !filepath.includes('.git')
+      );
 
-        const match = line.match(/^([^:]+):(\d+):(.*)$/);
-        if (match) {
-          const [, path, lineNumber, content] = match;
-          results.push({
-            path,
-            line: parseInt(lineNumber, 10),
-            content: content.trim(),
-          });
+      const searchRegex = new RegExp(query, 'i');
+
+      for (const file of files) {
+        try {
+          const content = await this.getFileContent(file, repoFullName);
+          const lines = content.split('\n');
+
+          for (let i = 0; i < lines.length; i++) {
+            const line = lines[i];
+            if (searchRegex.test(line)) {
+              results.push({
+                path: file,
+                line: i + 1,
+                content: line.trim(),
+              });
+            }
+          }
+        } catch (err) {
+          // Skip files that can't be read as text
+          continue;
         }
       }
 
       return results;
     } catch (error) {
-      // If git grep returns non-zero (no matches), don't treat as error
-      if (
-        typeof error === 'object' &&
-        error !== null &&
-        'code' in error &&
-        error.code === 1 &&
-        'stderr' in error &&
-        !error.stderr
-      ) {
-        return [];
-      }
-
       console.error(`Error searching code in ${repoFullName}:`, error);
-      throw error;
+      return [];
     }
   }
 
   /**
-   * Get the git history for a file
+   * Get the git history for a file using the GitHub API
+   * since we can't use git log in serverless environments
    */
   async getFileHistory(
     filePath: string,
@@ -562,51 +710,30 @@ export class LocalRepositoryManager {
   ): Promise<
     Array<{ commit: string; author: string; date: string; message: string }>
   > {
-    await this.ensureRepoCloned(repoFullName);
-    const repoInfo = this.clonedRepos.get(repoFullName);
+    const [owner, repo] = repoFullName.split('/');
 
     try {
-      const repoPath =
-        repoInfo?.localPath || path.join(this.tempDir, repoFullName);
+      const octokit = await this.getOctokitForRepo(repoFullName);
 
-      const { stdout } = await execAsync(
-        `cd ${repoPath} && git log -n ${limit} --pretty=format:"%H|%an|%ad|%s" -- "${filePath}"`
-      );
+      const { data } = await octokit.repos.listCommits({
+        owner,
+        repo,
+        path: filePath,
+        per_page: limit,
+      });
 
-      if (!stdout.trim()) {
-        return [];
-      }
-
-      const results: Array<{
-        commit: string;
-        author: string;
-        date: string;
-        message: string;
-      }> = [];
-
-      // Parse git log output
-      const lines = stdout.split('\n');
-      for (const line of lines) {
-        if (!line.trim()) continue;
-
-        const [commit, author, date, ...messageParts] = line.split('|');
-        const message = messageParts.join('|'); // In case the commit message contains |
-
-        results.push({
-          commit,
-          author,
-          date,
-          message,
-        });
-      }
-
-      return results;
+      return data.map((item) => ({
+        commit: item.sha,
+        author: item.commit.author?.name || item.author?.login || 'Unknown',
+        date: item.commit.author?.date || new Date().toISOString(),
+        message: item.commit.message,
+      }));
     } catch (error) {
       console.error(
         `Error getting history for ${filePath} in ${repoFullName}:`,
         error
       );
-      throw error;
+      return [];
     }
   }
 
