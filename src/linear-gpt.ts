@@ -1193,165 +1193,28 @@ export class LinearGPT {
         max_tokens: 4000,
       });
 
-      const implementationJson =
+      const responseContent =
         implementationResponse.choices[0].message.content || '';
 
-      // Parse the JSON response, handling common formatting issues
+      // Process the diff-based response format
       try {
-        let parsedJson = implementationJson.trim();
+        console.log(
+          `Processing implementation response of length ${responseContent.length}`
+        );
 
-        // Remove any markdown code block markers if present
-        parsedJson = parsedJson
-          .replace(/^```(json)?/, '')
-          .replace(/```$/, '')
-          .trim();
+        // Parse the diff-based format
+        const changes = this.parseDiffResponse(responseContent, codeFiles);
 
-        // Log for debugging
-        console.log(`Attempting to parse JSON of length ${parsedJson.length}`);
-
-        // Handle potential JSON string escaping issues by trying multiple parsing approaches
-        let changes;
-        try {
-          // First try standard JSON parsing
-          changes = JSON.parse(parsedJson) as Array<{
-            path: string;
-            content: string;
-            message: string;
-            repository?: string;
-          }>;
-        } catch (initialParseError) {
-          console.warn(
-            'Initial JSON parse failed, attempting to fix common issues:',
-            initialParseError
-          );
-
-          // Try to fix unescaped quotes and other common JSON issues
-          // Sometimes the model leaves unescaped quotes in the content
-          try {
-            // Some models might produce invalid JSON with JavaScript line comments
-            parsedJson = parsedJson.replace(/\/\/.*$/gm, '');
-
-            // Split content into chunks to identify where the problem might be
-            if (parsedJson.length > 16000) {
-              console.log(
-                'Large JSON detected, will process in smaller chunks if needed'
-              );
-            }
-
-            // If JSON is too large, try to extract just the array structure
-            if (parsedJson.length > 32000) {
-              // Extract just the array brackets and parse that first to validate structure
-              const arrayMatch = parsedJson.match(/^\s*\[([\s\S]*)\]\s*$/);
-              if (arrayMatch) {
-                // Process each object in the array separately
-                const objectMatches = arrayMatch[1].split(/},\s*{/g);
-                const reconstructedArray = [];
-
-                for (let i = 0; i < objectMatches.length; i++) {
-                  let objStr = objectMatches[i];
-                  if (i > 0) objStr = '{' + objStr;
-                  if (i < objectMatches.length - 1) objStr += '}';
-
-                  try {
-                    // Try to parse each object individually
-                    const obj = JSON.parse(objStr);
-                    reconstructedArray.push(obj);
-                  } catch (objError) {
-                    console.error(
-                      `Error parsing object at index ${i}:`,
-                      objError
-                    );
-                  }
-                }
-
-                if (reconstructedArray.length > 0) {
-                  changes = reconstructedArray;
-                  console.log(
-                    `Reconstructed ${changes.length} objects from partial parsing`
-                  );
-                } else {
-                  throw new Error('Failed to parse any objects in the array');
-                }
-              } else {
-                throw new Error(
-                  'Could not identify array structure in response'
-                );
-              }
-            } else {
-              // Last resort: try eval with Function to parse the JSON-like structure
-              // This is a potential security risk but we're only parsing AI-generated content
-              const sanitizedJson = parsedJson
-                .replace(/\\/g, '\\\\')
-                .replace(/`/g, '\\`');
-              changes = Function(`"use strict"; return (${sanitizedJson})`)();
-              console.log('Used alternative parsing method successfully');
-            }
-          } catch (fallbackError) {
-            console.error('All JSON parsing attempts failed:', fallbackError);
-            throw initialParseError; // Throw the original error for clarity
-          }
+        if (changes.length === 0) {
+          throw new Error('No valid code changes were found in the response');
         }
 
-        // Log successful parsing
         console.log(`Successfully parsed ${changes.length} code changes`);
-
-        // Validate each change has the required fields and sanitize paths
-        const validChanges = changes
-          .filter(
-            (change: {
-              path?: string;
-              content?: string;
-              message?: string;
-              repository?: string;
-            }) => {
-              const isValid =
-                typeof change.path === 'string' &&
-                change.path.length > 0 &&
-                typeof change.content === 'string' &&
-                change.content.length > 0 &&
-                typeof change.message === 'string' &&
-                change.message.length > 0 &&
-                typeof change.repository === 'string' &&
-                change.repository.length > 0;
-
-              if (!isValid) {
-                console.warn(
-                  `Skipping invalid change for path: ${
-                    change.path || 'unknown'
-                  } - repository must be specified`
-                );
-              }
-
-              return isValid;
-            }
-          )
-          .map(
-            (change: {
-              path: string;
-              content: string;
-              message: string;
-              repository: string;
-            }) => {
-              // Sanitize the path to ensure it doesn't start with a slash
-              // Ensure repository is always defined
-              return {
-                path: this.sanitizePath(change.path),
-                content: change.content,
-                message: change.message,
-                repository: change.repository, // We've already validated it's a string
-              };
-            }
-          );
-
-        if (validChanges.length === 0) {
-          throw new Error('No valid code changes were generated');
-        }
-
-        return validChanges;
+        return changes;
       } catch (parseError: unknown) {
-        console.error('Failed to parse implementation JSON:', parseError);
+        console.error('Failed to process implementation response:', parseError);
 
-        // If we couldn't parse the JSON, notify in Linear and throw error
+        // If we couldn't parse the response, notify in Linear and throw error
         await this.linearClient.createComment({
           issueId: issue.id,
           body: `I generated a technical analysis but encountered an error when implementing the code changes. Please review the technical report and implement manually.`,
@@ -1363,7 +1226,7 @@ export class LinearGPT {
             : 'Unknown parsing error';
 
         throw new Error(
-          `Could not parse implementation changes: ${errorMessage}`
+          `Could not process implementation changes: ${errorMessage}`
         );
       }
     } catch (error: any) {
@@ -1374,6 +1237,246 @@ export class LinearGPT {
         }`
       );
     }
+  }
+
+  /**
+   * Parse the diff-based response format into code changes
+   */
+  private parseDiffResponse(
+    response: string,
+    originalFiles: Array<{ path: string; content: string }>
+  ): Array<{
+    path: string;
+    content: string;
+    message: string;
+    repository: string;
+  }> {
+    // Split the response into change blocks
+    const changeBlocks = response
+      .split(/^#{2}\s+CHANGE\s+\d+/gm)
+      .filter((block) => block.trim().length > 0);
+
+    if (changeBlocks.length === 0) {
+      console.log('No change blocks found in response');
+      return [];
+    }
+
+    console.log(`Found ${changeBlocks.length} change blocks to process`);
+
+    const changes: Array<{
+      path: string;
+      content: string;
+      message: string;
+      repository: string;
+    }> = [];
+
+    for (const block of changeBlocks) {
+      try {
+        // Extract repository, file path and description
+        const repoMatch = block.match(/Repository:\s+([^\n]+)/);
+        const fileMatch = block.match(/File:\s+([^\n]+)/);
+        const descMatch = block.match(/Description:\s+([^\n]+)/);
+
+        if (!repoMatch || !fileMatch) {
+          console.warn('Skipping block without repository or file path');
+          continue;
+        }
+
+        const repository = repoMatch[1].trim();
+        const filePath = this.sanitizePath(fileMatch[1].trim());
+        const message = descMatch ? descMatch[1].trim() : `Update ${filePath}`;
+
+        // Extract the diff content
+        const diffMatch = block.match(/```diff\n([\s\S]*?)```/);
+
+        if (!diffMatch) {
+          console.warn(`No diff content found for ${filePath}`);
+          continue;
+        }
+
+        const diffContent = diffMatch[1];
+
+        // Find the original file content or use empty string for new files
+        const originalFile = originalFiles.find((f) => f.path === filePath);
+        const originalContent = originalFile ? originalFile.content : '';
+
+        // Apply the diff to get the new content
+        const newContent = this.applyDiff(originalContent, diffContent);
+
+        changes.push({
+          path: filePath,
+          content: newContent,
+          message,
+          repository,
+        });
+      } catch (error) {
+        console.error('Error processing change block:', error);
+        // Continue with other blocks
+      }
+    }
+
+    return changes;
+  }
+
+  /**
+   * Apply a diff to original content to get the new content
+   */
+  private applyDiff(originalContent: string, diffContent: string): string {
+    // Split content into lines
+    const lines = originalContent.split('\n');
+
+    // Process each line of the diff
+    const diffLines = diffContent.split('\n');
+    let lineIndex = 0;
+    const newLines: string[] = [];
+
+    // A simple tracking system to find context matches
+    let contextLines: string[] = [];
+    let addedLines: string[] = [];
+    let removedLines: string[] = [];
+    let processingChange = false;
+
+    for (const line of diffLines) {
+      // Skip comment lines in the diff
+      if (line.trim().startsWith('//') || line.trim() === '') {
+        continue;
+      }
+
+      if (line.startsWith('+') && !line.startsWith('++')) {
+        // Added line
+        addedLines.push(line.substring(1));
+        processingChange = true;
+      } else if (line.startsWith('-') && !line.startsWith('--')) {
+        // Removed line
+        removedLines.push(line.substring(1));
+        processingChange = true;
+      } else if (!line.startsWith('+') && !line.startsWith('-')) {
+        // Context line
+
+        // If we were processing a change and now hit context, apply the change
+        if (processingChange) {
+          // Find matching context in the original file
+          const contextMatch = this.findContextMatch(
+            lines,
+            contextLines,
+            lineIndex
+          );
+
+          if (contextMatch >= 0) {
+            // Apply the change at the matched position
+            lineIndex = contextMatch;
+
+            // Remove the specified lines
+            if (removedLines.length > 0) {
+              lines.splice(lineIndex, removedLines.length);
+            }
+
+            // Add the new lines
+            if (addedLines.length > 0) {
+              lines.splice(lineIndex, 0, ...addedLines);
+              lineIndex += addedLines.length;
+            }
+
+            // Reset for next change
+            contextLines = [];
+            addedLines = [];
+            removedLines = [];
+          }
+
+          processingChange = false;
+        }
+
+        // Store context line for matching
+        contextLines.push(line.trim());
+      }
+    }
+
+    // Apply any final change
+    if (processingChange && contextLines.length > 0) {
+      const contextMatch = this.findContextMatch(
+        lines,
+        contextLines,
+        lineIndex
+      );
+
+      if (contextMatch >= 0) {
+        lineIndex = contextMatch;
+
+        // Remove the specified lines
+        if (removedLines.length > 0) {
+          lines.splice(lineIndex, removedLines.length);
+        }
+
+        // Add the new lines
+        if (addedLines.length > 0) {
+          lines.splice(lineIndex, 0, ...addedLines);
+        }
+      }
+    }
+
+    // Handle special case: entirely new file
+    if (originalContent === '' && addedLines.length > 0) {
+      return addedLines.join('\n');
+    }
+
+    return lines.join('\n');
+  }
+
+  /**
+   * Find the position in the file where the context matches
+   */
+  private findContextMatch(
+    fileLines: string[],
+    contextLines: string[],
+    startIndex: number
+  ): number {
+    // If no context lines, return current position
+    if (contextLines.length === 0) {
+      return startIndex;
+    }
+
+    // Try to find the context starting from the current position
+    for (let i = startIndex; i < fileLines.length; i++) {
+      let matched = true;
+
+      for (let j = 0; j < contextLines.length; j++) {
+        if (
+          i + j >= fileLines.length ||
+          fileLines[i + j].trim() !== contextLines[j]
+        ) {
+          matched = false;
+          break;
+        }
+      }
+
+      if (matched) {
+        return i;
+      }
+    }
+
+    // If not found from current position, search from the beginning
+    if (startIndex > 0) {
+      for (let i = 0; i < startIndex; i++) {
+        let matched = true;
+
+        for (let j = 0; j < contextLines.length; j++) {
+          if (
+            i + j >= fileLines.length ||
+            fileLines[i + j].trim() !== contextLines[j]
+          ) {
+            matched = false;
+            break;
+          }
+        }
+
+        if (matched) {
+          return i;
+        }
+      }
+    }
+
+    // Not found, return -1
+    return -1;
   }
 
   /**

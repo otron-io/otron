@@ -137,7 +137,7 @@ export function buildCodeImplementationPrompt(
   const codeFilesText = filesWithRepoInfo
     .map((file) => {
       // Truncate very large files to a reasonable size
-      const maxContentLength = 10000;
+      const maxContentLength = 5000; // Reduced size for better handling
       let fileContent = file.content;
       let truncationNote = '';
 
@@ -155,11 +155,6 @@ ${fileContent}${truncationNote}
 
   return `
 You are a code implementation expert. Based on the technical report and change plan, implement the necessary code changes.
-Return your response as a JSON array with objects containing:
-- path: the file path
-- content: the complete updated file content 
-- message: a descriptive commit message
-- repository: (REQUIRED) the full repository name in format "owner/repo" - this field is mandatory
 
 ISSUE: ${issue.identifier} - ${issue.title}
 DESCRIPTION: ${issue.description || 'No description provided'}
@@ -176,31 +171,47 @@ ${codeFilesText}
 REPOSITORIES AVAILABLE:
 ${allowedRepositories.join(', ')}
 
-IMPORTANT REQUIREMENTS:
-1. File paths must not start with a slash. Make sure all path values are relative to the repository root without a leading slash.
-2. You MUST specify the repository field for EVERY change. No default repository will be used.
-3. Only use repositories from the REPOSITORIES AVAILABLE list.
-4. Ensure your JSON is properly formatted with escaped quotes in strings.
-5. Do not include any explanation text before or after the JSON.
-6. Do not use JavaScript comments in the JSON.
-7. Generate valid JSON that can be parsed with JSON.parse().
-8. Keep string content properly escaped, especially when including code with quotes.
+# CHANGE SPECIFICATION FORMAT
 
-Respond with ONLY a valid JSON array of change objects, formatted like this:
-[
-  {
-    "path": "path/to/file.js",
-    "content": "complete file content with properly escaped quotes and newlines",
-    "message": "Descriptive commit message",
-    "repository": "owner/repo"
-  },
-  {
-    "path": "another/file.js",
-    "content": "complete file content",
-    "message": "Another commit message",
-    "repository": "owner/repo"
+Instead of returning a large JSON object with entire file contents, return a series of change specifications in the following format:
+
+## CHANGE 1
+Repository: [owner/repo]
+File: [path/to/file.ext]
+Description: [brief description of change]
+
+\`\`\`diff
+// Use diff format to show only the changed lines
+// Use + for added lines and - for removed lines
+// Include a few lines of context before and after changes
+// Example:
+  function someFunction() {
+-   const oldValue = 'old';
++   const newValue = 'new';
+    return something;
   }
-]`;
+\`\`\`
+
+## CHANGE 2
+Repository: [owner/repo]
+File: [path/to/another/file.ext]
+Description: [brief description of change]
+
+\`\`\`diff
+// Another change in diff format
+\`\`\`
+
+# IMPORTANT REQUIREMENTS:
+1. File paths must not start with a slash. Make sure all paths are relative to the repository root.
+2. You MUST specify the repository (owner/repo) for EVERY change.
+3. Only use repositories from the REPOSITORIES AVAILABLE list.
+4. Use diff format to show only the changes, not entire files.
+5. Include sufficient context around changes (a few lines before/after).
+6. For each change, include a brief description explaining what the change does.
+7. If a file is entirely new, use a diff that adds the whole file.
+
+RESPOND WITH ONLY THE CHANGE SPECIFICATIONS AS DESCRIBED ABOVE.
+`;
 }
 
 interface TechnicalAnalysisContext {
