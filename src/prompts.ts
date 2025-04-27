@@ -115,8 +115,10 @@ interface CodeImplementationContext {
   filesWithRepoInfo: Array<{
     path: string;
     content: string;
+    repository?: string;
   }>;
   allowedRepositories: string[];
+  repoDistribution?: string; // Distribution of files across repositories
 }
 
 /**
@@ -131,6 +133,7 @@ export function buildCodeImplementationPrompt(
     changePlan,
     filesWithRepoInfo,
     allowedRepositories,
+    repoDistribution,
   } = context;
 
   // Limit file content size to avoid generating too large responses
@@ -146,7 +149,12 @@ export function buildCodeImplementationPrompt(
         truncationNote = `\n[File truncated due to size. Original length: ${file.content.length} characters]`;
       }
 
-      return `Path: ${file.path}
+      // Include repository information if available
+      const repoInfo = file.repository
+        ? `Repository: ${file.repository}\n`
+        : '';
+
+      return `${repoInfo}Path: ${file.path}
 \`\`\`
 ${fileContent}${truncationNote}
 \`\`\``;
@@ -164,6 +172,9 @@ ${technicalReport}
 
 IMPLEMENTATION PLAN:
 ${changePlan}
+
+FILE DISTRIBUTION ACROSS REPOSITORIES:
+${repoDistribution || 'No repository distribution information available'}
 
 CODE FILES:
 ${codeFilesText}

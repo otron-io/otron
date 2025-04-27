@@ -14,6 +14,7 @@ const openai = new OpenAI({
 interface CodeFile {
   path: string;
   content: string;
+  repository?: string;
 }
 
 export class TechnicalAnalysisService {
@@ -24,17 +25,45 @@ export class TechnicalAnalysisService {
    */
   async generateTechnicalReport(
     issue: Issue,
-    codeFiles: CodeFile[],
+    codeFiles: Array<{ path: string; content: string; repository?: string }>,
     additionalContext?: string
   ): Promise<string> {
     // Get issue details and context
     const issueContext = await this.getIssueContext(issue);
 
-    // Format code files for analysis
+    // Calculate repository distribution
+    const repoDistribution = new Map<string, number>();
+    for (const file of codeFiles) {
+      if (file.repository) {
+        repoDistribution.set(
+          file.repository,
+          (repoDistribution.get(file.repository) || 0) + 1
+        );
+      }
+    }
+
+    // Generate repository distribution text
+    const repoDistributionText = Array.from(repoDistribution.entries())
+      .map(([repo, count]) => `- ${repo}: ${count} files`)
+      .join('\n');
+
+    // Format code files for analysis, including repository information
     const codeContext = this.formatCodeForAnalysis(codeFiles);
 
-    // Add extra context about repository identification
-    const repoContext = `Please pay special attention to identifying which repositories contain the relevant code and which repositories will need changes. Clearly specify which repository each file belongs to and where changes need to be made.`;
+    // Provide clear context about repository relevance
+    const repoContext = `
+# Repository Information
+
+The code spans across multiple repositories. Here's the distribution of files:
+${repoDistributionText}
+
+Important instructions:
+1. Consider ALL repositories equally when analyzing the issue.
+2. Identify which repositories contain the relevant code and which repositories will need changes.
+3. Clearly specify which repository each file belongs to and where changes need to be made.
+4. Do not bias your analysis toward any particular repository - evaluate all repositories based on their technical relevance to the issue.
+5. In your implementation plan, ensure you address changes needed in ALL relevant repositories, not just the one with the most files.
+`;
 
     const fullAdditionalContext = additionalContext
       ? `${additionalContext}\n\n${repoContext}`
@@ -91,12 +120,37 @@ export class TechnicalAnalysisService {
   async planCodeChanges(
     issue: Issue,
     technicalReport: string,
-    codeFiles: CodeFile[]
+    codeFiles: Array<{ path: string; content: string; repository?: string }>
   ): Promise<{
     filesToModify: string[];
     changePlan: string;
     branchName: string;
   }> {
+    // Add repository distribution information to provide context
+    const repoDistribution = new Map<string, number>();
+    for (const file of codeFiles) {
+      if (file.repository) {
+        repoDistribution.set(
+          file.repository,
+          (repoDistribution.get(file.repository) || 0) + 1
+        );
+      }
+    }
+
+    // Generate repository context
+    const repoContext = Array.from(repoDistribution.entries())
+      .map(([repo, count]) => `- ${repo}: ${count} files`)
+      .join('\n');
+
+    // Add this context to the prompt
+    const changePlanContext = `
+# Repository Distribution
+${repoContext}
+
+Please consider changes across ALL relevant repositories, not just the one with the most files.
+Specify clearly which repository each change belongs to.
+`;
+
     // Generate a change plan based on the report
     const response = await openai.chat.completions.create({
       model: 'gpt-4.1',
@@ -109,6 +163,10 @@ export class TechnicalAnalysisService {
             codeFiles,
             formatCodeForAnalysis: this.formatCodeForAnalysis,
           }),
+        },
+        {
+          role: 'user',
+          content: changePlanContext,
         },
       ],
       temperature: 0.2,
@@ -225,9 +283,16 @@ Description: ${issue.description || 'No description provided'}
   /**
    * Format code files for analysis
    */
-  public formatCodeForAnalysis(codeFiles: CodeFile[]): string {
+  public formatCodeForAnalysis(
+    codeFiles: Array<{ path: string; content: string; repository?: string }>
+  ): string {
     return codeFiles
-      .map((file) => `File: ${file.path}\n\`\`\`\n${file.content}\n\`\`\`\n`)
+      .map((file) => {
+        const repoInfo = file.repository
+          ? `Repository: ${file.repository}\n`
+          : '';
+        return `${repoInfo}File: ${file.path}\n\`\`\`\n${file.content}\n\`\`\`\n`;
+      })
       .join('\n\n');
   }
 

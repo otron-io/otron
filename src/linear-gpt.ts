@@ -915,8 +915,22 @@ export class LinearGPT {
    */
   private async performTechnicalAnalysis(issue: Issue): Promise<void> {
     try {
-      // 1. Identify relevant code files
+      // 1. Identify relevant code files with repository information
       const relevantFiles = await this.searchRelevantFiles(issue);
+
+      // Log repository distribution for debugging
+      const repoDistribution = new Map<string, number>();
+      for (const file of relevantFiles) {
+        repoDistribution.set(
+          file.repository,
+          (repoDistribution.get(file.repository) || 0) + 1
+        );
+      }
+
+      console.log('File distribution for technical analysis:');
+      for (const [repo, count] of repoDistribution.entries()) {
+        console.log(`${repo}: ${count} files`);
+      }
 
       // 2. Generate technical analysis
       const technicalReport =
@@ -950,8 +964,22 @@ export class LinearGPT {
    */
   private async implementChanges(issue: Issue): Promise<void> {
     try {
-      // 1. Identify relevant code files
+      // 1. Identify relevant code files, now with repository info
       const relevantFiles = await this.searchRelevantFiles(issue);
+
+      // Log repository distribution for debugging
+      const repoDistribution = new Map<string, number>();
+      for (const file of relevantFiles) {
+        repoDistribution.set(
+          file.repository,
+          (repoDistribution.get(file.repository) || 0) + 1
+        );
+      }
+
+      console.log('Input file distribution across repositories:');
+      for (const [repo, count] of repoDistribution.entries()) {
+        console.log(`${repo}: ${count} files`);
+      }
 
       // 2. Generate technical analysis if not already done
       let technicalReport: string;
@@ -1050,7 +1078,7 @@ export class LinearGPT {
    */
   private async searchRelevantFiles(
     issue: Issue
-  ): Promise<Array<{ path: string; content: string }>> {
+  ): Promise<Array<{ path: string; content: string; repository: string }>> {
     // Extract keywords from the issue
     const keywordsResponse = await openai.chat.completions.create({
       model: 'gpt-4.1',
@@ -1067,70 +1095,126 @@ export class LinearGPT {
     const keywords = keywordsResponse.choices[0].message.content || '';
     console.log(`Identified keywords for search: ${keywords}`);
 
-    const relevantFiles: Array<{ path: string; content: string }> = [];
+    // Initialize the array for all relevant files
+    const relevantFiles: Array<{
+      path: string;
+      content: string;
+      repository: string;
+    }> = [];
     const keywordList = keywords.split(',').map((k: string) => k.trim());
 
-    // Search for each keyword in allowed repositories
-    for (const repoFullName of this.allowedRepositories) {
-      const [owner, repo] = repoFullName.split('/');
+    // Track files per repository to ensure balanced representation
+    const filesPerRepo = new Map<string, number>();
+    const MAX_FILES_PER_REPO = 3; // Set a maximum per repository
+    const TOTAL_MAX_FILES = 12; // Set a higher overall maximum to allow for multiple repos
 
-      for (const keyword of keywordList) {
-        if (!keyword) continue;
+    // Initialize the counter for each repository
+    for (const repo of this.allowedRepositories) {
+      filesPerRepo.set(repo, 0);
+    }
+
+    // First round: try to get at least one file from each repository
+    for (const keyword of keywordList) {
+      if (!keyword) continue;
+
+      // Try each repository for this keyword
+      for (const repoFullName of this.allowedRepositories) {
+        // Skip if this repo already has its minimum representation
+        if ((filesPerRepo.get(repoFullName) || 0) >= 1) continue;
 
         try {
-          // Search for the keyword in code
-          const searchResults = await this.octokit.search.code({
-            q: `${keyword} in:file repo:${owner}/${repo}`,
-            per_page: 5,
-          });
+          const files = await this.searchFilesInRepo(keyword, repoFullName, 2);
 
-          // For each result, get the file content
-          for (const item of searchResults.data.items) {
-            // Sanitize the path
-            const sanitizedPath = this.sanitizePath(item.path);
+          for (const file of files) {
+            relevantFiles.push({
+              ...file,
+              repository: repoFullName, // Add repository information to each file
+            });
 
-            // Skip if we already have this file
-            if (relevantFiles.some((f) => f.path === sanitizedPath)) {
-              continue;
-            }
+            // Update the counter for this repository
+            filesPerRepo.set(
+              repoFullName,
+              (filesPerRepo.get(repoFullName) || 0) + 1
+            );
 
-            try {
-              // Get file content
-              const content = await this.prManager.getFileContent(
-                sanitizedPath,
-                repoFullName
-              );
-
-              relevantFiles.push({
-                path: sanitizedPath,
-                content,
-              });
-
-              // Limit the number of files we process
-              if (relevantFiles.length >= 10) {
-                break;
-              }
-            } catch (error) {
-              console.error(
-                `Error fetching content for ${sanitizedPath}:`,
-                error
-              );
-            }
-          }
-
-          // Don't continue searching if we have enough files
-          if (relevantFiles.length >= 10) {
-            break;
+            // Stop if we've reached the maximum for this repository
+            if ((filesPerRepo.get(repoFullName) || 0) >= 1) break;
           }
         } catch (error) {
-          console.error(`Error searching for keyword "${keyword}":`, error);
+          console.error(
+            `Error searching for keyword "${keyword}" in ${repoFullName}:`,
+            error
+          );
         }
       }
+    }
 
-      // Don't search in more repos if we have enough files
-      if (relevantFiles.length >= 10) {
-        break;
+    // Second round: fill up to the per-repository maximum
+    for (const keyword of keywordList) {
+      if (!keyword) continue;
+
+      // Stop if we've reached the overall maximum
+      if (relevantFiles.length >= TOTAL_MAX_FILES) break;
+
+      for (const repoFullName of this.allowedRepositories) {
+        // Skip if this repo already has its maximum
+        if ((filesPerRepo.get(repoFullName) || 0) >= MAX_FILES_PER_REPO)
+          continue;
+
+        // Calculate how many more files we need from this repo
+        const neededFiles =
+          MAX_FILES_PER_REPO - (filesPerRepo.get(repoFullName) || 0);
+
+        try {
+          const files = await this.searchFilesInRepo(
+            keyword,
+            repoFullName,
+            neededFiles
+          );
+
+          for (const file of files) {
+            // Skip if we already have this file path
+            if (
+              relevantFiles.some(
+                (f) => f.path === file.path && f.repository === repoFullName
+              )
+            )
+              continue;
+
+            relevantFiles.push({
+              ...file,
+              repository: repoFullName, // Add repository information to each file
+            });
+
+            // Update the counter for this repository
+            filesPerRepo.set(
+              repoFullName,
+              (filesPerRepo.get(repoFullName) || 0) + 1
+            );
+
+            // Stop if we've reached the maximum for this repository
+            if ((filesPerRepo.get(repoFullName) || 0) >= MAX_FILES_PER_REPO)
+              break;
+
+            // Stop if we've reached the overall maximum
+            if (relevantFiles.length >= TOTAL_MAX_FILES) break;
+          }
+
+          // Break out of the repository loop if we've reached the overall maximum
+          if (relevantFiles.length >= TOTAL_MAX_FILES) break;
+        } catch (error) {
+          console.error(
+            `Error searching for keyword "${keyword}" in ${repoFullName}:`,
+            error
+          );
+        }
       }
+    }
+
+    // Log the distribution of files
+    console.log('File distribution across repositories:');
+    for (const [repo, count] of filesPerRepo.entries()) {
+      console.log(`${repo}: ${count} files`);
     }
 
     // If we couldn't find any files, provide a helpful message
@@ -1147,6 +1231,7 @@ export class LinearGPT {
         {
           path: 'README.md',
           content: 'No relevant files found',
+          repository: this.allowedRepositories[0], // Use the first repository as a fallback
         },
       ];
     }
@@ -1155,11 +1240,64 @@ export class LinearGPT {
   }
 
   /**
+   * Search for files in a specific repository
+   */
+  private async searchFilesInRepo(
+    keyword: string,
+    repoFullName: string,
+    limit: number
+  ): Promise<Array<{ path: string; content: string }>> {
+    const [owner, repo] = repoFullName.split('/');
+    const results: Array<{ path: string; content: string }> = [];
+
+    try {
+      // Search for the keyword in code
+      const searchResults = await this.octokit.search.code({
+        q: `${keyword} in:file repo:${owner}/${repo}`,
+        per_page: limit,
+      });
+
+      // For each result, get the file content
+      for (const item of searchResults.data.items) {
+        // Sanitize the path
+        const sanitizedPath = this.sanitizePath(item.path);
+
+        try {
+          // Get file content
+          const content = await this.prManager.getFileContent(
+            sanitizedPath,
+            repoFullName
+          );
+
+          results.push({
+            path: sanitizedPath,
+            content,
+          });
+
+          // Stop if we have enough files
+          if (results.length >= limit) {
+            break;
+          }
+        } catch (error) {
+          console.error(`Error fetching content for ${sanitizedPath}:`, error);
+        }
+      }
+    } catch (error) {
+      console.error(
+        `Error searching for keyword "${keyword}" in ${repoFullName}:`,
+        error
+      );
+    }
+
+    return results;
+  }
+
+  /**
    * Generate code changes based on technical analysis
    */
   private async generateCodeChanges(
     issue: Issue,
-    codeFiles: Array<{ path: string; content: string }>,
+    codeFiles: Array<{ path: string; content: string; repository: string }>,
     technicalReport: string,
     changePlan: string
   ): Promise<
@@ -1171,14 +1309,27 @@ export class LinearGPT {
     }>
   > {
     try {
-      // Add repository info to each file path - require the model to determine which repository
+      // Use the repository information we've already captured
       const filesWithRepoInfo = codeFiles.map((file) => {
         return {
           path: file.path,
           content: file.content,
-          // No default repository is set here
+          repository: file.repository, // Include the repository information
         };
       });
+
+      // Add repository distribution info to the prompt
+      const repoDistribution = new Map<string, number>();
+      for (const file of filesWithRepoInfo) {
+        repoDistribution.set(
+          file.repository,
+          (repoDistribution.get(file.repository) || 0) + 1
+        );
+      }
+
+      const repoContext = Array.from(repoDistribution.entries())
+        .map(([repo, count]) => `- ${repo}: ${count} files`)
+        .join('\n');
 
       // Generate concrete code changes based on the technical report and plan
       const implementationResponse = await openai.chat.completions.create({
@@ -1192,12 +1343,13 @@ export class LinearGPT {
               changePlan,
               filesWithRepoInfo,
               allowedRepositories: this.allowedRepositories,
+              repoDistribution: repoContext, // Pass this to the prompt builder
             }),
           },
           {
             role: 'user',
             content:
-              'Please generate code changes based on the technical report and plan.',
+              'Please generate code changes based on the technical report and plan. Be sure to carefully consider which repository each change belongs to.',
           },
         ],
         temperature: 0.2,
@@ -1218,6 +1370,20 @@ export class LinearGPT {
 
         if (changes.length === 0) {
           throw new Error('No valid code changes were found in the response');
+        }
+
+        // Log repository distribution of changes
+        const changeRepoDistribution = new Map<string, number>();
+        for (const change of changes) {
+          changeRepoDistribution.set(
+            change.repository,
+            (changeRepoDistribution.get(change.repository) || 0) + 1
+          );
+        }
+
+        console.log('Change distribution across repositories:');
+        for (const [repo, count] of changeRepoDistribution.entries()) {
+          console.log(`${repo}: ${count} changes`);
         }
 
         console.log(`Successfully parsed ${changes.length} code changes`);
@@ -1255,7 +1421,7 @@ export class LinearGPT {
    */
   private parseDiffResponse(
     response: string,
-    originalFiles: Array<{ path: string; content: string }>
+    originalFiles: Array<{ path: string; content: string; repository?: string }>
   ): Array<{
     path: string;
     content: string;
@@ -1307,12 +1473,54 @@ export class LinearGPT {
 
         const diffContent = diffMatch[1];
 
-        // Find the original file content or use empty string for new files
-        const originalFile = originalFiles.find((f) => f.path === filePath);
+        // Find the original file content, respecting repository context
+        // First try to find an exact match by path and repository
+        let originalFile = originalFiles.find(
+          (f) => f.path === filePath && f.repository === repository
+        );
+
+        // If not found, fall back to just matching by path
+        if (!originalFile) {
+          originalFile = originalFiles.find((f) => f.path === filePath);
+        }
+
         const originalContent = originalFile ? originalFile.content : '';
 
         // Apply the diff to get the new content
         const newContent = this.applyDiff(originalContent, diffContent);
+
+        // Validate if the repository exists in the allowed list
+        if (!this.allowedRepositories.includes(repository)) {
+          console.warn(
+            `Specified repository "${repository}" is not in the allowed list. Checking for similar repositories...`
+          );
+
+          // Try to find a similar repository name (handle typos, etc)
+          const similarRepo = this.allowedRepositories.find(
+            (r) =>
+              r
+                .toLowerCase()
+                .includes(repository.toLowerCase().split('/')[1]) ||
+              repository.toLowerCase().includes(r.toLowerCase().split('/')[1])
+          );
+
+          if (similarRepo) {
+            console.log(
+              `Using similar repository "${similarRepo}" instead of "${repository}"`
+            );
+            changes.push({
+              path: filePath,
+              content: newContent,
+              message,
+              repository: similarRepo,
+            });
+          } else {
+            console.warn(
+              `Skipping change for invalid repository: ${repository}`
+            );
+          }
+          continue;
+        }
 
         changes.push({
           path: filePath,
