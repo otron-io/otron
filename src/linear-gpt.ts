@@ -371,7 +371,7 @@ export class LinearGPT {
         // Use Anthropic's streaming client
         const stream = anthropic.messages.stream({
           model: 'claude-3-7-sonnet-latest',
-          max_tokens: 8192,
+          max_tokens: 32000,
           system: systemMessage as any,
           messages: messages as any,
           tools: tools as any,
