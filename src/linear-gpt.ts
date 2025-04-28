@@ -371,11 +371,15 @@ export class LinearGPT {
         // Use Anthropic's client with type assertions
         const response = await anthropic.messages.create({
           model: 'claude-3-7-sonnet-latest',
-          max_tokens: 4096,
+          max_tokens: 32000,
           system: systemMessage as any,
           messages: messages as any,
-          temperature: 0.2,
+          temperature: 0.1,
           tools: tools as any,
+          thinking: {
+            budget_tokens: 2048,
+            type: 'enabled',
+          },
         });
 
         // Extract the model's response
@@ -578,15 +582,18 @@ ${
             (block: any) => block.type === 'text'
           );
 
+          // Final response from the model, we will not do anything with it for now except log it
           if (textBlocks.length > 0) {
             const textContent = textBlocks
               .map((block: any) => block.text || '')
               .join('\n');
-            await this.linearClient.createComment({
-              issueId: issue.id,
-              body: textContent,
-              parentId: commentId,
-            });
+            // await this.linearClient.createComment({
+            //   issueId: issue.id,
+            //   body: textContent,
+            //   parentId: commentId,
+            // });
+
+            console.log('Final response from the model:', textContent);
           }
         }
       }
