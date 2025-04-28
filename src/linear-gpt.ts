@@ -408,6 +408,10 @@ export class LinearGPT {
                 (block.partial_json || '') + event.delta.partial_json;
             } else if (event.delta.type === 'thinking_delta') {
               block.thinking = (block.thinking || '') + event.delta.thinking;
+              // Preserve signature if present
+              if ((event.delta as any).signature) {
+                block.signature = (event.delta as any).signature;
+              }
             }
             responseContent[event.index] = block;
           } else if (event.type === 'content_block_stop') {
@@ -438,6 +442,7 @@ export class LinearGPT {
               type: 'thinking',
               thinking: block.thinking,
               budget_tokens: 2048,
+              signature: block.signature, // Include signature if available
             };
           }
           return block;
