@@ -374,7 +374,7 @@ export class LinearGPT {
           max_tokens: 32000,
           system: systemMessage as any,
           messages: messages as any,
-          temperature: 0.1,
+          temperature: 1,
           tools: tools as any,
           thinking: {
             budget_tokens: 2048,
