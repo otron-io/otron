@@ -429,23 +429,16 @@ export class LinearGPT {
         );
 
         // Clean up tool_use blocks before sending back to Anthropic
-        const cleanedContent = responseContent.map((block: any) => {
-          if (block && block.type === 'tool_use') {
-            // Only keep the final input, remove partial_json
-            const { partial_json, ...rest } = block;
-            return rest;
-          }
-          // Handle thinking blocks to ensure they match original request parameters
-          if (block && block.type === 'thinking') {
-            // Only include type, thinking content, and signature in message history
-            return {
-              type: 'thinking',
-              thinking: block.thinking,
-              signature: block.signature, // Include signature if available
-            };
-          }
-          return block;
-        });
+        const cleanedContent = responseContent
+          .filter((block: any) => block && block.type !== 'thinking') // Remove thinking blocks entirely
+          .map((block: any) => {
+            if (block && block.type === 'tool_use') {
+              // Only keep the final input, remove partial_json
+              const { partial_json, ...rest } = block;
+              return rest;
+            }
+            return block;
+          });
 
         if (toolUseBlocks.length > 0) {
           // Add the model's response to conversation history
