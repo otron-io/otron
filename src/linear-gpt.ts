@@ -385,6 +385,7 @@ export class LinearGPT {
         let lastLog = Date.now();
         let eventCount = 0;
         let toolUseBlocks: any[] = [];
+        let originalThinkingBlocks: any[] = [];
 
         for await (const event of stream) {
           eventCount++;
@@ -396,6 +397,14 @@ export class LinearGPT {
           // Accumulate content blocks
           if (event.type === 'content_block_start') {
             responseContent[event.index] = event.content_block;
+
+            // Identify and store thinking and redacted_thinking blocks for later
+            if (
+              event.content_block.type === 'thinking' ||
+              event.content_block.type === 'redacted_thinking'
+            ) {
+              originalThinkingBlocks[event.index] = { ...event.content_block };
+            }
           } else if (event.type === 'content_block_delta') {
             // Merge deltas into the content block
             const block = responseContent[event.index] || {
@@ -408,12 +417,27 @@ export class LinearGPT {
                 (block.partial_json || '') + event.delta.partial_json;
             } else if (event.delta.type === 'thinking_delta') {
               block.thinking = (block.thinking || '') + event.delta.thinking;
-              // Preserve signature if present
-              if ((event.delta as any).signature) {
-                block.signature = (event.delta as any).signature;
-              }
+            } else if (event.delta.type === 'signature_delta') {
+              // For signature deltas, add them to the block
+              block.signature = event.delta.signature;
             }
             responseContent[event.index] = block;
+
+            // Update original thinking blocks with deltas
+            if (
+              originalThinkingBlocks[event.index] &&
+              (event.delta.type === 'thinking_delta' ||
+                event.delta.type === 'signature_delta')
+            ) {
+              if (event.delta.type === 'thinking_delta') {
+                originalThinkingBlocks[event.index].thinking =
+                  (originalThinkingBlocks[event.index].thinking || '') +
+                  event.delta.thinking;
+              } else if (event.delta.type === 'signature_delta') {
+                originalThinkingBlocks[event.index].signature =
+                  event.delta.signature;
+              }
+            }
           } else if (event.type === 'content_block_stop') {
             // Finalize tool_use blocks
             const block = responseContent[event.index];
@@ -428,18 +452,42 @@ export class LinearGPT {
           (block: any) => block && block.type === 'tool_use'
         );
 
-        // Clean up tool_use blocks before sending back to Anthropic
-        const cleanedContent = responseContent.map((block: any) => {
-          if (block && block.type === 'tool_use') {
-            // Only keep the final input, remove partial_json
-            const { partial_json, ...rest } = block;
-            return rest;
-          }
-          return block;
-        });
+        // Split content into thinking blocks and non-thinking blocks to ensure correct ordering
+        const thinkingAndRedactedBlocks = responseContent.filter(
+          (block: any) =>
+            block &&
+            (block.type === 'thinking' || block.type === 'redacted_thinking')
+        );
+
+        const nonThinkingBlocks = responseContent
+          .filter(
+            (block: any) =>
+              block &&
+              block.type !== 'thinking' &&
+              block.type !== 'redacted_thinking'
+          )
+          .map((block: any) => {
+            if (block && block.type === 'tool_use' && block.partial_json) {
+              // Only keep the final input, remove partial_json
+              const { partial_json, ...rest } = block;
+              return rest;
+            }
+            return block;
+          });
+
+        // Combine blocks with thinking blocks first, followed by other content
+        const cleanedContent = [
+          ...thinkingAndRedactedBlocks,
+          ...nonThinkingBlocks,
+        ];
+
+        // Check if there's a tool call in the response
+        toolUseBlocks = cleanedContent.filter(
+          (block: any) => block && block.type === 'tool_use'
+        );
 
         if (toolUseBlocks.length > 0) {
-          // Add the model's response to conversation history
+          // Add the model's response to conversation history with thinking blocks coming first
           messages.push({
             role: 'assistant',
             content: cleanedContent,
