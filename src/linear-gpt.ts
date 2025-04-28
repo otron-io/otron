@@ -368,8 +368,8 @@ export class LinearGPT {
       const MAX_TOOL_CALLS = 50; // Maximum number of tool calls to prevent infinite loops
 
       while (hasMoreToolCalls && toolCallCount < MAX_TOOL_CALLS) {
-        // Use Anthropic's client with type assertions
-        const response = await anthropic.messages.create({
+        // Use Anthropic's streaming client
+        const stream = anthropic.messages.stream({
           model: 'claude-3-7-sonnet-latest',
           max_tokens: 32000,
           system: systemMessage as any,
@@ -382,13 +382,48 @@ export class LinearGPT {
           },
         });
 
-        // Extract the model's response
-        const responseContent = response.content as any[];
+        let responseContent: any[] = [];
+        let lastLog = Date.now();
+        let eventCount = 0;
+        let toolUseBlocks: any[] = [];
+
+        for await (const event of stream) {
+          eventCount++;
+          // Log progress every 5 seconds or every 20 events
+          if (Date.now() - lastLog > 5000 || eventCount % 20 === 0) {
+            console.log(`[Anthropic stream] Received event:`, event.type);
+            lastLog = Date.now();
+          }
+          // Accumulate content blocks
+          if (event.type === 'content_block_start') {
+            responseContent[event.index] = event.content_block;
+          } else if (event.type === 'content_block_delta') {
+            // Merge deltas into the content block
+            const block = responseContent[event.index] || {
+              type: event.delta.type,
+            };
+            if (event.delta.type === 'text_delta') {
+              block.text = (block.text || '') + event.delta.text;
+            } else if (event.delta.type === 'input_json_delta') {
+              block.partial_json =
+                (block.partial_json || '') + event.delta.partial_json;
+            } else if (event.delta.type === 'thinking_delta') {
+              block.thinking = (block.thinking || '') + event.delta.thinking;
+            }
+            responseContent[event.index] = block;
+          } else if (event.type === 'content_block_stop') {
+            // Finalize tool_use blocks
+            const block = responseContent[event.index];
+            if (block && block.type === 'tool_use') {
+              toolUseBlocks.push(block);
+            }
+          }
+        }
 
         // Check if there's a tool call in the response
-        const toolUseBlocks = responseContent.filter(
-          (block: any) => block.type === 'tool_use'
-        ) as any[];
+        toolUseBlocks = responseContent.filter(
+          (block: any) => block && block.type === 'tool_use'
+        );
 
         if (toolUseBlocks.length > 0) {
           // Add the model's response to conversation history
@@ -475,12 +510,12 @@ export class LinearGPT {
                 );
                 toolResponse = `Retrieved content for ${toolInput.path} in ${
                   toolInput.repository
-                }:
-${
-  content.length > 5000
-    ? content.substring(0, 5000) + '\n... (content truncated due to size)'
-    : content
-}`;
+                }:\n${
+                  content.length > 5000
+                    ? content.substring(0, 5000) +
+                      '\n... (content truncated due to size)'
+                    : content
+                }`;
               } else if (toolName === 'updateIssueStatus') {
                 await this.updateIssueStatus(
                   toolInput.issueId,
@@ -579,7 +614,7 @@ ${
 
           // If there's a text response, post it as a comment
           const textBlocks = responseContent.filter(
-            (block: any) => block.type === 'text'
+            (block: any) => block && block.type === 'text'
           );
 
           // Final response from the model, we will not do anything with it for now except log it
