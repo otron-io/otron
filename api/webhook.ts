@@ -58,7 +58,11 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     const linearClient = new LinearClient({ accessToken });
 
     // Process the webhook based on action type
-    if (payload.type === 'AppUserNotification') {
+    if (
+      payload.type === 'AppUserNotification' &&
+      (payload.action === 'issueAssignedToYou' ||
+        payload.action === 'issueCommentMention')
+    ) {
       const notification = payload.notification;
 
       // Handle the notification autonomously
