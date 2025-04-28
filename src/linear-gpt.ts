@@ -424,11 +424,21 @@ export class LinearGPT {
           (block: any) => block && block.type === 'tool_use'
         );
 
+        // Clean up tool_use blocks before sending back to Anthropic
+        const cleanedContent = responseContent.map((block: any) => {
+          if (block && block.type === 'tool_use') {
+            // Only keep the final input, remove partial_json
+            const { partial_json, ...rest } = block;
+            return rest;
+          }
+          return block;
+        });
+
         if (toolUseBlocks.length > 0) {
           // Add the model's response to conversation history
           messages.push({
             role: 'assistant',
-            content: responseContent as any,
+            content: cleanedContent,
           });
 
           // Increment tool call count
