@@ -146,6 +146,8 @@ IMPORTANT:
 - If you need to search for code, specify the repository you want to search in.
 - Be efficient as there is a timeout to your actions.
 - No one sees your output except for the results of your actions such as comments and code changes.
+- service-frontend is the main frontend repository for the hubs.com manufacturing platform - angular/typescript
+- service-supply is the main backend repository for the hubs.com manufacturing platform - python
 `;
 }
 
