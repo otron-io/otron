@@ -362,6 +362,9 @@ export class LinearGPT {
         },
       ];
 
+      // Store original assistant responses with thinking blocks for future messages
+      let lastAssistantMessage: any = null;
+
       // Tool use loop - continue until model stops making tool calls
       let hasMoreToolCalls = true;
       let toolCallCount = 0;
@@ -381,12 +384,12 @@ export class LinearGPT {
           },
         });
 
-        let responseContent: any[] = [];
+        // Store the complete response without any modifications
+        const completeResponse: any[] = [];
         let lastLog = Date.now();
         let eventCount = 0;
-        let toolUseBlocks: any[] = [];
-        let originalThinkingBlocks: any[] = [];
 
+        // Process the stream and build the complete response
         for await (const event of stream) {
           eventCount++;
           // Log progress every 5 seconds or every 20 events
@@ -394,114 +397,69 @@ export class LinearGPT {
             console.log(`[Anthropic stream] Received event:`, event.type);
             lastLog = Date.now();
           }
-          // Accumulate content blocks
-          if (event.type === 'content_block_start') {
-            responseContent[event.index] = event.content_block;
 
-            // Identify and store thinking and redacted_thinking blocks for later
-            if (
-              event.content_block.type === 'thinking' ||
-              event.content_block.type === 'redacted_thinking'
-            ) {
-              originalThinkingBlocks[event.index] = { ...event.content_block };
-            }
+          // Collect all events to reconstruct the exact original blocks
+          if (event.type === 'content_block_start') {
+            completeResponse[event.index] = { ...event.content_block };
           } else if (event.type === 'content_block_delta') {
-            // Merge deltas into the content block
-            const block = responseContent[event.index] || {
+            const block = completeResponse[event.index] || {
               type: event.delta.type,
             };
+
             if (event.delta.type === 'text_delta') {
               block.text = (block.text || '') + event.delta.text;
+            } else if (event.delta.type === 'thinking_delta') {
+              block.thinking = (block.thinking || '') + event.delta.thinking;
             } else if (event.delta.type === 'input_json_delta') {
               block.partial_json =
                 (block.partial_json || '') + event.delta.partial_json;
-            } else if (event.delta.type === 'thinking_delta') {
-              block.thinking = (block.thinking || '') + event.delta.thinking;
             } else if (event.delta.type === 'signature_delta') {
-              // For signature deltas, add them to the block
               block.signature = event.delta.signature;
             }
-            responseContent[event.index] = block;
 
-            // Update original thinking blocks with deltas
-            if (
-              originalThinkingBlocks[event.index] &&
-              (event.delta.type === 'thinking_delta' ||
-                event.delta.type === 'signature_delta')
-            ) {
-              if (event.delta.type === 'thinking_delta') {
-                originalThinkingBlocks[event.index].thinking =
-                  (originalThinkingBlocks[event.index].thinking || '') +
-                  event.delta.thinking;
-              } else if (event.delta.type === 'signature_delta') {
-                originalThinkingBlocks[event.index].signature =
-                  event.delta.signature;
-              }
-            }
-          } else if (event.type === 'content_block_stop') {
-            // Finalize tool_use blocks
-            const block = responseContent[event.index];
-            if (block && block.type === 'tool_use') {
-              toolUseBlocks.push(block);
-            }
+            completeResponse[event.index] = block;
           }
         }
 
-        // Check if there's a tool call in the response
-        toolUseBlocks = responseContent.filter(
-          (block: any) => block && block.type === 'tool_use'
-        );
-
-        // Split content into thinking blocks and non-thinking blocks to ensure correct ordering
-        const thinkingAndRedactedBlocks = responseContent.filter(
-          (block: any) =>
-            block &&
-            (block.type === 'thinking' || block.type === 'redacted_thinking')
-        );
-
-        const nonThinkingBlocks = responseContent
-          .filter(
-            (block: any) =>
-              block &&
-              block.type !== 'thinking' &&
-              block.type !== 'redacted_thinking'
-          )
-          .map((block: any) => {
-            if (block && block.type === 'tool_use' && block.partial_json) {
-              // Only keep the final input, remove partial_json
-              const { partial_json, ...rest } = block;
-              return rest;
+        // Clean up partial_json in tool_use blocks but leave everything else intact
+        const finalResponse = completeResponse.map((block) => {
+          if (block && block.type === 'tool_use' && block.partial_json) {
+            // Parse the JSON if it's complete
+            try {
+              const input = JSON.parse(block.partial_json);
+              return { ...block, input, partial_json: undefined };
+            } catch (e) {
+              // If JSON parsing fails, just return the block as is
+              return block;
             }
-            return block;
-          });
+          }
+          return block;
+        });
 
-        // Combine blocks with thinking blocks first, followed by other content
-        const cleanedContent = [
-          ...thinkingAndRedactedBlocks,
-          ...nonThinkingBlocks,
-        ];
+        // Store this response for future messages
+        lastAssistantMessage = {
+          role: 'assistant',
+          content: finalResponse,
+        };
 
-        // Check if there's a tool call in the response
-        toolUseBlocks = cleanedContent.filter(
-          (block: any) => block && block.type === 'tool_use'
+        // Add to conversation history
+        messages.push(lastAssistantMessage);
+
+        // Extract tool use blocks
+        const toolUseBlocks = finalResponse.filter(
+          (block) => block && block.type === 'tool_use'
         );
 
+        // Process tool calls if any
         if (toolUseBlocks.length > 0) {
-          // Add the model's response to conversation history with thinking blocks coming first
-          messages.push({
-            role: 'assistant',
-            content: cleanedContent,
-          });
-
           // Increment tool call count
           toolCallCount += toolUseBlocks.length;
 
           // Process each tool call
           for (const toolBlock of toolUseBlocks) {
-            // Safe type assertion since we filtered by type
             const toolId = toolBlock.id;
             const toolName = toolBlock.name;
-            const toolInput = toolBlock.input as any;
+            const toolInput = toolBlock.input;
             let toolResponse = '';
 
             // Execute the function based on its name
@@ -674,7 +632,7 @@ export class LinearGPT {
           hasMoreToolCalls = false;
 
           // If there's a text response, post it as a comment
-          const textBlocks = responseContent.filter(
+          const textBlocks = finalResponse.filter(
             (block: any) => block && block.type === 'text'
           );
 
