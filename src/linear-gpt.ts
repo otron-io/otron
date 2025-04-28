@@ -437,11 +437,10 @@ export class LinearGPT {
           }
           // Handle thinking blocks to ensure they match original request parameters
           if (block && block.type === 'thinking') {
-            // Replace with the same parameters as the original request
+            // Only include type, thinking content, and signature in message history
             return {
               type: 'thinking',
               thinking: block.thinking,
-              budget_tokens: 2048,
               signature: block.signature, // Include signature if available
             };
           }
