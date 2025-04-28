@@ -137,6 +137,10 @@ When estimating project costs, use these guidelines for a single team in AMS:
 [Describe the solution to the problem. This should include the technical solution, but also the business impact and any other relevant details.]
 [This should be a plan to make code changes and the business impact of the solution as well as specific code changes that need to be made.]
 
+### Effort estimate
+
+[Estimate the effort required to implement the solution. Use the fibonacci scale to estimate the effort.]
+
 ### Cost and time estimate
 
 [Estimate the cost and time required to implement the solution. Use the guidelines above for the cost estimate.]

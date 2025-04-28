@@ -351,6 +351,25 @@ export class LinearGPT {
             ],
           },
         },
+        {
+          name: 'setPointEstimate',
+          description: 'Set the point estimate for a Linear issue',
+          input_schema: {
+            type: 'object',
+            properties: {
+              issueId: {
+                type: 'string',
+                description: 'The ID of the issue to update',
+              },
+              estimate: {
+                type: 'number',
+                description:
+                  'The point estimate to set (1, 2, 3, 5, 8, 13, 21, etc.)',
+              },
+            },
+            required: ['issueId', 'estimate'],
+          },
+        },
       ];
 
       // Initialize message array with the user message - correct format for Anthropic API
@@ -442,6 +461,28 @@ export class LinearGPT {
           content: finalResponse,
         };
 
+        // Log thinking blocks
+        const thinkingBlocks = finalResponse.filter(
+          (block) =>
+            block &&
+            (block.type === 'thinking' || block.type === 'redacted_thinking')
+        );
+
+        if (thinkingBlocks.length > 0) {
+          console.log(
+            `\n[Thinking Blocks] Found ${thinkingBlocks.length} thinking blocks:`
+          );
+          thinkingBlocks.forEach((block, index) => {
+            if (block.type === 'thinking') {
+              console.log(`\n--- Thinking Block ${index + 1} ---`);
+              console.log(block.thinking);
+            } else if (block.type === 'redacted_thinking') {
+              console.log(`\n--- Redacted Thinking Block ${index + 1} ---`);
+              console.log('(Content redacted for safety reasons)');
+            }
+          });
+        }
+
         // Add to conversation history
         messages.push(lastAssistantMessage);
 
@@ -449,6 +490,18 @@ export class LinearGPT {
         const toolUseBlocks = finalResponse.filter(
           (block) => block && block.type === 'tool_use'
         );
+
+        // Log tool use blocks
+        if (toolUseBlocks.length > 0) {
+          console.log(
+            `\n[Tool Use] Found ${toolUseBlocks.length} tool use blocks:`
+          );
+          toolUseBlocks.forEach((block, index) => {
+            console.log(`\n--- Tool Use ${index + 1} ---`);
+            console.log(`Tool: ${block.name}`);
+            console.log(`Input: ${JSON.stringify(block.input, null, 2)}`);
+          });
+        }
 
         // Process tool calls if any
         if (toolUseBlocks.length > 0) {
@@ -606,6 +659,12 @@ export class LinearGPT {
                   );
 
                 toolResponse = `Successfully created pull request: ${pullRequest.url}`;
+              } else if (toolName === 'setPointEstimate') {
+                await this.setPointEstimate(
+                  toolInput.issueId,
+                  toolInput.estimate
+                );
+                toolResponse = `Successfully set point estimate for issue ${toolInput.issueId} to ${toolInput.estimate} points.`;
               } else {
                 toolResponse = `Unknown function: ${toolName}`;
               }
@@ -626,6 +685,14 @@ export class LinearGPT {
                 },
               ] as any,
             });
+
+            // Log tool result
+            console.log(`\n[Tool Result] For tool: ${toolName}`);
+            console.log(
+              `Response: ${toolResponse.substring(0, 500)}${
+                toolResponse.length > 500 ? '...(truncated)' : ''
+              }`
+            );
           }
         } else {
           // No tool calls, exit the loop
@@ -1058,6 +1125,42 @@ export class LinearGPT {
         `Error updating priority for issue ${issueIdOrIdentifier}:`,
         error instanceof Error ? error.message : String(error)
       );
+    }
+  }
+
+  /**
+   * Set the point estimate for a Linear issue
+   */
+  private async setPointEstimate(
+    issueIdOrIdentifier: string,
+    pointEstimate: number
+  ): Promise<void> {
+    try {
+      // Get the issue
+      const issue = await this.linearClient.issue(issueIdOrIdentifier);
+      if (!issue) {
+        console.error(`Issue ${issueIdOrIdentifier} not found`);
+        return;
+      }
+
+      // Update the issue with the new estimate
+      await issue.update({ estimate: pointEstimate });
+
+      console.log(
+        `Updated issue ${issueIdOrIdentifier} point estimate to ${pointEstimate}`
+      );
+
+      // Add a comment to indicate the change
+      await this.linearClient.createComment({
+        issueId: issue.id,
+        body: `I've updated the point estimate to ${pointEstimate} points.`,
+      });
+    } catch (error: unknown) {
+      console.error(
+        `Error setting point estimate for issue ${issueIdOrIdentifier}:`,
+        error instanceof Error ? error.message : String(error)
+      );
+      throw error;
     }
   }
 }
