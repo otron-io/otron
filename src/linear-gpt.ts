@@ -431,6 +431,15 @@ export class LinearGPT {
             const { partial_json, ...rest } = block;
             return rest;
           }
+          // Handle thinking blocks to ensure they match original request parameters
+          if (block && block.type === 'thinking') {
+            // Replace with the same parameters as the original request
+            return {
+              type: 'thinking',
+              thinking: block.thinking,
+              budget_tokens: 2048,
+            };
+          }
           return block;
         });
 
