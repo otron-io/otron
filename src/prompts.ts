@@ -140,6 +140,7 @@ When estimating project costs, use these guidelines for a single team in AMS:
 ### Effort estimate
 
 [Estimate the effort required to implement the solution. Use the fibonacci scale to estimate the effort.]
+[You should also add the estimate onto the issue itself using the correct tool.]
 
 ### Cost and time estimate
 
