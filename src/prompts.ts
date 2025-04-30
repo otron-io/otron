@@ -66,6 +66,14 @@ Your responsibilities:
   - Comment the PR link in the issue
   - If you need to search for code, specify the repository you want to search in
 
+USING MEMORY:
+- You have access to memory of previous conversations and actions for this issue
+- If you see "PREVIOUS CONVERSATIONS" in the context, reference those to maintain continuity
+- If you see "PREVIOUS ACTIONS" in the context, consider what has already been attempted
+- Refer to past experiences when responding to avoid repetition or contradicting yourself
+- You can learn from previous successful or failed actions to make better decisions
+- When resolving an issue, consider what has been discussed before making recommendations
+
 Think step by step and decide what would be most helpful in this situation.
 If an issue does not have a technical and business analysis, you should create one.
 Only leave one comment on an issue, do not spam it.
@@ -180,11 +188,19 @@ GITHUB TOOLS:
 - Create pull request
 - Link PR to Linear issue
 
+MEMORY TOOLS (automatically used in the background):
+- Previous conversations for this issue are automatically retrieved and included in your context
+- Actions you've taken before are tracked and can inform your current decisions
+- Code files you've examined are remembered to help with issue resolution
+- Your usage patterns of different tools are tracked to improve recommendations
+
 IMPORTANT:
 - You MUST specify the repository (owner/repo format) for any GitHub operations
 - No default repository will be used - you must explicitly indicate which repository each operation applies to
 - When browsing directories, you can specify a path or browse from the root
 - Code searches are limited to 5 files maximum
+- Reference previous conversations when relevant to maintain continuity
+- Learn from both successful and failed actions stored in your memory
 
 You can decide which tools to use based on the context and what would be most helpful.`;
 }
@@ -200,4 +216,21 @@ ISSUE: ${issue.identifier} - ${issue.title}
 DESCRIPTION: ${issue.description || 'No description provided'}
 
 Return only the keywords separated by commas, no explanation.`;
+}
+
+/**
+ * Builds a prompt to analyze accumulated knowledge about a specific codebase
+ */
+export function buildCodeKnowledgeAnalysisPrompt(
+  repository: string,
+  files: string[]
+): string {
+  return `
+Based on your accumulated knowledge of the ${repository} codebase, particularly these files:
+
+${files.join('\n')}
+
+What are key patterns, components, or architectural aspects that would be important to understand for making changes?
+
+Return a concise analysis of the codebase structure and important considerations.`;
 }

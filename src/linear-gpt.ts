@@ -6,6 +6,18 @@ import {
   buildLinearGptSystemPrompt,
   getAvailableToolsDescription,
 } from './prompts.js';
+import { Redis } from '@upstash/redis';
+
+// Initialize Redis client
+const redis = new Redis({
+  url: env.KV_REST_API_URL,
+  token: env.KV_REST_API_TOKEN,
+});
+
+// Memory system constants
+const MEMORY_EXPIRY = 60 * 60 * 24 * 90; // 90 days in seconds
+const MAX_MEMORIES_PER_ISSUE = 20; // Maximum number of memory entries per issue
+const MAX_MEMORY_ENTRIES_TO_INCLUDE = 5; // Maximum number of memory entries to include in a prompt
 
 // Initialize Anthropic client
 const anthropic = new Anthropic({
@@ -46,6 +58,309 @@ export class LinearGPT {
   }
 
   /**
+   * Store a memory entry for an issue in Redis
+   */
+  private async storeMemory(
+    issueId: string,
+    memoryType: 'conversation' | 'action' | 'context',
+    data: any
+  ): Promise<void> {
+    try {
+      // Create a memory entry with timestamp and data
+      const memoryEntry = {
+        timestamp: Date.now(),
+        type: memoryType,
+        data,
+      };
+
+      // Store in Redis list, newest first
+      await redis.lpush(
+        `memory:issue:${issueId}:${memoryType}`,
+        JSON.stringify(memoryEntry)
+      );
+
+      // Trim the list to prevent unlimited growth
+      await redis.ltrim(
+        `memory:issue:${issueId}:${memoryType}`,
+        0,
+        MAX_MEMORIES_PER_ISSUE - 1
+      );
+
+      // Set expiration for the key
+      await redis.expire(
+        `memory:issue:${issueId}:${memoryType}`,
+        MEMORY_EXPIRY
+      );
+
+      console.log(`Stored ${memoryType} memory for issue ${issueId}`);
+    } catch (error) {
+      console.error(`Error storing memory for issue ${issueId}:`, error);
+    }
+  }
+
+  /**
+   * Retrieve memory entries for an issue from Redis
+   */
+  private async retrieveMemories(
+    issueId: string,
+    memoryType: 'conversation' | 'action' | 'context',
+    limit: number = MAX_MEMORY_ENTRIES_TO_INCLUDE
+  ): Promise<any[]> {
+    try {
+      const memories = await redis.lrange(
+        `memory:issue:${issueId}:${memoryType}`,
+        0,
+        limit - 1
+      );
+
+      return memories.map((item) => JSON.parse(item));
+    } catch (error) {
+      console.error(`Error retrieving memories for issue ${issueId}:`, error);
+      return [];
+    }
+  }
+
+  /**
+   * Store tool usage statistics
+   */
+  private async trackToolUsage(
+    toolName: string,
+    success: boolean,
+    context: {
+      issueId: string;
+      input: any;
+      response: string;
+    }
+  ): Promise<void> {
+    try {
+      // Increment tool usage counters
+      await redis.hincrby(`memory:tools:${toolName}:stats`, 'attempts', 1);
+      if (success) {
+        await redis.hincrby(`memory:tools:${toolName}:stats`, 'successes', 1);
+      }
+
+      // Store context for this specific tool usage
+      await this.storeMemory(context.issueId, 'action', {
+        tool: toolName,
+        input: context.input,
+        response: context.response,
+        success,
+      });
+    } catch (error) {
+      console.error(`Error tracking tool usage for ${toolName}:`, error);
+    }
+  }
+
+  /**
+   * Add relationships to the memory system
+   */
+  private async storeRelationship(
+    relationshipType: string,
+    entity1: string,
+    entity2: string
+  ): Promise<void> {
+    try {
+      // Store bidirectional relationships
+      await redis.sadd(`memory:${relationshipType}:${entity1}`, entity2);
+      await redis.expire(
+        `memory:${relationshipType}:${entity1}`,
+        MEMORY_EXPIRY
+      );
+    } catch (error) {
+      console.error(`Error storing relationship ${relationshipType}:`, error);
+    }
+  }
+
+  /**
+   * Retrieve previous conversations for context augmentation
+   */
+  private async getPreviousConversations(issueId: string): Promise<string> {
+    const memories = await this.retrieveMemories(issueId, 'conversation');
+
+    if (memories.length === 0) {
+      return '';
+    }
+
+    let contextString = '\n\nPREVIOUS CONVERSATIONS:\n';
+
+    // Format each memory entry into a readable format for the context
+    memories.forEach((memory, index) => {
+      const timestamp = new Date(memory.timestamp).toISOString();
+      contextString += `[${timestamp}] `;
+
+      if (memory.data.role === 'assistant') {
+        contextString += `Assistant: `;
+        // Extract text blocks from the assistant's message
+        const textBlocks = memory.data.content
+          .filter((block: any) => block && block.type === 'text')
+          .map((block: any) => block.text || '')
+          .join('\n');
+        contextString += `${textBlocks}\n`;
+      } else if (memory.data.role === 'user') {
+        contextString += `User: ${memory.data.content}\n`;
+      }
+    });
+
+    return contextString;
+  }
+
+  /**
+   * Get issue history and related activity
+   */
+  private async getIssueHistory(issueId: string): Promise<string> {
+    const actions = await this.retrieveMemories(issueId, 'action');
+
+    if (actions.length === 0) {
+      return '';
+    }
+
+    let historyString = '\n\nPREVIOUS ACTIONS:\n';
+
+    // Format each action entry
+    actions.forEach((action, index) => {
+      const timestamp = new Date(action.timestamp).toISOString();
+      historyString += `[${timestamp}] Tool: ${action.data.tool}, Success: ${action.data.success}\n`;
+    });
+
+    return historyString;
+  }
+
+  /**
+   * Get related issues based on similarity or past relationships
+   */
+  private async getRelatedIssues(issueId: string): Promise<string> {
+    try {
+      // Get files associated with this issue
+      const relatedFiles = await redis.smembers(`memory:issue:file:${issueId}`);
+
+      // Find other issues that touched the same files
+      let relatedIssues = new Set<string>();
+
+      for (const file of relatedFiles) {
+        const issues = await redis.smembers(`memory:file:issue:${file}`);
+        // Add to set to avoid duplicates
+        issues.forEach((issue) => {
+          if (issue !== issueId) {
+            relatedIssues.add(issue);
+          }
+        });
+      }
+
+      if (relatedIssues.size === 0) {
+        return '';
+      }
+
+      // Get issue details for related issues (just the most recent 3)
+      const relatedIssueArray = Array.from(relatedIssues).slice(0, 3);
+      let relatedIssueDetails = '\n\nRELATED ISSUES:\n';
+
+      for (const relatedIssueId of relatedIssueArray) {
+        try {
+          // Try to get the issue from Linear
+          const relatedIssue = await this.linearClient.issue(relatedIssueId);
+          relatedIssueDetails += `- ${relatedIssue.identifier}: ${relatedIssue.title}\n`;
+        } catch (error) {
+          // If we can't get the issue, just add the ID
+          relatedIssueDetails += `- Issue ID: ${relatedIssueId}\n`;
+        }
+      }
+
+      return relatedIssueDetails;
+    } catch (error) {
+      console.error(`Error retrieving related issues for ${issueId}:`, error);
+      return '';
+    }
+  }
+
+  /**
+   * Store topic expertise for repositories and components
+   */
+  private async storeCodeKnowledge(
+    repository: string,
+    path: string,
+    topic: string
+  ): Promise<void> {
+    try {
+      // Extract component from path (e.g., src/components/users -> components/users)
+      const parts = path.split('/');
+      let component = '';
+
+      if (parts.length >= 2) {
+        // Try to identify meaningful component (skip very generic paths like 'src')
+        const skipParts = ['src', 'lib', 'app', 'main'];
+        for (let i = 0; i < parts.length - 1; i++) {
+          if (!skipParts.includes(parts[i])) {
+            component = parts.slice(i, i + 2).join('/');
+            break;
+          }
+        }
+
+        // If no component found, use the directory
+        if (!component && parts.length > 1) {
+          component = parts[parts.length - 2];
+        }
+      }
+
+      if (component) {
+        // Associate the topic with this component
+        await redis.zincrby(
+          `memory:component:${repository}:${component}:topics`,
+          1,
+          topic
+        );
+        // Set expiry
+        await redis.expire(
+          `memory:component:${repository}:${component}:topics`,
+          MEMORY_EXPIRY
+        );
+      }
+    } catch (error) {
+      console.error(
+        `Error storing code knowledge for ${repository}:${path}:`,
+        error
+      );
+    }
+  }
+
+  /**
+   * Get knowledge about a repository's most accessed files
+   */
+  private async getRepositoryKnowledge(repository: string): Promise<string> {
+    try {
+      // Get most frequently accessed files for this repository
+      const fileScores = await (redis as any).zrevrange(
+        `memory:repository:${repository}:files`,
+        0,
+        9,
+        'WITHSCORES'
+      );
+
+      if (fileScores.length === 0) {
+        return '';
+      }
+
+      // Convert to array of files
+      const files: string[] = [];
+      for (let i = 0; i < fileScores.length; i += 2) {
+        files.push(fileScores[i]);
+      }
+
+      // We'll include this knowledge directly
+      return (
+        `\n\nREPOSITORY KNOWLEDGE (${repository}):\n` +
+        `Key files: ${files.join(', ')}\n` +
+        `Remember to consider repository structure and patterns when making changes.`
+      );
+    } catch (error) {
+      console.error(
+        `Error getting repository knowledge for ${repository}:`,
+        error
+      );
+      return '';
+    }
+  }
+
+  /**
    * Process a notification directly with the AI model
    */
   async processNotification(context: NotificationContext): Promise<void> {
@@ -55,14 +370,39 @@ export class LinearGPT {
       // Get full issue context for the model
       const issueContext = await this.getIssueContext(issue, commentId);
 
+      // Get previous conversations and actions from memory
+      const previousConversations = await this.getPreviousConversations(
+        issue.id
+      );
+      const issueHistory = await this.getIssueHistory(issue.id);
+
+      // Get related issues and repository knowledge
+      const relatedIssues = await this.getRelatedIssues(issue.id);
+
+      // If we have repository information from previous actions, get knowledge
+      let repositoryKnowledge = '';
+      const repoUsage = await (redis as any).zrevrange(
+        `memory:issue:${issue.id}:repositories`,
+        0,
+        0
+      );
+      if (repoUsage.length > 0) {
+        repositoryKnowledge = await this.getRepositoryKnowledge(repoUsage[0]);
+      }
+
       // Setup the system tools the model can use
       const availableTools = getAvailableToolsDescription();
 
-      // Create system message
+      // Create system message with memory context
       const systemMessage = buildLinearGptSystemPrompt({
         notificationType,
         commentId,
-        issueContext,
+        issueContext:
+          issueContext +
+          previousConversations +
+          issueHistory +
+          relatedIssues +
+          repositoryKnowledge,
         availableTools,
         allowedRepositories: this.allowedRepositories,
       }) as string;
@@ -461,6 +801,9 @@ export class LinearGPT {
           content: finalResponse,
         };
 
+        // Store in memory system for future context
+        await this.storeMemory(issue.id, 'conversation', lastAssistantMessage);
+
         // Log thinking blocks
         const thinkingBlocks = finalResponse.filter(
           (block) =>
@@ -514,6 +857,7 @@ export class LinearGPT {
             const toolName = toolBlock.name;
             const toolInput = toolBlock.input;
             let toolResponse = '';
+            let toolSuccess = false;
 
             // Execute the function based on its name
             try {
@@ -524,35 +868,83 @@ export class LinearGPT {
                   parentId: toolInput.parentCommentId,
                 });
                 toolResponse = `Successfully posted comment on issue ${issue.identifier}.`;
+                toolSuccess = true;
               } else if (toolName === 'searchCodeFiles') {
                 const results = await this.localRepoManager.searchCode(
                   toolInput.query,
-                  toolInput.repository
+                  toolInput.repository,
+                  {
+                    contextAware: true,
+                    semanticBoost: true,
+                    fileFilter: toolInput.fileFilter || '',
+                    maxResults: 5,
+                  }
                 );
 
-                // Prepare a formatted response with a summary
-                let formattedResults = `Found ${results.length} relevant files for query "${toolInput.query}" in ${toolInput.repository}:\n\n`;
+                // Store search terms for future semantic understanding
+                const searchTerms: string[] = toolInput.query
+                  .toLowerCase()
+                  .split(/\s+/)
+                  .filter((term: string) => term.length > 3)
+                  .slice(0, 5);
 
-                // Add each file with path and content, limited to avoid token issues
-                const MAX_RESULTS_TO_SHOW = 5;
-                for (
-                  let i = 0;
-                  i < Math.min(results.length, MAX_RESULTS_TO_SHOW);
-                  i++
-                ) {
-                  const result = results[i];
-                  formattedResults += `File: ${result.path}\nLine ${result.line}: ${result.content}\n\n`;
+                // Store these search terms for future knowledge retrieval
+                for (const term of searchTerms) {
+                  await (redis as any).zincrby(
+                    `memory:issue:${issue.id}:search_terms`,
+                    1,
+                    term
+                  );
+                  await redis.expire(
+                    `memory:issue:${issue.id}:search_terms`,
+                    MEMORY_EXPIRY
+                  );
                 }
 
-                // Add note if we truncated results
-                if (results.length > MAX_RESULTS_TO_SHOW) {
-                  formattedResults += `... and ${
-                    results.length - MAX_RESULTS_TO_SHOW
-                  } more matches (not shown to conserve space)`;
+                // Prepare a formatted response with a summary and context information
+                let formattedResults = `Found ${results.length} relevant files for query "${toolInput.query}" in ${toolInput.repository}:\n\n`;
+
+                // Add each file with path, content, and context if available
+                for (let i = 0; i < results.length; i++) {
+                  const result = results[i];
+                  formattedResults += `File: ${result.path}\n`;
+                  formattedResults += `Line ${result.line}: ${result.content}\n`;
+
+                  // Include context information if available
+                  if (result.context) {
+                    formattedResults += `Context: ${result.context}\n`;
+                  }
+
+                  formattedResults += '\n';
                 }
 
                 // Set the tool response
                 toolResponse = formattedResults;
+                toolSuccess = results.length > 0;
+
+                // If we found code, store the connection between this issue and these files
+                if (results.length > 0) {
+                  for (const result of results) {
+                    await redis.sadd(
+                      `memory:issue:file:${issue.id}`,
+                      `${toolInput.repository}:${result.path}`
+                    );
+                    await redis.sadd(
+                      `memory:file:issue:${toolInput.repository}:${result.path}`,
+                      issue.id
+                    );
+
+                    // Store expiry for these sets
+                    await redis.expire(
+                      `memory:issue:file:${issue.id}`,
+                      MEMORY_EXPIRY
+                    );
+                    await redis.expire(
+                      `memory:file:issue:${toolInput.repository}:${result.path}`,
+                      MEMORY_EXPIRY
+                    );
+                  }
+                }
               } else if (toolName === 'getDirectoryStructure') {
                 const directoryStructure =
                   await this.localRepoManager.getDirectoryStructure(
@@ -575,6 +967,7 @@ export class LinearGPT {
                 });
 
                 toolResponse = formattedStructure;
+                toolSuccess = true;
               } else if (toolName === 'getFileContent') {
                 const content = await this.localRepoManager.getFileContent(
                   toolInput.path,
@@ -588,24 +981,29 @@ export class LinearGPT {
                       '\n... (content truncated due to size)'
                     : content
                 }`;
+                toolSuccess = true;
               } else if (toolName === 'updateIssueStatus') {
                 await this.updateIssueStatus(
                   toolInput.issueId,
                   toolInput.status
                 );
                 toolResponse = `Successfully updated status of issue ${toolInput.issueId} to "${toolInput.status}".`;
+                toolSuccess = true;
               } else if (toolName === 'addLabel') {
                 await this.addLabel(toolInput.issueId, toolInput.label);
                 toolResponse = `Successfully added label "${toolInput.label}" to issue ${toolInput.issueId}.`;
+                toolSuccess = true;
               } else if (toolName === 'removeLabel') {
                 await this.removeLabel(toolInput.issueId, toolInput.label);
                 toolResponse = `Successfully removed label "${toolInput.label}" from issue ${toolInput.issueId}.`;
+                toolSuccess = true;
               } else if (toolName === 'assignIssue') {
                 await this.assignIssue(
                   toolInput.issueId,
                   toolInput.assigneeEmail
                 );
                 toolResponse = `Successfully assigned issue ${toolInput.issueId} to ${toolInput.assigneeEmail}.`;
+                toolSuccess = true;
               } else if (toolName === 'createIssue') {
                 await this.createIssue(
                   toolInput.teamId,
@@ -616,6 +1014,7 @@ export class LinearGPT {
                   toolInput.parentIssueId
                 );
                 toolResponse = `Successfully created new issue "${toolInput.title}".`;
+                toolSuccess = true;
               } else if (toolName === 'addIssueAttachment') {
                 await this.addIssueAttachment(
                   toolInput.issueId,
@@ -623,12 +1022,14 @@ export class LinearGPT {
                   toolInput.title
                 );
                 toolResponse = `Successfully added attachment "${toolInput.title}" to issue ${toolInput.issueId}.`;
+                toolSuccess = true;
               } else if (toolName === 'updateIssuePriority') {
                 await this.updateIssuePriority(
                   toolInput.issueId,
                   toolInput.priority
                 );
                 toolResponse = `Successfully updated priority of issue ${toolInput.issueId} to ${toolInput.priority}.`;
+                toolSuccess = true;
               } else if (toolName === 'createPullRequest') {
                 // Create a branch
                 await this.localRepoManager.createBranch(
@@ -659,19 +1060,119 @@ export class LinearGPT {
                   );
 
                 toolResponse = `Successfully created pull request: ${pullRequest.url}`;
+                toolSuccess = true;
               } else if (toolName === 'setPointEstimate') {
                 await this.setPointEstimate(
                   toolInput.issueId,
                   toolInput.estimate
                 );
                 toolResponse = `Successfully set point estimate for issue ${toolInput.issueId} to ${toolInput.estimate} points.`;
+                toolSuccess = true;
               } else {
                 toolResponse = `Unknown function: ${toolName}`;
+              }
+
+              // Track tool usage in memory system
+              await this.trackToolUsage(toolName, toolSuccess, {
+                issueId: issue.id,
+                input: toolInput,
+                response: toolResponse,
+              });
+
+              // Store relevant relationships
+              if (toolName === 'getFileContent' && toolSuccess) {
+                await this.storeRelationship(
+                  'issue:file',
+                  issue.id,
+                  `${toolInput.repository}:${toolInput.path}`
+                );
+              } else if (toolName === 'createPullRequest' && toolSuccess) {
+                await this.storeRelationship(
+                  'issue:pr',
+                  issue.id,
+                  toolResponse.split(' ').pop() || ''
+                );
+              }
+
+              // Track repository usage for this issue
+              if (
+                toolName === 'searchCodeFiles' ||
+                toolName === 'getFileContent' ||
+                toolName === 'getDirectoryStructure'
+              ) {
+                if (toolInput.repository) {
+                  // Keep track of which repositories are relevant to this issue
+                  await (redis as any).zincrby(
+                    `memory:issue:${issue.id}:repositories`,
+                    1,
+                    toolInput.repository
+                  );
+                  await redis.expire(
+                    `memory:issue:${issue.id}:repositories`,
+                    MEMORY_EXPIRY
+                  );
+
+                  // Track file access for repository knowledge building
+                  if (toolName === 'getFileContent' && toolInput.path) {
+                    await (redis as any).zincrby(
+                      `memory:repository:${toolInput.repository}:files`,
+                      1,
+                      toolInput.path
+                    );
+                    await redis.expire(
+                      `memory:repository:${toolInput.repository}:files`,
+                      MEMORY_EXPIRY
+                    );
+
+                    // Create bidirectional mapping for issues and files
+                    await redis.sadd(
+                      `memory:issue:file:${issue.id}`,
+                      `${toolInput.repository}:${toolInput.path}`
+                    );
+                    await redis.sadd(
+                      `memory:file:issue:${toolInput.repository}:${toolInput.path}`,
+                      issue.id
+                    );
+
+                    // Store expiry for these sets
+                    await redis.expire(
+                      `memory:issue:file:${issue.id}`,
+                      MEMORY_EXPIRY
+                    );
+                    await redis.expire(
+                      `memory:file:issue:${toolInput.repository}:${toolInput.path}`,
+                      MEMORY_EXPIRY
+                    );
+
+                    // Extract potential topics from the file path
+                    const pathParts = toolInput.path.split('/');
+                    const fileName = pathParts[pathParts.length - 1];
+                    const topics = fileName
+                      .split(/[_.-]/)
+                      .filter((t: string) => t.length > 3);
+
+                    // Store any meaningful topics as code knowledge
+                    for (const topic of topics) {
+                      await this.storeCodeKnowledge(
+                        toolInput.repository,
+                        toolInput.path,
+                        topic
+                      );
+                    }
+                  }
+                }
               }
             } catch (error) {
               toolResponse = `Error executing ${toolName}: ${
                 error instanceof Error ? error.message : 'Unknown error'
               }`;
+
+              // Track failed tool usage
+              await this.trackToolUsage(toolName, false, {
+                issueId: issue.id,
+                input: toolInput,
+                response: toolResponse,
+              });
             }
 
             // Add tool response to conversation
