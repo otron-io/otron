@@ -433,7 +433,8 @@ export class LinearGPT {
         },
         {
           name: 'searchCodeFiles',
-          description: 'Search for relevant code files related to keywords',
+          description:
+            'Search for relevant code files related to keywords with advanced capabilities',
           input_schema: {
             type: 'object',
             properties: {
@@ -443,7 +444,25 @@ export class LinearGPT {
               },
               query: {
                 type: 'string',
-                description: 'Search query/keywords',
+                description:
+                  'Search query/keywords - be specific for better results',
+              },
+              fileFilter: {
+                type: 'string',
+                description:
+                  'Optional filter for specific files (e.g., "*.ts", "src/components/*")',
+              },
+              contextAware: {
+                type: 'boolean',
+                description: 'Include structural context about matched files',
+              },
+              semanticBoost: {
+                type: 'boolean',
+                description: 'Use semantic search to improve relevance',
+              },
+              maxResults: {
+                type: 'integer',
+                description: 'Maximum number of results to return (default: 5)',
               },
             },
             required: ['repository', 'query'],
@@ -874,10 +893,10 @@ export class LinearGPT {
                   toolInput.query,
                   toolInput.repository,
                   {
-                    contextAware: true,
-                    semanticBoost: true,
+                    contextAware: toolInput.contextAware,
+                    semanticBoost: toolInput.semanticBoost,
                     fileFilter: toolInput.fileFilter || '',
-                    maxResults: 5,
+                    maxResults: toolInput.maxResults || 5,
                   }
                 );
 
@@ -943,6 +962,22 @@ export class LinearGPT {
                       `memory:file:issue:${toolInput.repository}:${result.path}`,
                       MEMORY_EXPIRY
                     );
+
+                    // Extract potential topics from the file path
+                    const pathParts = toolInput.path.split('/');
+                    const fileName = pathParts[pathParts.length - 1];
+                    const topics = fileName
+                      .split(/[_.-]/)
+                      .filter((t: string) => t.length > 3);
+
+                    // Store any meaningful topics as code knowledge
+                    for (const topic of topics) {
+                      await this.storeCodeKnowledge(
+                        toolInput.repository,
+                        toolInput.path,
+                        topic
+                      );
+                    }
                   }
                 }
               } else if (toolName === 'getDirectoryStructure') {
@@ -1225,16 +1260,57 @@ export class LinearGPT {
         console.warn(
           `Hit maximum tool call limit (${MAX_TOOL_CALLS}) for issue ${issue.identifier}. Stopping execution.`
         );
-        await this.linearClient.createComment({
-          issueId: issue.id,
-          body: `I've reached my maximum number of operations (${MAX_TOOL_CALLS}) for this request. I'll need to stop here. Please create a new request if you need me to continue working on this issue.`,
-          parentId: commentId,
-        });
       }
-    } catch (error: unknown) {
-      console.error(`Error in LinearGPT processing:`, error);
-      throw error;
+    } catch (error) {
+      console.error(`Error processing notification:`, error);
     }
+  }
+
+  /**
+   * Get the context for an issue including comments
+   */
+  private async getIssueContext(
+    issue: Issue,
+    commentId?: string
+  ): Promise<string> {
+    let context = `ISSUE ${issue.identifier}: ${issue.title}\n`;
+    context += `DESCRIPTION: ${
+      issue.description || 'No description provided'
+    }\n\n`;
+
+    // Add comments
+    const comments = await issue.comments({ first: 10 });
+    if (comments.nodes.length > 0) {
+      context += 'RECENT COMMENTS:\n';
+
+      for (const comment of comments.nodes) {
+        // If this is the triggering comment, highlight it
+        const isTriggering = commentId && comment.id === commentId;
+        const prefix = isTriggering ? '► ' : '';
+
+        // Add user info if available
+        let userName = 'Unknown';
+        if (comment.user) {
+          try {
+            const user = await comment.user;
+            userName = user ? user.name || 'Unknown' : 'Unknown';
+          } catch (e) {
+            console.error('Error getting user name:', e);
+          }
+        }
+
+        context += `${prefix}${userName}: ${comment.body}\n\n`;
+      }
+    }
+
+    // Add labels if any
+    const labels = await issue.labels();
+    if (labels.nodes.length > 0) {
+      const labelNames = labels.nodes.map((l) => l.name).join(', ');
+      context += `LABELS: ${labelNames}\n`;
+    }
+
+    return context;
   }
 
   /**
@@ -1551,53 +1627,6 @@ export class LinearGPT {
       console.error(`Error adding attachment:`, error);
       throw error;
     }
-  }
-
-  /**
-   * Get the context for an issue including comments
-   */
-  private async getIssueContext(
-    issue: Issue,
-    commentId?: string
-  ): Promise<string> {
-    let context = `ISSUE ${issue.identifier}: ${issue.title}\n`;
-    context += `DESCRIPTION: ${
-      issue.description || 'No description provided'
-    }\n\n`;
-
-    // Add comments
-    const comments = await issue.comments({ first: 10 });
-    if (comments.nodes.length > 0) {
-      context += 'RECENT COMMENTS:\n';
-
-      for (const comment of comments.nodes) {
-        // If this is the triggering comment, highlight it
-        const isTriggering = commentId && comment.id === commentId;
-        const prefix = isTriggering ? '► ' : '';
-
-        // Add user info if available
-        let userName = 'Unknown';
-        if (comment.user) {
-          try {
-            const user = await comment.user;
-            userName = user ? user.name || 'Unknown' : 'Unknown';
-          } catch (e) {
-            console.error('Error getting user name:', e);
-          }
-        }
-
-        context += `${prefix}${userName}: ${comment.body}\n\n`;
-      }
-    }
-
-    // Add labels if any
-    const labels = await issue.labels();
-    if (labels.nodes.length > 0) {
-      const labelNames = labels.nodes.map((l) => l.name).join(', ');
-      context += `LABELS: ${labelNames}\n`;
-    }
-
-    return context;
   }
 
   /**
