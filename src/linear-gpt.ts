@@ -113,7 +113,24 @@ export class LinearGPT {
         limit - 1
       );
 
-      return memories.map((item) => JSON.parse(item));
+      return memories.map((item) => {
+        // Check if item is already an object
+        if (typeof item === 'object' && item !== null) {
+          return item;
+        }
+
+        // Otherwise try to parse it as JSON
+        try {
+          return JSON.parse(item);
+        } catch (error) {
+          console.error(`Error parsing memory item: ${error}`);
+          return {
+            timestamp: Date.now(),
+            type: memoryType,
+            data: { error: 'Failed to parse memory data' },
+          };
+        }
+      });
     } catch (error) {
       console.error(`Error retrieving memories for issue ${issueId}:`, error);
       return [];
