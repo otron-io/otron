@@ -125,6 +125,324 @@ export class LocalRepositoryManager {
   }
 
   /**
+   * Perform search with progressive fallback strategies instead of separate functions
+   */
+  private async performUnifiedSearch(
+    originalQuery: string,
+    queryTerms: string[],
+    repository: string,
+    options: {
+      contextAware: boolean;
+      semanticBoost: boolean;
+      fileFilter: string;
+      maxResults: number;
+    }
+  ): Promise<
+    Array<{ path: string; line: number; content: string; context?: string }>
+  > {
+    const [owner, repo] = repository.split('/');
+    const octokit = await this.getOctokitForRepo(repository);
+
+    // Prepare path and extension filters
+    let pathFilters = options.fileFilter ? ` ${options.fileFilter}` : '';
+    pathFilters += this.getRepositorySpecificFilters(repository, originalQuery);
+
+    console.log(
+      `Starting unified search for "${originalQuery}" in ${repository}`
+    );
+
+    // Track processed files to avoid duplicates across search attempts
+    const processedFiles = new Set<string>();
+    const results: Array<{
+      path: string;
+      line: number;
+      content: string;
+      context?: string;
+      score: number;
+    }> = [];
+
+    const timeoutDuration = 15000; // 15 seconds timeout
+
+    // Progressive search strategies
+    const searchStrategies = [
+      {
+        name: 'specific',
+        queryBuilder: () => {
+          // Build specific search with quoted code patterns
+          let query = `repo:${repository}${pathFilters}`;
+
+          // Sort by length to prioritize more specific terms
+          const sortedPatterns = [
+            ...queryTerms.filter((term) =>
+              /^[a-zA-Z][a-zA-Z0-9]*(?:[_][a-zA-Z0-9]+)+$|^[a-z][a-zA-Z0-9]*[A-Z]/.test(
+                term
+              )
+            ),
+          ].sort((a, b) => b.length - a.length);
+
+          // Quote only the top 2 most specific patterns
+          const patternsToQuote = sortedPatterns.slice(
+            0,
+            Math.min(2, sortedPatterns.length)
+          );
+          const patternsToAddUnquoted = sortedPatterns.slice(
+            Math.min(2, sortedPatterns.length)
+          );
+
+          // Add quoted patterns
+          for (const pattern of patternsToQuote) {
+            query += ` "${pattern}"`;
+          }
+
+          // Add unquoted patterns
+          if (patternsToAddUnquoted.length > 0) {
+            query += ` ${patternsToAddUnquoted.join(' ')}`;
+          }
+
+          // Add remaining terms
+          const remainingTerms = queryTerms.filter(
+            (term) => !sortedPatterns.includes(term)
+          );
+          if (remainingTerms.length > 0) {
+            query += ` ${remainingTerms.join(' ')}`;
+          }
+
+          return query;
+        },
+      },
+      {
+        name: 'relaxed',
+        queryBuilder: () => {
+          // Build a more relaxed query without quotes
+          let query = `repo:${repository}${pathFilters}`;
+
+          // Add all terms unquoted
+          if (queryTerms.length > 0) {
+            query += ` ${queryTerms.join(' ')}`;
+          }
+
+          return query;
+        },
+      },
+      {
+        name: 'simplified',
+        queryBuilder: () => {
+          // Use only top 3 most important terms
+          const priorityTerms = queryTerms.slice(0, 3);
+
+          let query = `repo:${repository}${pathFilters}`;
+
+          if (priorityTerms.length > 0) {
+            query += ` ${priorityTerms.join(' ')}`;
+          }
+
+          return query;
+        },
+      },
+      {
+        name: 'basic',
+        queryBuilder: () => {
+          // Most basic query possible - just the original query with no processing
+          return `repo:${repository}${pathFilters} ${originalQuery}`;
+        },
+      },
+    ];
+
+    // Try each search strategy until we get results
+    for (const strategy of searchStrategies) {
+      try {
+        const searchQuery = strategy.queryBuilder();
+        console.log(`Trying ${strategy.name} search: ${searchQuery}`);
+
+        // Set a timeout for the search request
+        const searchPromise = octokit.search.code({
+          q: searchQuery,
+          per_page: options.maxResults * 2,
+        });
+
+        // Add a timeout to prevent hanging
+        const timeoutPromise = new Promise((_, reject) => {
+          setTimeout(
+            () => reject(new Error(`Search timed out (${strategy.name})`)),
+            timeoutDuration
+          );
+        });
+
+        // Race between search and timeout
+        const response = (await Promise.race([
+          searchPromise,
+          timeoutPromise,
+        ])) as any;
+        const data = response.data;
+
+        // Check if we have valid results
+        if (!data?.items?.length) {
+          console.log(
+            `${strategy.name} search returned no results, trying next strategy`
+          );
+          continue; // Try next strategy
+        }
+
+        // Process each file found by this strategy
+        const filesToProcess = data.items.slice(0, options.maxResults * 2);
+        let foundResults = false;
+
+        for (const item of filesToProcess) {
+          // Skip if we've already processed this file
+          if (processedFiles.has(item.path)) continue;
+          processedFiles.add(item.path);
+
+          try {
+            // Get file content with timeout
+            const content = await this.getFileContentWithTimeout(
+              item.path,
+              repository,
+              5000
+            );
+
+            // Get context information if needed
+            let fileContext = '';
+            if (options.contextAware) {
+              fileContext =
+                strategy.name === 'basic'
+                  ? await this.getSimpleFileContext(item.path, content)
+                  : await this.getFileContext(item.path, content, repository);
+            }
+
+            // Find best matching lines
+            const matchResult = this.findBestMatches(
+              content,
+              queryTerms,
+              originalQuery
+            );
+
+            if (matchResult.matches.length > 0) {
+              // Add each match as a separate result
+              for (const match of matchResult.matches.slice(0, 3)) {
+                results.push({
+                  path: item.path,
+                  line: match.line,
+                  content: match.content,
+                  context: fileContext,
+                  score:
+                    match.score +
+                    (strategy.name === 'specific'
+                      ? 50
+                      : strategy.name === 'relaxed'
+                      ? 30
+                      : strategy.name === 'simplified'
+                      ? 10
+                      : 0),
+                });
+                foundResults = true;
+              }
+            } else {
+              // No exact match found, use first line or best guess
+              const lines = content.split('\n');
+              const matchingLineIndex = this.findMatchingLine(
+                lines,
+                originalQuery
+              );
+
+              if (matchingLineIndex !== -1) {
+                results.push({
+                  path: item.path,
+                  line: matchingLineIndex + 1,
+                  content: lines[matchingLineIndex].trim(),
+                  context: fileContext,
+                  score:
+                    strategy.name === 'specific'
+                      ? 25
+                      : strategy.name === 'relaxed'
+                      ? 15
+                      : strategy.name === 'simplified'
+                      ? 5
+                      : 0,
+                });
+                foundResults = true;
+              } else {
+                // Use first line as fallback
+                results.push({
+                  path: item.path,
+                  line: 1,
+                  content: lines[0]?.trim() || 'File matched search criteria',
+                  context: fileContext,
+                  score:
+                    strategy.name === 'specific'
+                      ? 10
+                      : strategy.name === 'relaxed'
+                      ? 5
+                      : strategy.name === 'simplified'
+                      ? 2
+                      : 0,
+                });
+                foundResults = true;
+              }
+            }
+          } catch (fileError) {
+            console.log(
+              `Error loading file content for ${item.path}:`,
+              fileError
+            );
+            // If we can't get content, still include the file
+            results.push({
+              path: item.path,
+              line: 1,
+              content: 'File matched search criteria',
+              score:
+                strategy.name === 'specific'
+                  ? 5
+                  : strategy.name === 'relaxed'
+                  ? 2
+                  : strategy.name === 'simplified'
+                  ? 1
+                  : 0,
+            });
+            foundResults = true;
+          }
+
+          // Break early if we found enough results
+          if (foundResults && results.length >= options.maxResults * 2) {
+            break;
+          }
+        }
+
+        // If we found results with this strategy, we can stop
+        if (foundResults) {
+          console.log(
+            `Found ${results.length} results using ${strategy.name} search strategy`
+          );
+          break;
+        }
+      } catch (error: any) {
+        // Log error and continue to next strategy
+        console.error(`Error in ${strategy.name} search:`, error.message);
+      }
+    }
+
+    // If we have no results after trying all strategies
+    if (results.length === 0) {
+      console.log('All search strategies failed to find results');
+      return [
+        {
+          path: 'search-error.txt',
+          line: 1,
+          content: `Couldn't find any relevant code for "${originalQuery}". Try with more specific terms or a different query.`,
+        },
+      ];
+    }
+
+    // Sort results by score and return top results
+    results.sort((a, b) => b.score - a.score);
+    return results.slice(0, options.maxResults).map((r) => ({
+      path: r.path,
+      line: r.line,
+      content: r.content,
+      context: r.context,
+    }));
+  }
+
+  /**
    * Search for code in a repository using GitHub search API
    * with effective timeouts and reliable results
    */
@@ -169,8 +487,8 @@ export class LocalRepositoryManager {
 
       console.log(`Searching for "${query}" in ${repository}`);
 
-      // Perform search with improved strategy
-      const results = await this.performEnhancedSearch(
+      // Use unified search instead of separate enhanced and fallback methods
+      const results = await this.performUnifiedSearch(
         query,
         queryTerms,
         repository,
@@ -226,7 +544,7 @@ export class LocalRepositoryManager {
         /[a-zA-Z][a-zA-Z0-9]*(?:[_][a-zA-Z0-9]+)+|[a-z][a-zA-Z0-9]*/g
       ) || [];
 
-    // Split remaining text into words
+    // Split remaining text into words - changed minimum length from 3 to 2 to capture more terms
     const words = query
       .toLowerCase()
       .split(/\s+/)
@@ -234,306 +552,6 @@ export class LocalRepositoryManager {
 
     // Combine and deduplicate
     return [...new Set([...codePatterns, ...words])];
-  }
-
-  /**
-   * Perform enhanced search with multiple strategies
-   */
-  private async performEnhancedSearch(
-    originalQuery: string,
-    queryTerms: string[],
-    repository: string,
-    options: {
-      contextAware: boolean;
-      semanticBoost: boolean;
-      fileFilter: string;
-      maxResults: number;
-    }
-  ): Promise<
-    Array<{ path: string; line: number; content: string; context?: string }>
-  > {
-    const [owner, repo] = repository.split('/');
-    const octokit = await this.getOctokitForRepo(repository);
-
-    // Prepare path and extension filters
-    let pathFilters = options.fileFilter ? ` ${options.fileFilter}` : '';
-
-    // Add repository-specific optimizations
-    pathFilters += this.getRepositorySpecificFilters(repository, originalQuery);
-
-    try {
-      // Build the search query - use exact matches for code identifiers
-      let searchQuery = `repo:${repository}`;
-
-      // Add file type/path filters if any
-      if (pathFilters) {
-        searchQuery += pathFilters;
-      }
-
-      // Build query with special handling for code patterns
-      const codePatterns = queryTerms.filter((term) =>
-        /^[a-zA-Z][a-zA-Z0-9]*(?:[_][a-zA-Z0-9]+)+$|^[a-z][a-zA-Z0-9]*[A-Z]/.test(
-          term
-        )
-      );
-
-      // Add code patterns as exact matches
-      if (codePatterns.length > 0) {
-        codePatterns.forEach((pattern) => {
-          searchQuery += ` "${pattern}"`;
-        });
-      }
-
-      // Add remaining terms
-      const remainingTerms = queryTerms.filter(
-        (term) => !codePatterns.includes(term)
-      );
-      if (remainingTerms.length > 0) {
-        searchQuery += ` ${remainingTerms.join(' ')}`;
-      }
-
-      console.log(`Executing enhanced search: ${searchQuery}`);
-
-      try {
-        // Set a timeout for the search request - increased from 8s to 12s
-        const searchPromise = octokit.search.code({
-          q: searchQuery,
-          per_page: options.maxResults * 2, // Request more to filter down
-        });
-
-        // Add a timeout to prevent hanging
-        const timeoutPromise = new Promise((_, reject) => {
-          setTimeout(() => reject(new Error('Search timed out')), 12000);
-        });
-
-        // Race between search and timeout
-        const response = (await Promise.race([
-          searchPromise,
-          timeoutPromise,
-        ])) as any;
-        const data = response.data;
-
-        // Check if we have valid results
-        if (!data?.items?.length) {
-          console.log('Enhanced search returned no results, trying fallback');
-          return this.performFallbackSearch(originalQuery, repository, options);
-        }
-
-        // Process results
-        const results: Array<{
-          path: string;
-          line: number;
-          content: string;
-          context?: string;
-          score: number;
-        }> = [];
-
-        // Get all files to process
-        const filesToProcess = data.items.slice(0, options.maxResults * 2);
-
-        // Process each file
-        for (const item of filesToProcess) {
-          try {
-            // Get file content with timeout - increased from 3s to 5s
-            const content = await this.getFileContentWithTimeout(
-              item.path,
-              repository,
-              5000
-            );
-
-            // Analyze file for context if needed
-            let fileContext = '';
-            if (options.contextAware) {
-              fileContext = await this.getFileContext(
-                item.path,
-                content,
-                repository
-              );
-            }
-
-            // Find best matching lines with surrounding context
-            const matchResult = this.findBestMatches(
-              content,
-              queryTerms,
-              originalQuery
-            );
-
-            if (matchResult.matches.length > 0) {
-              // Add each match as a separate result
-              for (const match of matchResult.matches.slice(0, 3)) {
-                // Limit to top 3 matches per file
-                results.push({
-                  path: item.path,
-                  line: match.line,
-                  content: match.content,
-                  context: fileContext,
-                  score: match.score + (item.score || 0),
-                });
-              }
-            } else {
-              // No exact match found, return best guess with context
-              results.push({
-                path: item.path,
-                line: 1,
-                content:
-                  content.split('\n')[0]?.trim() ||
-                  'File matched search criteria',
-                context: fileContext,
-                score: item.score || 0,
-              });
-            }
-          } catch (fileError) {
-            console.log(
-              `Error loading file content for ${item.path}:`,
-              fileError
-            );
-            // If we can't get content, still include the file
-            results.push({
-              path: item.path,
-              line: 1,
-              content: 'File matched search criteria',
-              score: item.score || 0,
-            });
-          }
-        }
-
-        // If we got this far but have no results, use fallback
-        if (results.length === 0) {
-          console.log('Enhanced search processed no results, trying fallback');
-          return this.performFallbackSearch(originalQuery, repository, options);
-        }
-
-        // Sort by score and limit results
-        results.sort((a, b) => b.score - a.score);
-        return results.slice(0, options.maxResults).map((r) => ({
-          path: r.path,
-          line: r.line,
-          content: r.content,
-          context: r.context,
-        }));
-      } catch (searchError: any) {
-        // Only fall back if it's a timeout or specific API error
-        if (
-          searchError.message === 'Search timed out' ||
-          (searchError.status && searchError.status >= 500) ||
-          searchError.message.includes('API rate limit exceeded')
-        ) {
-          console.log(
-            'Enhanced search error, trying fallback:',
-            searchError.message
-          );
-          return this.performFallbackSearch(originalQuery, repository, options);
-        }
-
-        // For other errors, try to make a better error message
-        console.error('Enhanced search critical error:', searchError);
-        return [
-          {
-            path: 'search-error.txt',
-            line: 1,
-            content: `Search error: ${
-              searchError.message || 'Unknown error'
-            }. Try with more specific terms.`,
-          },
-        ];
-      }
-    } catch (generalError) {
-      console.error('Enhanced search general error:', generalError);
-      return this.performFallbackSearch(originalQuery, repository, options);
-    }
-  }
-
-  /**
-   * Fallback search method with simpler query
-   */
-  private async performFallbackSearch(
-    query: string,
-    repository: string,
-    options: {
-      contextAware: boolean;
-      semanticBoost: boolean;
-      fileFilter: string;
-      maxResults: number;
-    }
-  ): Promise<
-    Array<{ path: string; line: number; content: string; context?: string }>
-  > {
-    try {
-      const [owner, repo] = repository.split('/');
-      const octokit = await this.getOctokitForRepo(repository);
-
-      // Use a much simpler search query for fallback
-      const searchQuery = `repo:${repository} ${query}`;
-      console.log(`Executing fallback search: ${searchQuery}`);
-
-      const { data } = await octokit.search.code({
-        q: searchQuery,
-        per_page: options.maxResults,
-      });
-
-      if (!data?.items?.length) {
-        return [];
-      }
-
-      // Process results
-      const results: Array<{
-        path: string;
-        line: number;
-        content: string;
-        context?: string;
-      }> = [];
-
-      // Process each file (max results count)
-      for (const item of data.items.slice(0, options.maxResults)) {
-        try {
-          // Get file content
-          const content = await this.getFileContentWithTimeout(
-            item.path,
-            repository,
-            2000
-          );
-
-          // Get simple context if needed
-          let fileContext = '';
-          if (options.contextAware) {
-            fileContext = await this.getSimpleFileContext(item.path, content);
-          }
-
-          // Find matching line using original method
-          const lines = content.split('\n');
-          const matchingLineIndex = this.findMatchingLine(lines, query);
-
-          if (matchingLineIndex !== -1) {
-            results.push({
-              path: item.path,
-              line: matchingLineIndex + 1,
-              content: lines[matchingLineIndex].trim(),
-              context: fileContext,
-            });
-          } else {
-            // No exact match found, return first line
-            results.push({
-              path: item.path,
-              line: 1,
-              content: lines[0]?.trim() || 'File matched by name',
-              context: fileContext,
-            });
-          }
-        } catch (error) {
-          // If we can't get content, still include the file
-          results.push({
-            path: item.path,
-            line: 1,
-            content: 'File matched search criteria',
-          });
-        }
-      }
-
-      return results;
-    } catch (error) {
-      console.error('Fallback search error:', error);
-      return [];
-    }
   }
 
   /**

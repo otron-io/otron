@@ -485,7 +485,7 @@ export class LinearGPT {
         {
           name: 'searchCodeFiles',
           description:
-            'Search for relevant code files related to keywords with advanced capabilities',
+            'Search for relevant code files related to keywords with advanced capabilities. Use sparingly and with targeted queries to avoid rate limits and timeouts. Maximum 5 searches per conversation recommended.',
           input_schema: {
             type: 'object',
             properties: {
@@ -496,12 +496,12 @@ export class LinearGPT {
               query: {
                 type: 'string',
                 description:
-                  'Search query/keywords - be specific for better results',
+                  'Search query/keywords - be specific and focused (2-5 terms). Avoid broad queries that return too many results. Prefer exact function or class names when known.',
               },
               fileFilter: {
                 type: 'string',
                 description:
-                  'Optional filter for specific files (e.g., "*.ts", "src/components/*")',
+                  'Optional filter for specific files (e.g., "*.ts", "src/components/*") - highly recommended to narrow results and improve performance',
               },
               contextAware: {
                 type: 'boolean',
@@ -509,11 +509,13 @@ export class LinearGPT {
               },
               semanticBoost: {
                 type: 'boolean',
-                description: 'Use semantic search to improve relevance',
+                description:
+                  'Use semantic search to improve relevance. Note: Increases search time.',
               },
               maxResults: {
                 type: 'integer',
-                description: 'Maximum number of results to return (default: 5)',
+                description:
+                  'Maximum number of results to return (default: 5, max: 10). Higher values may cause timeouts.',
               },
             },
             required: ['repository', 'query'],

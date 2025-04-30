@@ -238,10 +238,18 @@ ENHANCED SEARCH CAPABILITIES:
 - Pattern Matching: Identifies camelCase/snake_case and code identifiers
 - Repository-Specific Optimizations: Adapts to known code organization
 - Semantic Ranking: Orders results by relevance to your query
+- Search Time Limits: Searches timeout after 12 seconds to prevent blocking operations
+- Rate Limiting: Excessive searches may encounter API rate limits from GitHub
 
 IMPORTANT GUIDELINES:
 - Specify the repository (owner/repo format) for GitHub operations
-- When searching code, use specific terms and consider file paths
+- SEARCH EFFICIENTLY:
+  * First use getDirectoryStructure to understand the codebase organization
+  * Use specific, targeted search terms (2-5 words max) rather than general concepts
+  * ALWAYS include fileFilter when possible (e.g., "*.ts", "src/components/*")
+  * Limit to 5 searches max per conversation to avoid rate limits
+  * If you can browse to a file through directory structure, prefer that to searching
+  * Don't repeat failed searches with the same terms
 - Reference memory context to build on previous interactions
 - Learn from past actions to avoid repeating unsuccessful approaches
 - Maintain code conventions of the target repository
