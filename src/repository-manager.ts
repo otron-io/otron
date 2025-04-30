@@ -294,112 +294,151 @@ export class LocalRepositoryManager {
 
       console.log(`Executing enhanced search: ${searchQuery}`);
 
-      // Set a timeout for the search request
-      const searchPromise = octokit.search.code({
-        q: searchQuery,
-        per_page: options.maxResults * 2, // Request more to filter down
-      });
+      try {
+        // Set a timeout for the search request - increased from 8s to 12s
+        const searchPromise = octokit.search.code({
+          q: searchQuery,
+          per_page: options.maxResults * 2, // Request more to filter down
+        });
 
-      // Add a timeout to prevent hanging
-      const timeoutPromise = new Promise((_, reject) => {
-        setTimeout(() => reject(new Error('Search timed out')), 8000);
-      });
+        // Add a timeout to prevent hanging
+        const timeoutPromise = new Promise((_, reject) => {
+          setTimeout(() => reject(new Error('Search timed out')), 12000);
+        });
 
-      // Race between search and timeout
-      const { data } = (await Promise.race([
-        searchPromise,
-        timeoutPromise,
-      ])) as any;
+        // Race between search and timeout
+        const response = (await Promise.race([
+          searchPromise,
+          timeoutPromise,
+        ])) as any;
+        const data = response.data;
 
-      if (!data?.items?.length) {
-        // If no results, try fallback with simpler query
-        return this.performFallbackSearch(originalQuery, repository, options);
-      }
+        // Check if we have valid results
+        if (!data?.items?.length) {
+          console.log('Enhanced search returned no results, trying fallback');
+          return this.performFallbackSearch(originalQuery, repository, options);
+        }
 
-      // Process results
-      const results: Array<{
-        path: string;
-        line: number;
-        content: string;
-        context?: string;
-        score: number;
-      }> = [];
+        // Process results
+        const results: Array<{
+          path: string;
+          line: number;
+          content: string;
+          context?: string;
+          score: number;
+        }> = [];
 
-      // Get all files to process
-      const filesToProcess = data.items.slice(0, options.maxResults * 2);
+        // Get all files to process
+        const filesToProcess = data.items.slice(0, options.maxResults * 2);
 
-      // Process each file
-      for (const item of filesToProcess) {
-        try {
-          // Get file content with timeout
-          const content = await this.getFileContentWithTimeout(
-            item.path,
-            repository,
-            3000
-          );
-
-          // Analyze file for context if needed
-          let fileContext = '';
-          if (options.contextAware) {
-            fileContext = await this.getFileContext(
+        // Process each file
+        for (const item of filesToProcess) {
+          try {
+            // Get file content with timeout - increased from 3s to 5s
+            const content = await this.getFileContentWithTimeout(
               item.path,
-              content,
-              repository
+              repository,
+              5000
             );
-          }
 
-          // Find best matching lines with surrounding context
-          const matchResult = this.findBestMatches(
-            content,
-            queryTerms,
-            originalQuery
-          );
+            // Analyze file for context if needed
+            let fileContext = '';
+            if (options.contextAware) {
+              fileContext = await this.getFileContext(
+                item.path,
+                content,
+                repository
+              );
+            }
 
-          if (matchResult.matches.length > 0) {
-            // Add each match as a separate result
-            for (const match of matchResult.matches.slice(0, 3)) {
-              // Limit to top 3 matches per file
+            // Find best matching lines with surrounding context
+            const matchResult = this.findBestMatches(
+              content,
+              queryTerms,
+              originalQuery
+            );
+
+            if (matchResult.matches.length > 0) {
+              // Add each match as a separate result
+              for (const match of matchResult.matches.slice(0, 3)) {
+                // Limit to top 3 matches per file
+                results.push({
+                  path: item.path,
+                  line: match.line,
+                  content: match.content,
+                  context: fileContext,
+                  score: match.score + (item.score || 0),
+                });
+              }
+            } else {
+              // No exact match found, return best guess with context
               results.push({
                 path: item.path,
-                line: match.line,
-                content: match.content,
+                line: 1,
+                content:
+                  content.split('\n')[0]?.trim() ||
+                  'File matched search criteria',
                 context: fileContext,
-                score: match.score + (item.score || 0),
+                score: item.score || 0,
               });
             }
-          } else {
-            // No exact match found, return best guess with context
+          } catch (fileError) {
+            console.log(
+              `Error loading file content for ${item.path}:`,
+              fileError
+            );
+            // If we can't get content, still include the file
             results.push({
               path: item.path,
               line: 1,
-              content:
-                content.split('\n')[0]?.trim() ||
-                'File matched search criteria',
-              context: fileContext,
+              content: 'File matched search criteria',
               score: item.score || 0,
             });
           }
-        } catch (error) {
-          // If we can't get content, still include the file
-          results.push({
-            path: item.path,
-            line: 1,
-            content: 'File matched search criteria',
-            score: item.score || 0,
-          });
         }
-      }
 
-      // Sort by score and limit results
-      results.sort((a, b) => b.score - a.score);
-      return results.slice(0, options.maxResults).map((r) => ({
-        path: r.path,
-        line: r.line,
-        content: r.content,
-        context: r.context,
-      }));
-    } catch (error) {
-      console.error('Enhanced search error:', error);
+        // If we got this far but have no results, use fallback
+        if (results.length === 0) {
+          console.log('Enhanced search processed no results, trying fallback');
+          return this.performFallbackSearch(originalQuery, repository, options);
+        }
+
+        // Sort by score and limit results
+        results.sort((a, b) => b.score - a.score);
+        return results.slice(0, options.maxResults).map((r) => ({
+          path: r.path,
+          line: r.line,
+          content: r.content,
+          context: r.context,
+        }));
+      } catch (searchError: any) {
+        // Only fall back if it's a timeout or specific API error
+        if (
+          searchError.message === 'Search timed out' ||
+          (searchError.status && searchError.status >= 500) ||
+          searchError.message.includes('API rate limit exceeded')
+        ) {
+          console.log(
+            'Enhanced search error, trying fallback:',
+            searchError.message
+          );
+          return this.performFallbackSearch(originalQuery, repository, options);
+        }
+
+        // For other errors, try to make a better error message
+        console.error('Enhanced search critical error:', searchError);
+        return [
+          {
+            path: 'search-error.txt',
+            line: 1,
+            content: `Search error: ${
+              searchError.message || 'Unknown error'
+            }. Try with more specific terms.`,
+          },
+        ];
+      }
+    } catch (generalError) {
+      console.error('Enhanced search general error:', generalError);
       return this.performFallbackSearch(originalQuery, repository, options);
     }
   }
