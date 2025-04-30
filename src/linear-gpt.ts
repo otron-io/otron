@@ -1267,13 +1267,15 @@ export class LinearGPT {
   }
 
   /**
-   * Get the context for an issue including comments
+   * Get the context for an issue including comments, child issues, and parent issue
    */
   private async getIssueContext(
     issue: Issue,
     commentId?: string
   ): Promise<string> {
-    let context = `ISSUE ${issue.identifier}: ${issue.title}\n`;
+    // Mark this as the assigned issue
+    let context = `>>>>> ASSIGNED/TAGGED ISSUE <<<<<\n`;
+    context += `ISSUE ${issue.identifier}: ${issue.title}\n`;
     context += `DESCRIPTION: ${
       issue.description || 'No description provided'
     }\n\n`;
@@ -1308,6 +1310,58 @@ export class LinearGPT {
     if (labels.nodes.length > 0) {
       const labelNames = labels.nodes.map((l) => l.name).join(', ');
       context += `LABELS: ${labelNames}\n`;
+    }
+
+    // Get parent issue if this is a child issue
+    try {
+      const parent = await issue.parent;
+      if (parent) {
+        context += `\n----- PARENT ISSUE (Context Only) -----\n`;
+        context += `ISSUE ${parent.identifier}: ${parent.title}\n`;
+        context += `DESCRIPTION: ${
+          parent.description || 'No description provided'
+        }\n`;
+
+        // Add parent issue labels
+        const parentLabels = await parent.labels();
+        if (parentLabels.nodes.length > 0) {
+          const labelNames = parentLabels.nodes.map((l) => l.name).join(', ');
+          context += `LABELS: ${labelNames}\n`;
+        }
+      }
+    } catch (error) {
+      console.error('Error getting parent issue:', error);
+    }
+
+    // Get child issues if any
+    try {
+      const children = await issue.children();
+      if (children.nodes.length > 0) {
+        context += `\n----- CHILD ISSUES (Context Only) -----\n`;
+
+        for (const child of children.nodes) {
+          context += `ISSUE ${child.identifier}: ${child.title}\n`;
+
+          // Add status information for child issues
+          const state = await child.state;
+          if (state) {
+            context += `STATUS: ${state.name}\n`;
+          }
+
+          // Add brief description (first 100 chars)
+          if (child.description) {
+            const briefDesc =
+              child.description.length > 100
+                ? `${child.description.substring(0, 100)}...`
+                : child.description;
+            context += `BRIEF: ${briefDesc}\n`;
+          }
+
+          context += `\n`;
+        }
+      }
+    } catch (error) {
+      console.error('Error getting child issues:', error);
     }
 
     return context;
