@@ -328,21 +328,26 @@ export class LinearGPT {
   private async getRepositoryKnowledge(repository: string): Promise<string> {
     try {
       // Get most frequently accessed files for this repository
-      const fileScores = await (redis as any).zrevrange(
+      const fileScores = await redis.zrange(
         `memory:repository:${repository}:files`,
         0,
         9,
-        'WITHSCORES'
+        {
+          rev: true,
+          withScores: true,
+        }
       );
 
-      if (fileScores.length === 0) {
+      if (!fileScores || fileScores.length === 0) {
         return '';
       }
 
-      // Convert to array of files
+      // Convert to array of files (handling new structure)
       const files: string[] = [];
-      for (let i = 0; i < fileScores.length; i += 2) {
-        files.push(fileScores[i]);
+      for (const entry of fileScores) {
+        if (typeof entry === 'string') {
+          files.push(entry);
+        }
       }
 
       // We'll include this knowledge directly
@@ -381,13 +386,21 @@ export class LinearGPT {
 
       // If we have repository information from previous actions, get knowledge
       let repositoryKnowledge = '';
-      const repoUsage = await (redis as any).zrevrange(
-        `memory:issue:${issue.id}:repositories`,
-        0,
-        0
-      );
-      if (repoUsage.length > 0) {
-        repositoryKnowledge = await this.getRepositoryKnowledge(repoUsage[0]);
+      try {
+        const repoUsage = await redis.zrange(
+          `memory:issue:${issue.id}:repositories`,
+          0,
+          0,
+          {
+            rev: true,
+          }
+        );
+        if (repoUsage && repoUsage.length > 0) {
+          const repoName = repoUsage[0] as string;
+          repositoryKnowledge = await this.getRepositoryKnowledge(repoName);
+        }
+      } catch (error) {
+        console.error(`Error getting repository usage:`, error);
       }
 
       // Setup the system tools the model can use
@@ -909,7 +922,7 @@ export class LinearGPT {
 
                 // Store these search terms for future knowledge retrieval
                 for (const term of searchTerms) {
-                  await (redis as any).zincrby(
+                  await redis.zincrby(
                     `memory:issue:${issue.id}:search_terms`,
                     1,
                     term
@@ -1137,7 +1150,7 @@ export class LinearGPT {
               ) {
                 if (toolInput.repository) {
                   // Keep track of which repositories are relevant to this issue
-                  await (redis as any).zincrby(
+                  await redis.zincrby(
                     `memory:issue:${issue.id}:repositories`,
                     1,
                     toolInput.repository
@@ -1149,7 +1162,7 @@ export class LinearGPT {
 
                   // Track file access for repository knowledge building
                   if (toolName === 'getFileContent' && toolInput.path) {
-                    await (redis as any).zincrby(
+                    await redis.zincrby(
                       `memory:repository:${toolInput.repository}:files`,
                       1,
                       toolInput.path
