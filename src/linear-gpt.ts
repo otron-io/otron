@@ -994,19 +994,28 @@ export class LinearGPT {
                     );
 
                     // Extract potential topics from the file path
-                    const pathParts = toolInput.path.split('/');
-                    const fileName = pathParts[pathParts.length - 1];
-                    const topics = fileName
-                      .split(/[_.-]/)
-                      .filter((t: string) => t.length > 3);
+                    if (toolInput.path) {
+                      try {
+                        const pathParts = toolInput.path.split('/');
+                        const fileName = pathParts[pathParts.length - 1];
+                        const topics = fileName
+                          .split(/[_.-]/)
+                          .filter((t: string) => t.length > 3);
 
-                    // Store any meaningful topics as code knowledge
-                    for (const topic of topics) {
-                      await this.storeCodeKnowledge(
-                        toolInput.repository,
-                        toolInput.path,
-                        topic
-                      );
+                        // Store any meaningful topics as code knowledge
+                        for (const topic of topics) {
+                          await this.storeCodeKnowledge(
+                            toolInput.repository,
+                            toolInput.path,
+                            topic
+                          );
+                        }
+                      } catch (error) {
+                        console.error(
+                          'Error processing file path for topics:',
+                          error
+                        );
+                      }
                     }
                   }
                 }
@@ -1210,19 +1219,28 @@ export class LinearGPT {
                     );
 
                     // Extract potential topics from the file path
-                    const pathParts = toolInput.path.split('/');
-                    const fileName = pathParts[pathParts.length - 1];
-                    const topics = fileName
-                      .split(/[_.-]/)
-                      .filter((t: string) => t.length > 3);
+                    if (toolInput.path) {
+                      try {
+                        const pathParts = toolInput.path.split('/');
+                        const fileName = pathParts[pathParts.length - 1];
+                        const topics = fileName
+                          .split(/[_.-]/)
+                          .filter((t: string) => t.length > 3);
 
-                    // Store any meaningful topics as code knowledge
-                    for (const topic of topics) {
-                      await this.storeCodeKnowledge(
-                        toolInput.repository,
-                        toolInput.path,
-                        topic
-                      );
+                        // Store any meaningful topics as code knowledge
+                        for (const topic of topics) {
+                          await this.storeCodeKnowledge(
+                            toolInput.repository,
+                            toolInput.path,
+                            topic
+                          );
+                        }
+                      } catch (error) {
+                        console.error(
+                          'Error processing file path for topics:',
+                          error
+                        );
+                      }
                     }
                   }
                 }
