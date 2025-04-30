@@ -383,6 +383,27 @@ export class LinearGPT {
   }
 
   /**
+   * Check if a branch is protected (main or master) and should not be directly modified
+   * @param branch Branch name to check
+   * @returns Object with isProtected flag and optional error message
+   */
+  private isProtectedBranch(branch: string): {
+    isProtected: boolean;
+    errorMessage?: string;
+  } {
+    const protectedBranches = ['main', 'master'];
+
+    if (protectedBranches.includes(branch.toLowerCase())) {
+      return {
+        isProtected: true,
+        errorMessage: `Error: Cannot commit directly to ${branch}. Please use a feature branch instead.`,
+      };
+    }
+
+    return { isProtected: false };
+  }
+
+  /**
    * Process a notification directly with the AI model
    */
   async processNotification(context: NotificationContext): Promise<void> {
@@ -738,6 +759,58 @@ export class LinearGPT {
               'branch',
               'changes',
             ],
+          },
+        },
+        {
+          name: 'createBranchWithChanges',
+          description:
+            'Create or update a branch with code changes without creating a PR',
+          input_schema: {
+            type: 'object',
+            properties: {
+              repository: {
+                type: 'string',
+                description: 'Repository in owner/repo format',
+              },
+              branch: {
+                type: 'string',
+                description:
+                  'Branch name for the changes (cannot be main or master)',
+              },
+              baseBranch: {
+                type: 'string',
+                description:
+                  'Base branch to create branch from (usually main). Only used if creating a new branch.',
+              },
+              skipBranchCreation: {
+                type: 'boolean',
+                description:
+                  'Set to true to push to existing branch without attempting to create it',
+              },
+              commitMessage: {
+                type: 'string',
+                description: 'Commit message to use for the changes',
+              },
+              changes: {
+                type: 'array',
+                items: {
+                  type: 'object',
+                  properties: {
+                    path: {
+                      type: 'string',
+                      description: 'Path to the file to modify',
+                    },
+                    content: {
+                      type: 'string',
+                      description: 'New content for the file',
+                    },
+                  },
+                  required: ['path', 'content'],
+                },
+                description: 'File changes to include in the commit',
+              },
+            },
+            required: ['repository', 'branch', 'commitMessage', 'changes'],
           },
         },
         {
@@ -1105,36 +1178,103 @@ export class LinearGPT {
                 toolResponse = `Successfully updated priority of issue ${toolInput.issueId} to ${toolInput.priority}.`;
                 toolSuccess = true;
               } else if (toolName === 'createPullRequest') {
-                // Create a branch
-                await this.localRepoManager.createBranch(
-                  toolInput.branch,
-                  toolInput.repository,
-                  toolInput.baseBranch || 'main'
-                );
-
-                // Apply each change
-                for (const change of toolInput.changes) {
-                  await this.localRepoManager.createOrUpdateFile(
-                    change.path,
-                    change.content,
-                    `Update ${change.path} for PR`,
+                // Check if branch is main or master - reject if so
+                const branchCheck = this.isProtectedBranch(toolInput.branch);
+                if (branchCheck.isProtected) {
+                  toolResponse = branchCheck.errorMessage as string;
+                  toolSuccess = false;
+                } else {
+                  // Create a branch
+                  await this.localRepoManager.createBranch(
+                    toolInput.branch,
                     toolInput.repository,
-                    toolInput.branch
+                    toolInput.baseBranch || 'main'
+                  );
+
+                  // Apply each change
+                  for (const change of toolInput.changes) {
+                    await this.localRepoManager.createOrUpdateFile(
+                      change.path,
+                      change.content,
+                      `Update ${change.path} for PR`,
+                      toolInput.repository,
+                      toolInput.branch
+                    );
+                  }
+
+                  // Create pull request
+                  const pullRequest =
+                    await this.localRepoManager.createPullRequest(
+                      toolInput.title,
+                      toolInput.description,
+                      toolInput.branch,
+                      toolInput.baseBranch || 'main',
+                      toolInput.repository
+                    );
+
+                  toolResponse = `Successfully created pull request: ${pullRequest.url}`;
+                  toolSuccess = true;
+                }
+              } else if (toolName === 'createBranchWithChanges') {
+                // Check if branch is main or master - reject if so
+                const branchCheck = this.isProtectedBranch(toolInput.branch);
+                if (branchCheck.isProtected) {
+                  toolResponse = branchCheck.errorMessage as string;
+                  toolSuccess = false;
+                } else {
+                  // Create branch only if skipBranchCreation is not true
+                  if (!toolInput.skipBranchCreation) {
+                    try {
+                      await this.localRepoManager.createBranch(
+                        toolInput.branch,
+                        toolInput.repository,
+                        toolInput.baseBranch || 'main'
+                      );
+                      console.log(
+                        `Created new branch ${toolInput.branch} in ${toolInput.repository}`
+                      );
+                    } catch (error: any) {
+                      // Branch might already exist, which is fine for this operation
+                      console.log(
+                        `Note: Branch ${toolInput.branch} may already exist: ${error.message}`
+                      );
+                    }
+                  } else {
+                    console.log(
+                      `Using existing branch ${toolInput.branch} in ${toolInput.repository}`
+                    );
+                  }
+
+                  // Apply each change with the specified commit message
+                  let filesChanged = 0;
+                  for (const change of toolInput.changes) {
+                    await this.localRepoManager.createOrUpdateFile(
+                      change.path,
+                      change.content,
+                      toolInput.commitMessage || `Update ${change.path}`,
+                      toolInput.repository,
+                      toolInput.branch
+                    );
+                    filesChanged++;
+                  }
+
+                  const branchAction = toolInput.skipBranchCreation
+                    ? 'existing'
+                    : 'new or existing';
+                  toolResponse = `Successfully committed ${filesChanged} file${
+                    filesChanged !== 1 ? 's' : ''
+                  } to ${branchAction} branch ${toolInput.branch} in ${
+                    toolInput.repository
+                  }`;
+                  toolSuccess = true;
+
+                  // Store relationship between issue and branch
+                  await this.storeRelationship(
+                    'issue:branch',
+                    issue.id,
+                    `${toolInput.repository}:${toolInput.branch}`
                   );
                 }
-
-                // Create pull request
-                const pullRequest =
-                  await this.localRepoManager.createPullRequest(
-                    toolInput.title,
-                    toolInput.description,
-                    toolInput.branch,
-                    toolInput.baseBranch || 'main',
-                    toolInput.repository
-                  );
-
-                toolResponse = `Successfully created pull request: ${pullRequest.url}`;
-                toolSuccess = true;
               } else if (toolName === 'setPointEstimate') {
                 await this.setPointEstimate(
                   toolInput.issueId,
