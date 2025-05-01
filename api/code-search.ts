@@ -12,7 +12,7 @@ const redis = new Redis({
 // Configuration constants
 const EMBEDDING_MODEL = 'text-embedding-3-small';
 const MAX_RESULTS = 10;
-const SIMILARITY_THRESHOLD = 0.7; // Only include results with similarity score above this threshold
+const SIMILARITY_THRESHOLD = 0.4; // Lower threshold from 0.7 to 0.4 to get more results
 
 // Redis key structure for embeddings
 const getChunkKey = (repo: string) => `embedding:repo:${repo}:chunks`;
