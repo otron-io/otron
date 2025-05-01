@@ -5,6 +5,9 @@
     { "source": "/", "destination": "/api/index.ts" },
     { "source": "/health", "destination": "/api/health.ts" },
     { "source": "/webhook", "destination": "/api/webhook.ts" },
-    { "source": "/oauth/callback", "destination": "/api/callback.ts" }
+    { "source": "/oauth/callback", "destination": "/api/callback.ts" },
+    { "source": "/api/embed-repo", "destination": "/api/embed-repo.ts" },
+    { "source": "/api/code-search", "destination": "/api/code-search.ts" },
+    { "source": "/pages/embed", "destination": "/api/embed-ui.ts" }
   ]
 }

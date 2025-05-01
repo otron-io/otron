@@ -1,6 +1,7 @@
 import { Octokit } from '@octokit/rest';
 import { env } from './env.js';
 import { GitHubAppService } from './github-app.js';
+import { Redis } from '@upstash/redis';
 
 /**
  * A simplified repository manager that uses only GitHub API operations.
@@ -11,6 +12,7 @@ export class LocalRepositoryManager {
   private octokit: Octokit;
   private githubAppService: GitHubAppService | null = null;
   private allowedRepositories: string[];
+  private redis: Redis;
 
   // Simple cache objects
   private fileCache: Map<string, { content: string; timestamp: number }> =
@@ -82,6 +84,12 @@ export class LocalRepositoryManager {
     console.log(
       `Repository manager initialized with ${this.allowedRepositories.length} allowed repositories`
     );
+
+    // Initialize Redis client
+    this.redis = new Redis({
+      url: env.KV_REST_API_URL,
+      token: env.KV_REST_API_TOKEN,
+    });
   }
 
   /**
@@ -459,9 +467,25 @@ export class LocalRepositoryManager {
     Array<{ path: string; line: number; content: string; context?: string }>
   > {
     try {
-      // Verify repository access
       await this.verifyRepoAccess(repository);
 
+      // First check if vector embeddings are available
+      const isEmbedded = await this.isRepositoryEmbedded(repository);
+
+      if (isEmbedded) {
+        console.log(`Using vector embeddings for repository ${repository}`);
+        return this.searchWithVectorEmbeddings(query, repository, {
+          fileFilter: options.fileFilter,
+          maxResults: options.maxResults || 10,
+        });
+      }
+
+      // Fall back to GitHub API search if no embeddings available
+      console.log(
+        `No embeddings available for ${repository}, using GitHub API`
+      );
+
+      // Original search logic follows
       // Apply defaults for options
       const searchOptions = {
         contextAware: options.contextAware ?? true,
@@ -1340,5 +1364,148 @@ export class LocalRepositoryManager {
         },
       ];
     }
+  }
+
+  // Helper function to check if a repository is embedded
+  private async isRepositoryEmbedded(repository: string): Promise<boolean> {
+    const repoKey = `embedding:repo:${repository}:status`;
+    const repoStatus = await this.redis.get(repoKey);
+
+    if (!repoStatus) return false;
+
+    try {
+      const status = JSON.parse(repoStatus as string);
+      return status.status === 'completed';
+    } catch (error) {
+      return false;
+    }
+  }
+
+  // Helper function to perform vector search against embeddings
+  private async searchWithVectorEmbeddings(
+    query: string,
+    repository: string,
+    options: {
+      fileFilter?: string;
+      maxResults?: number;
+    }
+  ): Promise<
+    Array<{ path: string; line: number; content: string; context?: string }>
+  > {
+    try {
+      // Generate embedding for the query
+      const embedding = await this.getQueryEmbedding(query);
+
+      // Get all chunks from repository
+      const chunkKey = `embedding:repo:${repository}:chunks`;
+      const allChunks = await this.redis.lrange(chunkKey, 0, -1);
+
+      if (!allChunks || allChunks.length === 0) {
+        return [];
+      }
+
+      // Calculate similarities and rank results
+      const chunks = allChunks.map((chunk) => JSON.parse(chunk));
+      const results: Array<{
+        path: string;
+        content: string;
+        score: number;
+        metadata: any;
+      }> = [];
+
+      for (const chunk of chunks) {
+        // Skip chunks without embeddings
+        if (!chunk.embedding) continue;
+
+        // Apply file filter if specified
+        if (options.fileFilter && !chunk.path.includes(options.fileFilter)) {
+          continue;
+        }
+
+        // Calculate similarity score
+        const score = this.cosineSimilarity(embedding, chunk.embedding);
+
+        // Add to results if score is above threshold (0.7 is a good starting point)
+        if (score > 0.7) {
+          results.push({
+            path: chunk.path,
+            content: chunk.content,
+            score,
+            metadata: chunk.metadata,
+          });
+        }
+      }
+
+      // Sort by similarity score (highest first)
+      results.sort((a, b) => b.score - a.score);
+
+      // Limit results
+      const topResults = results.slice(0, options.maxResults || 10);
+
+      // Format results to match the expected output format
+      return topResults.map((result) => ({
+        path: result.path,
+        line: result.metadata.startLine,
+        content: result.content,
+        context: `Language: ${result.metadata.language}, Type: ${
+          result.metadata.type
+        }${
+          result.metadata.name ? ', Name: ' + result.metadata.name : ''
+        }, Lines: ${result.metadata.startLine}-${
+          result.metadata.endLine
+        }, Score: ${(result.score * 100).toFixed(2)}%`,
+      }));
+    } catch (error) {
+      console.error('Error searching with vector embeddings:', error);
+      return [];
+    }
+  }
+
+  // Helper to generate embeddings for a query
+  private async getQueryEmbedding(query: string): Promise<number[]> {
+    try {
+      const response = await fetch('https://api.openai.com/v1/embeddings', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${env.OPENAI_API_KEY}`,
+        },
+        body: JSON.stringify({
+          model: 'text-embedding-3-small',
+          input: query,
+          dimensions: 256, // Must match dimension used for code embeddings
+        }),
+      });
+
+      if (!response.ok) {
+        throw new Error(`OpenAI API error: ${response.statusText}`);
+      }
+
+      const result = await response.json();
+      return result.data[0].embedding;
+    } catch (error) {
+      console.error('Error creating query embedding:', error);
+      throw error;
+    }
+  }
+
+  // Helper to calculate cosine similarity
+  private cosineSimilarity(vecA: number[], vecB: number[]): number {
+    let dotProduct = 0;
+    let normA = 0;
+    let normB = 0;
+
+    for (let i = 0; i < vecA.length; i++) {
+      dotProduct += vecA[i] * vecB[i];
+      normA += vecA[i] * vecA[i];
+      normB += vecB[i] * vecB[i];
+    }
+
+    // Handle edge case of zero vectors
+    if (normA === 0 || normB === 0) {
+      return 0;
+    }
+
+    return dotProduct / (Math.sqrt(normA) * Math.sqrt(normB));
   }
 }
