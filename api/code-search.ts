@@ -12,7 +12,8 @@ const redis = new Redis({
 // Configuration constants
 const EMBEDDING_MODEL = 'text-embedding-3-small';
 const MAX_RESULTS = 10;
-const SIMILARITY_THRESHOLD = 0.4; // Lower threshold from 0.7 to 0.4 to get more results
+const SIMILARITY_THRESHOLD = 0.45; // Slightly higher than 0.4 to get quality matches
+const CHUNK_PAGE_SIZE = 100; // Number of chunks to process at once to avoid Redis size limits
 
 // Redis key structure for embeddings
 const getChunkKey = (repo: string) => `embedding:repo:${repo}:chunks`;
@@ -133,108 +134,126 @@ async function searchCodeChunks(
       return [];
     }
 
-    // Get all chunks
-    const chunks = await redis.lrange(chunkKey, 0, -1);
-    console.log(`Retrieved ${chunks.length} chunks from Redis`);
-
-    // Get a sample chunk for debugging
-    if (chunks.length > 0) {
-      const sampleChunk = chunks[0];
-      console.log(`Sample chunk type: ${typeof sampleChunk}`);
-      console.log(
-        `Sample chunk preview: ${
-          typeof sampleChunk === 'string'
-            ? sampleChunk.substring(0, 100)
-            : JSON.stringify(sampleChunk).substring(0, 100)
-        }...`
-      );
-    }
-
-    // Filter and score chunks
+    // Initialize results array
     const results: SearchResult[] = [];
+    const allScores: { path: string; score: number }[] = [];
 
-    for (let i = 0; i < chunks.length; i++) {
-      const chunk = chunks[i];
+    // Use pagination to avoid request size limits
+    const totalPages = Math.ceil(chunkCount / CHUNK_PAGE_SIZE);
 
-      // Skip if chunk is null or empty
-      if (!chunk) continue;
+    console.log(
+      `Processing ${chunkCount} chunks in ${totalPages} pages of ${CHUNK_PAGE_SIZE} items each`
+    );
 
-      // Parse the chunk
-      let parsedChunk: CodeChunk;
-      try {
-        // Check if chunk is already an object
-        if (typeof chunk === 'object' && chunk !== null) {
-          parsedChunk = chunk as unknown as CodeChunk;
-        } else if (typeof chunk === 'string') {
-          // Handle string representation of an object
-          if (chunk === '[object Object]') {
+    // Process each page of chunks
+    for (let page = 0; page < totalPages; page++) {
+      const startIdx = page * CHUNK_PAGE_SIZE;
+      const endIdx = Math.min(startIdx + CHUNK_PAGE_SIZE - 1, chunkCount - 1);
+
+      console.log(
+        `Processing page ${
+          page + 1
+        }/${totalPages} (chunks ${startIdx} to ${endIdx})`
+      );
+
+      // Get this page of chunks
+      const chunks = await redis.lrange(chunkKey, startIdx, endIdx);
+      console.log(`Retrieved ${chunks.length} chunks for page ${page + 1}`);
+
+      // Process chunks in this page
+      for (let i = 0; i < chunks.length; i++) {
+        const chunk = chunks[i];
+        const chunkIndex = startIdx + i;
+
+        // Skip if chunk is null or empty
+        if (!chunk) continue;
+
+        // Parse the chunk
+        let parsedChunk: CodeChunk;
+        try {
+          // Check if chunk is already an object
+          if (typeof chunk === 'object' && chunk !== null) {
+            parsedChunk = chunk as unknown as CodeChunk;
+          } else if (typeof chunk === 'string') {
+            // Handle string representation of an object
+            if (chunk === '[object Object]') {
+              console.error(
+                `Chunk ${chunkIndex} is corrupted with '[object Object]' string representation`
+              );
+              continue;
+            }
+            parsedChunk = JSON.parse(chunk);
+          } else {
             console.error(
-              `Chunk ${i} is corrupted with '[object Object]' string representation`
+              `Chunk ${chunkIndex} has unexpected type: ${typeof chunk}`
             );
             continue;
           }
-          parsedChunk = JSON.parse(chunk);
-        } else {
-          console.error(`Chunk ${i} has unexpected type: ${typeof chunk}`);
+
+          // Validate chunk has required fields
+          if (
+            !parsedChunk.repository ||
+            !parsedChunk.path ||
+            !parsedChunk.embedding
+          ) {
+            console.error(
+              `Chunk ${chunkIndex} is missing required fields:`,
+              `repository: ${!!parsedChunk.repository}, `,
+              `path: ${!!parsedChunk.path}, `,
+              `embedding: ${!!parsedChunk.embedding}`
+            );
+            continue;
+          }
+        } catch (e) {
+          console.error(`Error parsing chunk ${chunkIndex}: ${e}`);
           continue;
         }
 
-        // Validate chunk has required fields
-        if (
-          !parsedChunk.repository ||
-          !parsedChunk.path ||
-          !parsedChunk.embedding
-        ) {
-          console.error(
-            `Chunk ${i} is missing required fields:`,
-            `repository: ${!!parsedChunk.repository}, `,
-            `path: ${!!parsedChunk.path}, `,
-            `embedding: ${!!parsedChunk.embedding}`
-          );
+        // Apply file filter if provided
+        if (fileFilter && !matchesFileFilter(parsedChunk.path, fileFilter)) {
           continue;
         }
-      } catch (e) {
-        console.error(`Error parsing chunk ${i}: ${e}`);
-        console.error(
-          `Problematic chunk content: ${
-            typeof chunk === 'string'
-              ? chunk.substring(0, 200)
-              : 'non-string chunk'
-          }`
+
+        // Calculate similarity score
+        const similarity = cosineSimilarity(
+          queryEmbedding,
+          parsedChunk.embedding
         );
-        continue;
-      }
 
-      // Apply file filter if provided
-      if (fileFilter && !matchesFileFilter(parsedChunk.path, fileFilter)) {
-        continue;
-      }
+        // Track all scores for debugging
+        allScores.push({ path: parsedChunk.path, score: similarity });
 
-      // Calculate similarity score
-      const similarity = cosineSimilarity(
-        queryEmbedding,
-        parsedChunk.embedding
-      );
-
-      // Only include results above the threshold
-      if (similarity > SIMILARITY_THRESHOLD) {
-        results.push({
-          repository: parsedChunk.repository,
-          path: parsedChunk.path,
-          content: parsedChunk.content,
-          score: similarity,
-          language: parsedChunk.metadata?.language || 'unknown',
-          type: parsedChunk.metadata?.type || 'block',
-          name: parsedChunk.metadata?.name,
-          startLine: parsedChunk.metadata?.startLine || 0,
-          endLine: parsedChunk.metadata?.endLine || 0,
-          lineCount: parsedChunk.metadata?.lineCount || 0,
-        });
+        // Only include results above the threshold
+        if (similarity > SIMILARITY_THRESHOLD) {
+          results.push({
+            repository: parsedChunk.repository,
+            path: parsedChunk.path,
+            content: parsedChunk.content,
+            score: similarity,
+            language: parsedChunk.metadata?.language || 'unknown',
+            type: parsedChunk.metadata?.type || 'block',
+            name: parsedChunk.metadata?.name,
+            startLine: parsedChunk.metadata?.startLine || 0,
+            endLine: parsedChunk.metadata?.endLine || 0,
+            lineCount: parsedChunk.metadata?.lineCount || 0,
+          });
+        }
       }
     }
 
     // Sort by similarity score (highest first)
     results.sort((a, b) => b.score - a.score);
+    allScores.sort((a, b) => b.score - a.score);
+
+    // Log top 5 scores for debugging
+    if (allScores.length > 0) {
+      console.log(
+        `Top 5 similarity scores (threshold is ${SIMILARITY_THRESHOLD}):`
+      );
+      allScores.slice(0, 5).forEach((item, idx) => {
+        console.log(`  ${idx + 1}. ${item.path}: ${item.score.toFixed(4)}`);
+      });
+    }
 
     console.log(
       `Found ${results.length} results above threshold ${SIMILARITY_THRESHOLD}`
