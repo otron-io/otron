@@ -252,11 +252,18 @@ async function handler(req: VercelRequest, res: VercelResponse) {
                     repo.lastProcessedAt
                   ).toLocaleString()}</td>
                   <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                    <button 
-                      class="diff-reembed-btn px-3 py-1 bg-indigo-100 text-indigo-700 rounded hover:bg-indigo-200 transition"
-                      data-repository="${repo.repository}">
-                      Re-embed Diff
-                    </button>
+                    <div class="flex space-x-2">
+                      <button 
+                        class="diff-reembed-btn px-3 py-1 bg-indigo-100 text-indigo-700 rounded hover:bg-indigo-200 transition"
+                        data-repository="${repo.repository}">
+                        Re-embed Diff
+                      </button>
+                      <button 
+                        class="delete-repo-btn px-3 py-1 bg-red-100 text-red-700 rounded hover:bg-red-200 transition"
+                        data-repository="${repo.repository}">
+                        Delete
+                      </button>
+                    </div>
                   </td>
                 </tr>
               `
@@ -581,6 +588,41 @@ async function handler(req: VercelRequest, res: VercelResponse) {
             logEntry.className = 'text-red-600';
             logEntry.textContent = \`Error: \${error.message}\`;
             logContainer.appendChild(logEntry);
+          }
+        }
+      });
+
+      // Repository deletion functionality
+      document.body.addEventListener('click', async (e) => {
+        // Check if the clicked element or any of its parents have the delete-repo-btn class
+        const button = e.target.closest('.delete-repo-btn');
+        if (!button) return; // Not a delete button click
+        
+        const repository = button.dataset.repository;
+        if (!repository) {
+          console.error('No repository found in data-repository attribute');
+          return;
+        }
+        
+        console.log('Delete clicked for repository' + repository);
+        
+        if (confirm('Are you sure you want to COMPLETELY DELETE the repository ' + repository + ' from the embedding system? This cannot be undone.')) {
+          try {
+            const response = await fetch('/api/embed-repo?repository=' + encodeURIComponent(repository), {
+              method: 'DELETE'
+            });
+            
+            const result = await response.json();
+            
+            if (response.ok) {
+              alert('Repository ' + repository + ' has been deleted. The page will now reload.');
+              window.location.reload();
+            } else {
+              alert('Error deleting repository: ' + (result.error || 'Unknown error'));
+            }
+          } catch (error) {
+            console.error('Error deleting repository:', error);
+            alert('Error deleting repository: ' + error.message);
           }
         }
       });

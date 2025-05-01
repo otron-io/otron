@@ -536,18 +536,54 @@ async function processFile(
  * Main handler for the embedding endpoint
  */
 async function handler(req: VercelRequest, res: VercelResponse) {
-  // Only allow POST requests
+  // Check if this is a delete request
+  if (req.method === 'DELETE') {
+    const { repository } = req.query;
+
+    if (!repository || typeof repository !== 'string') {
+      return res
+        .status(400)
+        .json({ error: 'Missing or invalid repository parameter' });
+    }
+
+    try {
+      console.log(`Deleting repository ${repository} from Redis`);
+
+      // List all processed files to get keys to delete
+      const processedFiles = await redis.smembers(
+        getProcessedFilesKey(repository)
+      );
+
+      // Delete all file-specific keys
+      for (const filePath of processedFiles) {
+        await redis.del(getFileKey(repository, filePath));
+      }
+
+      // Delete all repository-level keys
+      await redis.del(getRepoKey(repository));
+      await redis.del(getChunkKey(repository));
+      await redis.del(getProcessedFilesKey(repository));
+
+      return res.status(200).json({
+        success: true,
+        message: `Repository ${repository} has been completely deleted from the embedding system`,
+      });
+    } catch (error) {
+      console.error(`Error deleting repository ${repository}:`, error);
+      return res.status(500).json({
+        error: `Failed to delete repository: ${
+          error instanceof Error ? error.message : String(error)
+        }`,
+      });
+    }
+  }
+
+  // Original POST handler for embedding
   if (req.method !== 'POST') {
     return res.status(405).json({ error: 'Method not allowed' });
   }
 
-  // Extract repository from request body
-  const {
-    repository,
-    resume = true,
-    mode = 'full', // 'full' or 'diff'
-    forceBranch = 'main', // Which branch to use (default: main)
-  } = req.body;
+  const { repository, resume = false, mode = 'full' } = req.body;
 
   if (!repository || typeof repository !== 'string') {
     return res
@@ -569,6 +605,11 @@ async function handler(req: VercelRequest, res: VercelResponse) {
     let isDiffMode = mode === 'diff';
 
     if (existingCheckpoint && (resume || isDiffMode)) {
+      console.log(
+        `Found existing checkpoint for ${repository}, type: ${typeof existingCheckpoint}`
+      );
+      console.log(`Resume: ${resume}, isDiffMode: ${isDiffMode}`);
+
       // Handle string representation issue
       if (existingCheckpoint === '[object Object]') {
         console.error(
@@ -592,10 +633,23 @@ async function handler(req: VercelRequest, res: VercelResponse) {
       } else {
         try {
           // Parse checkpoint based on type
-          checkpoint =
-            typeof existingCheckpoint === 'object'
-              ? (existingCheckpoint as unknown as EmbeddingCheckpoint)
-              : JSON.parse(existingCheckpoint as string);
+          if (typeof existingCheckpoint === 'object') {
+            checkpoint = existingCheckpoint as unknown as EmbeddingCheckpoint;
+            console.log(`Using existing checkpoint object for ${repository}`);
+          } else {
+            const checkpointStr = existingCheckpoint as string;
+            console.log(
+              `Parsing checkpoint string for ${repository}: ${checkpointStr.substring(
+                0,
+                100
+              )}...`
+            );
+            checkpoint = JSON.parse(checkpointStr);
+          }
+
+          console.log(
+            `Loaded checkpoint for ${repository}: status=${checkpoint.status}, progress=${checkpoint.progress}%, processedFiles=${checkpoint.processedFiles}`
+          );
         } catch (error) {
           console.error(`Error parsing checkpoint for ${repository}:`, error);
           stream.write({
