@@ -1,5 +1,5 @@
 import { Redis } from '@upstash/redis';
-import type { VercelRequest, VercelResponse } from '@vercel/node';
+import { VercelRequest, VercelResponse } from '@vercel/node';
 import { env } from '../src/env.js';
 import { withInternalAccess } from '../src/auth.js';
 
@@ -9,8 +9,10 @@ const redis = new Redis({
   token: env.KV_REST_API_TOKEN,
 });
 
-// Maximum search results to return
+// Configuration constants
+const EMBEDDING_MODEL = 'text-embedding-3-small';
 const MAX_RESULTS = 10;
+const SIMILARITY_THRESHOLD = 0.7; // Only include results with similarity score above this threshold
 
 // Redis key structure for embeddings
 const getChunkKey = (repo: string) => `embedding:repo:${repo}:chunks`;
@@ -104,7 +106,7 @@ function cosineSimilarity(vecA: number[], vecB: number[]): number {
 }
 
 /**
- * Search for code chunks that match the query embedding
+ * Search for code chunks in a repository using vector similarity
  */
 async function searchCodeChunks(
   repository: string,
@@ -112,49 +114,102 @@ async function searchCodeChunks(
   limit: number = MAX_RESULTS,
   fileFilter?: string
 ): Promise<SearchResult[]> {
-  // Get all chunks for the repository
-  const allChunks = await redis.lrange(getChunkKey(repository), 0, -1);
+  console.log(
+    `Searching code chunks in ${repository} with limit ${limit}${
+      fileFilter ? ` and filter ${fileFilter}` : ''
+    }`
+  );
 
-  if (!allChunks || allChunks.length === 0) {
-    return [];
-  }
+  try {
+    // Get chunk key for the repository
+    const chunkKey = getChunkKey(repository);
 
-  // Parse chunks and calculate similarity scores
-  const chunks: CodeChunk[] = allChunks.map((chunk) => JSON.parse(chunk));
-  const results: SearchResult[] = [];
+    // Get the list length (number of chunks)
+    const chunkCount = await redis.llen(chunkKey);
+    console.log(`Found ${chunkCount} chunks for ${repository}`);
 
-  for (const chunk of chunks) {
-    // Skip if no embedding
-    if (!chunk.embedding) continue;
-
-    // Apply file filter if specified
-    if (fileFilter && !chunk.path.includes(fileFilter)) {
-      continue;
+    if (chunkCount === 0) {
+      console.log(`No chunks found for repository ${repository}`);
+      return [];
     }
 
-    // Calculate similarity score
-    const score = cosineSimilarity(queryEmbedding, chunk.embedding);
+    // Get all chunks
+    const chunks = await redis.lrange(chunkKey, 0, -1);
+    console.log(`Retrieved ${chunks.length} chunks from Redis`);
 
-    // Add to results
-    results.push({
-      repository: chunk.repository,
-      path: chunk.path,
-      content: chunk.content,
-      score,
-      language: chunk.metadata.language,
-      type: chunk.metadata.type,
-      name: chunk.metadata.name,
-      startLine: chunk.metadata.startLine,
-      endLine: chunk.metadata.endLine,
-      lineCount: chunk.metadata.lineCount,
-    });
+    // Filter and score chunks
+    const results: SearchResult[] = [];
+
+    for (let i = 0; i < chunks.length; i++) {
+      const chunk = chunks[i];
+
+      // Skip if chunk is null or empty
+      if (!chunk) continue;
+
+      // Parse the chunk
+      let parsedChunk: CodeChunk;
+      try {
+        parsedChunk = JSON.parse(chunk as string);
+      } catch (e) {
+        console.error(`Error parsing chunk ${i}: ${e}`);
+        continue;
+      }
+
+      // Apply file filter if provided
+      if (fileFilter && !matchesFileFilter(parsedChunk.path, fileFilter)) {
+        continue;
+      }
+
+      // Calculate similarity score
+      const similarity = cosineSimilarity(
+        queryEmbedding,
+        parsedChunk.embedding
+      );
+
+      // Only include results above the threshold
+      if (similarity > SIMILARITY_THRESHOLD) {
+        results.push({
+          repository: parsedChunk.repository,
+          path: parsedChunk.path,
+          content: parsedChunk.content,
+          score: similarity,
+          language: parsedChunk.metadata.language,
+          type: parsedChunk.metadata.type,
+          name: parsedChunk.metadata.name,
+          startLine: parsedChunk.metadata.startLine,
+          endLine: parsedChunk.metadata.endLine,
+          lineCount: parsedChunk.metadata.lineCount,
+        });
+      }
+    }
+
+    // Sort by similarity score (highest first)
+    results.sort((a, b) => b.score - a.score);
+
+    console.log(
+      `Found ${results.length} results above threshold ${SIMILARITY_THRESHOLD}`
+    );
+
+    // Return top results based on limit
+    return results.slice(0, limit);
+  } catch (error) {
+    console.error(`Error searching code chunks for ${repository}:`, error);
+    throw error;
   }
+}
 
-  // Sort by similarity score (highest first)
-  results.sort((a, b) => b.score - a.score);
+/**
+ * Check if a file path matches a filter pattern
+ */
+function matchesFileFilter(path: string, filter: string): boolean {
+  // Convert glob pattern to regex
+  const pattern = filter
+    .replace(/\./g, '\\.')
+    .replace(/\*/g, '.*')
+    .replace(/\?/g, '.');
 
-  // Return top results
-  return results.slice(0, limit);
+  const regex = new RegExp(`^${pattern}$`);
+  return regex.test(path);
 }
 
 /**
@@ -268,23 +323,25 @@ async function isRepositoryEmbedded(repository: string): Promise<boolean> {
  * Main handler for the code search endpoint
  */
 async function handler(req: VercelRequest, res: VercelResponse) {
-  // Only accept POST requests
-  if (req.method !== 'POST') {
+  // Accept both GET and POST requests
+  if (req.method !== 'GET' && req.method !== 'POST') {
     return res.status(405).json({ error: 'Method not allowed' });
   }
 
-  // Extract parameters from the request
+  // Extract parameters from the request - support both query params and body
+  const params = req.method === 'GET' ? req.query : req.body || {};
   const {
-    method,
+    method = 'vector',
     rawRepository,
     query,
     fileFilter,
     limit = MAX_RESULTS,
-  } = req.body || {};
+  } = params;
 
   // Add detailed logging of all incoming parameters
   console.log(`Search request received:`, {
-    method,
+    requestMethod: req.method,
+    searchMethod: method,
     repository: rawRepository,
     query,
     fileFilter,
@@ -303,7 +360,7 @@ async function handler(req: VercelRequest, res: VercelResponse) {
     return res.status(400).json({ error: 'Search query is required' });
   }
 
-  if (!method || method !== 'vector') {
+  if (method !== 'vector') {
     return res
       .status(400)
       .json({ error: 'Only vector search method is supported' });
@@ -353,10 +410,16 @@ async function handler(req: VercelRequest, res: VercelResponse) {
       repository,
       queryEmbedding,
       Number(limit),
-      fileFilter
+      typeof fileFilter === 'string' ? fileFilter : undefined
     );
 
-    return res.status(200).json({ results });
+    return res.status(200).json({
+      repository,
+      query,
+      results,
+      totalResults: results.length,
+      searchTime: new Date().toISOString(),
+    });
   } catch (error) {
     console.error(`Error in search:`, error);
     return res.status(500).json({
