@@ -469,113 +469,120 @@ async function handler(req: VercelRequest, res: VercelResponse) {
         }
       });
       
-      // Differential Re-embedding Functionality
-      document.addEventListener('DOMContentLoaded', () => {
-        document.querySelectorAll('.diff-reembed-btn').forEach(button => {
-          button.addEventListener('click', async (e) => {
-            const repository = e.target.dataset.repository;
+      // Differential Re-embedding Functionality using event delegation
+      // This works even if buttons are added to the DOM dynamically
+      document.body.addEventListener('click', async (e) => {
+        // Check if the clicked element or any of its parents have the diff-reembed-btn class
+        const button = e.target.closest('.diff-reembed-btn');
+        if (!button) return; // Not a re-embed button click
+        
+        const repository = button.dataset.repository;
+        if (!repository) {
+          console.error('No repository found in data-repository attribute');
+          return;
+        }
+        
+        console.log(\`Differential re-embed clicked for repository: \${repository}\`);
+        
+        if (confirm(\`Are you sure you want to update the embedding for \${repository} with changes since the last embedding?\`)) {
+          // Show progress container
+          document.getElementById('progressContainer').classList.remove('hidden');
+          const logContainer = document.getElementById('logContainer');
+          const progressBar = document.getElementById('progressBar');
+          const progressText = document.getElementById('progressText');
+          const progressStats = document.getElementById('progressStats');
+          
+          // Clear previous logs
+          logContainer.innerHTML = '';
+          
+          // Add initial log
+          const initialLog = document.createElement('div');
+          initialLog.textContent = \`Starting differential re-embedding for \${repository}...\`;
+          logContainer.appendChild(initialLog);
+          
+          try {
+            const response = await fetch('/api/embed-repo', {
+              method: 'POST',
+              headers: {
+                'Content-Type': 'application/json',
+              },
+              body: JSON.stringify({
+                repository,
+                resume: true,
+                mode: 'diff'
+              }),
+            });
             
-            if (confirm(\`Are you sure you want to update the embedding for \${repository} with changes since the last embedding?\`)) {
-              // Show progress container
-              document.getElementById('progressContainer').classList.remove('hidden');
-              const logContainer = document.getElementById('logContainer');
-              const progressBar = document.getElementById('progressBar');
-              const progressText = document.getElementById('progressText');
-              const progressStats = document.getElementById('progressStats');
+            // Setup event source reader
+            const reader = response.body.getReader();
+            const decoder = new TextDecoder();
+            
+            // Process the stream
+            while (true) {
+              const { done, value } = await reader.read();
               
-              // Clear previous logs
-              logContainer.innerHTML = '';
+              if (done) {
+                break;
+              }
               
-              // Add initial log
-              const initialLog = document.createElement('div');
-              initialLog.textContent = \`Starting differential re-embedding for \${repository}...\`;
-              logContainer.appendChild(initialLog);
+              // Parse the streamed data
+              const text = decoder.decode(value);
+              const events = text.split('\\n\\n');
               
-              try {
-                const response = await fetch('/api/embed-repo', {
-                  method: 'POST',
-                  headers: {
-                    'Content-Type': 'application/json',
-                  },
-                  body: JSON.stringify({
-                    repository,
-                    resume: true,
-                    mode: 'diff'
-                  }),
-                });
-                
-                // Setup event source reader
-                const reader = response.body.getReader();
-                const decoder = new TextDecoder();
-                
-                // Process the stream
-                while (true) {
-                  const { done, value } = await reader.read();
-                  
-                  if (done) {
-                    break;
-                  }
-                  
-                  // Parse the streamed data
-                  const text = decoder.decode(value);
-                  const events = text.split('\\n\\n');
-                  
-                  for (const event of events) {
-                    if (event.startsWith('data: ')) {
-                      try {
-                        const data = JSON.parse(event.substring(6));
-                        
-                        // Handle different event types
-                        if (data.type === 'log' || data.type === 'error' || data.type === 'diff') {
-                          const logEntry = document.createElement('div');
-                          logEntry.className = data.type === 'error' 
-                            ? 'text-red-600' 
-                            : data.type === 'diff'
-                              ? 'text-blue-600 font-semibold'
-                              : '';
-                          logEntry.textContent = data.message;
-                          logContainer.appendChild(logEntry);
-                          logContainer.scrollTop = logContainer.scrollHeight;
-                        } 
-                        else if (data.type === 'progress') {
-                          if (data.progress) {
-                            progressBar.style.width = \`\${data.progress}%\`;
-                            progressText.textContent = \`\${data.progress}%\`;
-                            progressStats.textContent = \`\${data.processedFiles || 0} / \${data.totalFiles || 0} files\`;
-                          }
-                        }
-                        else if (data.type === 'complete') {
-                          progressBar.style.width = '100%';
-                          progressText.textContent = '100%';
-                          
-                          const logEntry = document.createElement('div');
-                          logEntry.className = 'text-green-600 font-bold';
-                          logEntry.textContent = data.message;
-                          logContainer.appendChild(logEntry);
-                          
-                          // Add reload button
-                          const reloadBtn = document.createElement('button');
-                          reloadBtn.textContent = 'Reload Page';
-                          reloadBtn.className = 'mt-4 px-4 py-2 bg-indigo-600 text-white rounded hover:bg-indigo-700';
-                          reloadBtn.onclick = () => window.location.reload();
-                          logContainer.appendChild(reloadBtn);
-                        }
-                      } catch (e) {
-                        console.error('Error parsing event:', e, event);
+              for (const event of events) {
+                if (event.startsWith('data: ')) {
+                  try {
+                    const data = JSON.parse(event.substring(6));
+                    
+                    // Handle different event types
+                    if (data.type === 'log' || data.type === 'error' || data.type === 'diff') {
+                      const logEntry = document.createElement('div');
+                      logEntry.className = data.type === 'error' 
+                        ? 'text-red-600' 
+                        : data.type === 'diff'
+                          ? 'text-blue-600 font-semibold'
+                          : '';
+                      logEntry.textContent = data.message;
+                      logContainer.appendChild(logEntry);
+                      logContainer.scrollTop = logContainer.scrollHeight;
+                    } 
+                    else if (data.type === 'progress') {
+                      if (data.progress) {
+                        progressBar.style.width = \`\${data.progress}%\`;
+                        progressText.textContent = \`\${data.progress}%\`;
+                        progressStats.textContent = \`\${data.processedFiles || 0} / \${data.totalFiles || 0} files\`;
                       }
                     }
+                    else if (data.type === 'complete') {
+                      progressBar.style.width = '100%';
+                      progressText.textContent = '100%';
+                      
+                      const logEntry = document.createElement('div');
+                      logEntry.className = 'text-green-600 font-bold';
+                      logEntry.textContent = data.message;
+                      logContainer.appendChild(logEntry);
+                      
+                      // Add reload button
+                      const reloadBtn = document.createElement('button');
+                      reloadBtn.textContent = 'Reload Page';
+                      reloadBtn.className = 'mt-4 px-4 py-2 bg-indigo-600 text-white rounded hover:bg-indigo-700';
+                      reloadBtn.onclick = () => window.location.reload();
+                      logContainer.appendChild(reloadBtn);
+                    }
+                  } catch (e) {
+                    console.error('Error parsing event:', e, event);
                   }
                 }
-              } catch (error) {
-                console.error('Error:', error);
-                const logEntry = document.createElement('div');
-                logEntry.className = 'text-red-600';
-                logEntry.textContent = \`Error: \${error.message}\`;
-                logContainer.appendChild(logEntry);
               }
             }
-          });
-        });
+          } catch (error) {
+            console.error('Error:', error);
+            const logEntry = document.createElement('div');
+            logEntry.className = 'text-red-600';
+            logEntry.textContent = \`Error: \${error.message}\`;
+            logContainer.appendChild(logEntry);
+          }
+        }
       });
     </script>
   </body>
