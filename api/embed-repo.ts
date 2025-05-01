@@ -665,7 +665,22 @@ async function handler(req: VercelRequest, res: VercelResponse) {
     checkpoint.status = 'completed';
     checkpoint.lastProcessedAt = Date.now();
     checkpoint.progress = 100;
-    await redis.set(getRepoKey(repository), JSON.stringify(checkpoint));
+
+    // Ensure checkpoint is always properly stringified
+    try {
+      await redis.set(getRepoKey(repository), JSON.stringify(checkpoint));
+
+      // Double-check the stored value for debugging
+      const storedValue = await redis.get(getRepoKey(repository));
+      console.log(
+        `Stored repository status for ${repository}: ${typeof storedValue}`,
+        typeof storedValue === 'string'
+          ? storedValue.substring(0, 100) + '...'
+          : 'Non-string value'
+      );
+    } catch (error) {
+      console.error(`Error storing repository completion status: ${error}`);
+    }
 
     // Return final status
     stream.write({

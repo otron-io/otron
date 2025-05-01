@@ -26,12 +26,55 @@ async function handler(req: VercelRequest, res: VercelResponse) {
     const repoStatus = await redis.get(key);
     if (repoStatus) {
       try {
-        repositories.push(JSON.parse(repoStatus as string));
+        // Try to parse as JSON, but handle if it's already an object or malformed
+        let parsedStatus: any;
+
+        if (typeof repoStatus === 'object' && repoStatus !== null) {
+          // Already an object, no need to parse
+          parsedStatus = repoStatus;
+        } else if (typeof repoStatus === 'string') {
+          // Fix for "[object Object]" string issue
+          if (repoStatus === '[object Object]') {
+            console.warn(
+              `Found invalid repository status for ${key}, skipping`
+            );
+            continue;
+          }
+
+          try {
+            parsedStatus = JSON.parse(repoStatus);
+          } catch (parseError) {
+            console.error(
+              `Error parsing repository status for ${key}: ${parseError}`
+            );
+            continue;
+          }
+        } else {
+          console.error(
+            `Unexpected repository status type for ${key}: ${typeof repoStatus}`
+          );
+          continue;
+        }
+
+        // Additional validation
+        if (!parsedStatus.repository || !parsedStatus.status) {
+          console.warn(
+            `Invalid repository status data for ${key}, missing required fields`
+          );
+          continue;
+        }
+
+        repositories.push(parsedStatus);
       } catch (e) {
-        console.error(`Error parsing repository status for ${key}: ${e}`);
+        console.error(`Error processing repository status for ${key}: ${e}`);
       }
     }
   }
+
+  // Debug log to help troubleshoot
+  console.log(
+    `Found ${repositories.length} repositories from ${keys.length} keys`
+  );
 
   // Sort by most recently processed
   repositories.sort((a, b) => b.lastProcessedAt - a.lastProcessedAt);
