@@ -22,6 +22,10 @@ export const env = createEnv({
     REPO_BASE_BRANCH: z.string().min(1).default('main'),
     ALLOWED_REPOSITORIES: z.string().optional(),
     CLAUDE_API_KEY: z.string().min(1),
+
+    // Authentication
+    ADMIN_PASSWORD: z.string().min(1).default('admin'),
+    INTERNAL_API_TOKEN: z.string().min(1).default('internal-token'),
   },
   runtimeEnv: process.env,
   emptyStringAsUndefined: true,

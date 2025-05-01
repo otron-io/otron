@@ -3,6 +3,7 @@ import { LinearClient } from '@linear/sdk';
 import { Redis } from '@upstash/redis';
 import type { VercelRequest, VercelResponse } from '@vercel/node';
 import { env } from '../src/env.js';
+import { verifyLinearWebhook } from '../src/auth.js';
 
 // Initialize Redis client
 const redis = new Redis({
@@ -12,15 +13,6 @@ const redis = new Redis({
 
 // 5 minutes
 export const maxDuration = 300;
-
-// Verify webhook signature from Linear
-export function verifySignature(signature: string, body: string): boolean {
-  const hmac = crypto.createHmac('sha256', env.WEBHOOK_SIGNING_SECRET);
-  hmac.update(body);
-  const computedSignature = hmac.digest('hex');
-
-  return signature === computedSignature;
-}
 
 // Main webhook handler
 export default async function handler(req: VercelRequest, res: VercelResponse) {
@@ -33,7 +25,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   const signature = req.headers['linear-signature'] as string;
 
   // Verify webhook signature
-  if (!signature || !verifySignature(signature, rawBody)) {
+  if (!signature || !verifyLinearWebhook(signature, rawBody)) {
     console.error('Invalid webhook signature');
     return res.status(401).json({ error: 'Invalid signature' });
   }

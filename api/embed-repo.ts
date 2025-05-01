@@ -3,6 +3,7 @@ import { Redis } from '@upstash/redis';
 import type { VercelRequest, VercelResponse } from '@vercel/node';
 import { env } from '../src/env.js';
 import { GitHubAppService } from '../src/github-app.js';
+import { withInternalAccess } from '../src/auth.js';
 
 // Extend VercelResponse with flush method which may be available
 interface EnhancedResponse extends VercelResponse {
@@ -520,7 +521,7 @@ async function processFile(
 /**
  * Main handler for the embedding endpoint
  */
-export default async function handler(req: VercelRequest, res: VercelResponse) {
+async function handler(req: VercelRequest, res: VercelResponse) {
   // Only allow POST requests
   if (req.method !== 'POST') {
     return res.status(405).json({ error: 'Method not allowed' });
@@ -536,7 +537,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   }
 
   // Setup streaming response
-  const stream = createJsonStream(res);
+  const stream = createJsonStream(res as EnhancedResponse);
 
   try {
     // Check if there's an existing checkpoint
@@ -701,3 +702,6 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     stream.end();
   }
 }
+
+// Export with internal access protection
+export default withInternalAccess(handler);

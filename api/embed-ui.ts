@@ -1,6 +1,7 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
 import { Redis } from '@upstash/redis';
 import { env } from '../src/env.js';
+import { withPasswordProtection } from '../src/auth.js';
 
 // Initialize Redis client
 const redis = new Redis({
@@ -11,7 +12,7 @@ const redis = new Redis({
 /**
  * Simple HTML UI for managing repository embeddings and search
  */
-export default async function handler(req: VercelRequest, res: VercelResponse) {
+async function handler(req: VercelRequest, res: VercelResponse) {
   // Only accept GET requests
   if (req.method !== 'GET') {
     return res.status(405).json({ error: 'Method not allowed' });
@@ -218,6 +219,19 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     </div>
     
     <script>
+      // Add internal token to all fetch requests to API endpoints
+      const internalToken = "${env.INTERNAL_API_TOKEN}";
+      const originalFetch = window.fetch;
+      window.fetch = function(url, options = {}) {
+        // Only add token for our API endpoints
+        if (typeof url === 'string' && url.startsWith('/api/')) {
+          options = options || {};
+          options.headers = options.headers || {};
+          options.headers['X-Internal-Token'] = internalToken;
+        }
+        return originalFetch(url, options);
+      };
+
       // Embed Repository Functionality
       document.getElementById('embedForm').addEventListener('submit', async (e) => {
         e.preventDefault();
@@ -411,3 +425,6 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   res.setHeader('Content-Type', 'text/html');
   return res.status(200).send(html);
 }
+
+// Export the handler with password protection
+export default withPasswordProtection(handler);

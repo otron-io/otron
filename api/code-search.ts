@@ -1,6 +1,7 @@
 import { Redis } from '@upstash/redis';
 import type { VercelRequest, VercelResponse } from '@vercel/node';
 import { env } from '../src/env.js';
+import { withInternalAccess } from '../src/auth.js';
 
 // Initialize Redis
 const redis = new Redis({
@@ -175,7 +176,7 @@ async function isRepositoryEmbedded(repository: string): Promise<boolean> {
 /**
  * Main handler for the code search endpoint
  */
-export default async function handler(req: VercelRequest, res: VercelResponse) {
+async function handler(req: VercelRequest, res: VercelResponse) {
   // Only accept GET or POST requests
   if (req.method !== 'GET' && req.method !== 'POST') {
     return res.status(405).json({ error: 'Method not allowed' });
@@ -237,3 +238,6 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     });
   }
 }
+
+// Export with internal access protection
+export default withInternalAccess(handler);
