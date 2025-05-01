@@ -113,6 +113,7 @@ interface EmbeddingCheckpoint {
   currentPath?: string;
   errors: string[];
   progress: number;
+  lastCommitSha?: string;
 }
 
 // Redis key structure for embeddings
@@ -541,7 +542,12 @@ async function handler(req: VercelRequest, res: VercelResponse) {
   }
 
   // Extract repository from request body
-  const { repository, resume = true } = req.body;
+  const {
+    repository,
+    resume = true,
+    mode = 'full', // 'full' or 'diff'
+    forceBranch = 'main', // Which branch to use (default: main)
+  } = req.body;
 
   if (!repository || typeof repository !== 'string') {
     return res
@@ -553,18 +559,112 @@ async function handler(req: VercelRequest, res: VercelResponse) {
   const stream = createJsonStream(res as EnhancedResponse);
 
   try {
+    // Get latest commit SHA for the repository
+    const latestCommitSha = await getLatestCommitSha(repository);
+
     // Check if there's an existing checkpoint
     let checkpoint: EmbeddingCheckpoint;
     const existingCheckpoint = await redis.get(getRepoKey(repository));
+    let filesToProcess: string[] = [];
+    let isDiffMode = mode === 'diff';
 
-    if (existingCheckpoint && resume) {
+    if (existingCheckpoint && (resume || isDiffMode)) {
       checkpoint = JSON.parse(existingCheckpoint as string);
-      stream.write({
-        type: 'resume',
-        message: `Resuming embedding for ${repository} from ${checkpoint.processedFiles} files`,
-      });
+
+      // If doing a diff, check if we have a commit to compare against
+      if (
+        isDiffMode &&
+        checkpoint.status === 'completed' &&
+        checkpoint.lastCommitSha
+      ) {
+        stream.write({
+          type: 'diff',
+          message: `Performing diff-based update for ${repository} from commit ${checkpoint.lastCommitSha.substring(
+            0,
+            7
+          )} to ${latestCommitSha.substring(0, 7)}`,
+        });
+
+        // Get changed files between commits
+        filesToProcess = await getChangedFiles(
+          repository,
+          checkpoint.lastCommitSha,
+          latestCommitSha
+        );
+
+        if (filesToProcess.length === 0) {
+          stream.write({
+            type: 'complete',
+            message: `No code files changed since last embedding. Repository is up to date.`,
+            repository,
+            totalChunks: await redis.llen(getChunkKey(repository)),
+            totalFiles: 0,
+            skippedFiles: 0,
+            duration: 0,
+          });
+          stream.end();
+          return;
+        }
+
+        stream.write({
+          type: 'log',
+          message: `Found ${filesToProcess.length} changed files to process`,
+        });
+
+        // Remove old chunks for changed files
+        stream.write({
+          type: 'log',
+          message: `Removing old chunks for changed files...`,
+        });
+        await removeFileChunks(repository, filesToProcess);
+
+        // Create new checkpoint for diff update
+        checkpoint = {
+          repository,
+          status: 'in_progress',
+          startedAt: Date.now(),
+          lastProcessedAt: Date.now(),
+          processedFiles: 0,
+          errors: [],
+          progress: 0,
+          totalFiles: filesToProcess.length,
+          lastCommitSha: latestCommitSha, // Set new commit SHA
+        };
+      } else if (resume && checkpoint.status === 'in_progress') {
+        stream.write({
+          type: 'resume',
+          message: `Resuming embedding for ${repository} from ${checkpoint.processedFiles} files`,
+        });
+
+        // Force full mode when resuming
+        isDiffMode = false;
+      } else {
+        // Start fresh
+        isDiffMode = false;
+        checkpoint = {
+          repository,
+          status: 'in_progress',
+          startedAt: Date.now(),
+          lastProcessedAt: Date.now(),
+          processedFiles: 0,
+          errors: [],
+          progress: 0,
+          lastCommitSha: latestCommitSha,
+        };
+
+        stream.write({
+          type: 'log',
+          message: `Starting fresh embedding for ${repository}`,
+        });
+
+        // Reset processed files tracking for a fresh start
+        await redis.del(getProcessedFilesKey(repository));
+        if (!resume) {
+          await redis.del(getChunkKey(repository));
+        }
+      }
     } else {
-      // Create new checkpoint
+      // Create new checkpoint - fresh start
       checkpoint = {
         repository,
         status: 'in_progress',
@@ -573,38 +673,49 @@ async function handler(req: VercelRequest, res: VercelResponse) {
         processedFiles: 0,
         errors: [],
         progress: 0,
+        lastCommitSha: latestCommitSha,
       };
 
       // Reset processed files tracking
+      await redis.del(getProcessedFilesKey(repository));
       if (!resume) {
-        await redis.del(getProcessedFilesKey(repository));
         await redis.del(getChunkKey(repository));
-        stream.write({
-          type: 'log',
-          message: `Starting fresh embedding for ${repository}`,
-        });
       }
+
+      stream.write({
+        type: 'log',
+        message: `Starting fresh embedding for ${repository}`,
+      });
+
+      // Force full mode for fresh start
+      isDiffMode = false;
     }
 
-    // Get all files to process
-    stream.write({
-      type: 'log',
-      message: `Listing all code files in ${repository}...`,
-    });
-    const files = await listAllCodeFiles(repository);
-    checkpoint.totalFiles = files.length;
+    // Update checkpoint in Redis
+    await redis.set(getRepoKey(repository), JSON.stringify(checkpoint));
+
+    // If not in diff mode, get all files to process
+    if (!isDiffMode || filesToProcess.length === 0) {
+      stream.write({
+        type: 'log',
+        message: `Listing all code files in ${repository}...`,
+      });
+      filesToProcess = await listAllCodeFiles(repository);
+    }
+
+    checkpoint.totalFiles = filesToProcess.length;
 
     // Update checkpoint with total files
     await redis.set(getRepoKey(repository), JSON.stringify(checkpoint));
 
     stream.write({
       type: 'log',
-      message: `Found ${files.length} code files to process in ${repository}`,
+      message: `Found ${filesToProcess.length} code files to process in ${repository}`,
     });
 
     // Process each file
     let processed = 0;
-    if (resume && checkpoint.processedFiles > 0) {
+    if (resume && checkpoint.processedFiles > 0 && !isDiffMode) {
       processed = checkpoint.processedFiles;
     }
 
@@ -612,9 +723,9 @@ async function handler(req: VercelRequest, res: VercelResponse) {
     const MAX_RUNTIME_MS = 750000; // 12.5 minutes max to allow for cleanup
     const startTime = Date.now();
 
-    for (let i = 0; i < files.length; i++) {
+    for (let i = 0; i < filesToProcess.length; i++) {
       // Check if we should process this file or skip (if resuming)
-      if (resume && i < processed) {
+      if (resume && !isDiffMode && i < processed) {
         continue;
       }
 
@@ -622,13 +733,13 @@ async function handler(req: VercelRequest, res: VercelResponse) {
       if (Date.now() - startTime > MAX_RUNTIME_MS) {
         stream.write({
           type: 'timeout',
-          message: `Function nearing timeout, checkpointing after processing ${i} of ${files.length} files`,
+          message: `Function nearing timeout, checkpointing after processing ${i} of ${filesToProcess.length} files`,
         });
 
         // Update checkpoint for resuming later
         checkpoint.lastProcessedAt = Date.now();
         checkpoint.processedFiles = i;
-        checkpoint.progress = Math.floor((i / files.length) * 100);
+        checkpoint.progress = Math.floor((i / filesToProcess.length) * 100);
         await redis.set(getRepoKey(repository), JSON.stringify(checkpoint));
 
         // Return checkpoint info to client
@@ -637,8 +748,8 @@ async function handler(req: VercelRequest, res: VercelResponse) {
           checkpoint: {
             repository,
             processedFiles: i,
-            totalFiles: files.length,
-            progress: Math.floor((i / files.length) * 100),
+            totalFiles: filesToProcess.length,
+            progress: Math.floor((i / filesToProcess.length) * 100),
             resumeUrl: `/api/embed-repo?repository=${repository}&resume=true`,
           },
         });
@@ -650,7 +761,7 @@ async function handler(req: VercelRequest, res: VercelResponse) {
       // Process the file
       const success = await processFile(
         repository,
-        files[i],
+        filesToProcess[i],
         checkpoint,
         stream
       );
@@ -658,9 +769,11 @@ async function handler(req: VercelRequest, res: VercelResponse) {
       if (success) {
         processed++;
         checkpoint.processedFiles = processed;
-        checkpoint.progress = Math.floor((processed / files.length) * 100);
+        checkpoint.progress = Math.floor(
+          (processed / filesToProcess.length) * 100
+        );
 
-        if (i % 10 === 0 || i === files.length - 1) {
+        if (i % 10 === 0 || i === filesToProcess.length - 1) {
           checkpoint.lastProcessedAt = Date.now();
           await redis.set(getRepoKey(repository), JSON.stringify(checkpoint));
 
@@ -668,7 +781,7 @@ async function handler(req: VercelRequest, res: VercelResponse) {
             type: 'progress',
             progress: checkpoint.progress,
             processedFiles: processed,
-            totalFiles: files.length,
+            totalFiles: filesToProcess.length,
           });
         }
       }
@@ -678,6 +791,7 @@ async function handler(req: VercelRequest, res: VercelResponse) {
     checkpoint.status = 'completed';
     checkpoint.lastProcessedAt = Date.now();
     checkpoint.progress = 100;
+    checkpoint.lastCommitSha = latestCommitSha; // Store the commit SHA for future diff comparisons
 
     // Before setting repository status in Redis, ensure it's properly serialized
     const statusJson = JSON.stringify(checkpoint);
@@ -687,11 +801,14 @@ async function handler(req: VercelRequest, res: VercelResponse) {
     // Return final status
     stream.write({
       type: 'complete',
-      message: `Embedding completed for ${repository}. Processed ${processed} files.`,
+      message: `Embedding ${
+        isDiffMode ? 'update' : 'process'
+      } completed for ${repository}. Processed ${processed} files.`,
       repository,
       totalChunks: await redis.llen(getChunkKey(repository)),
-      totalFiles: files.length,
+      totalFiles: filesToProcess.length,
       duration: Math.floor((Date.now() - checkpoint.startedAt) / 1000),
+      commitSha: latestCommitSha,
     });
 
     stream.end();
@@ -722,3 +839,119 @@ async function handler(req: VercelRequest, res: VercelResponse) {
 
 // Export with internal access protection
 export default withInternalAccess(handler);
+
+/**
+ * Get the latest commit SHA for a repository
+ */
+async function getLatestCommitSha(repository: string): Promise<string> {
+  try {
+    const [owner, repo] = repository.split('/');
+    const octokit = await getOctokitForRepo(repository);
+
+    const { data } = await octokit.repos.getBranch({
+      owner,
+      repo,
+      branch: 'main', // Assuming main is the default branch
+    });
+
+    return data.commit.sha;
+  } catch (error) {
+    console.error(`Error getting latest commit for ${repository}:`, error);
+    throw error;
+  }
+}
+
+/**
+ * Get files changed between two commits
+ */
+async function getChangedFiles(
+  repository: string,
+  baseCommit: string,
+  headCommit: string
+): Promise<string[]> {
+  try {
+    const [owner, repo] = repository.split('/');
+    const octokit = await getOctokitForRepo(repository);
+
+    // Get the comparison between the two commits
+    const { data } = await octokit.repos.compareCommits({
+      owner,
+      repo,
+      base: baseCommit,
+      head: headCommit,
+    });
+
+    // Extract all changed files
+    const changedFiles =
+      data.files
+        ?.filter((file) => {
+          // Check if it's a code file
+          const extension = file.filename.substring(
+            file.filename.lastIndexOf('.')
+          );
+          return (
+            CODE_EXTENSIONS.includes(extension) &&
+            // Don't include deleted files
+            file.status !== 'removed'
+          );
+        })
+        .map((file) => file.filename) || [];
+
+    return changedFiles;
+  } catch (error) {
+    console.error(`Error getting changed files for ${repository}:`, error);
+    throw error;
+  }
+}
+
+/**
+ * Remove chunks for specific files from Redis
+ */
+async function removeFileChunks(
+  repository: string,
+  filePaths: string[]
+): Promise<void> {
+  try {
+    // Get all chunks for the repository
+    const allChunks = await redis.lrange(getChunkKey(repository), 0, -1);
+
+    // For each chunk, check if it belongs to a file path we're updating
+    const chunksToKeep = [];
+
+    for (const chunk of allChunks) {
+      try {
+        const parsedChunk =
+          typeof chunk === 'string' ? JSON.parse(chunk) : chunk;
+
+        // If this chunk is not from a file we're updating, keep it
+        if (!filePaths.includes(parsedChunk.path)) {
+          chunksToKeep.push(chunk);
+        }
+      } catch (error) {
+        // If we can't parse the chunk, keep it to be safe
+        chunksToKeep.push(chunk);
+      }
+    }
+
+    // Clear all chunks and re-add the ones we want to keep
+    await redis.del(getChunkKey(repository));
+
+    // If there are chunks to keep, add them back
+    if (chunksToKeep.length > 0) {
+      // Add in batches to avoid request size limits
+      const BATCH_SIZE = 100;
+      for (let i = 0; i < chunksToKeep.length; i += BATCH_SIZE) {
+        const batch = chunksToKeep.slice(i, i + BATCH_SIZE);
+        await redis.lpush(getChunkKey(repository), ...batch);
+      }
+    }
+
+    // Remove these files from the processed files set
+    for (const path of filePaths) {
+      await redis.srem(getProcessedFilesKey(repository), path);
+    }
+  } catch (error) {
+    console.error(`Error removing file chunks for ${repository}:`, error);
+    throw error;
+  }
+}

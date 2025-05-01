@@ -214,12 +214,13 @@ async function handler(req: VercelRequest, res: VercelResponse) {
                 <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Progress</th>
                 <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Files</th>
                 <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Last Updated</th>
+                <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Actions</th>
               </tr>
             </thead>
             <tbody class="bg-white divide-y divide-gray-200">
               ${
                 repositories.length === 0
-                  ? `<tr><td colspan="5" class="px-6 py-4 text-center text-sm text-gray-500">No repositories embedded yet</td></tr>`
+                  ? `<tr><td colspan="6" class="px-6 py-4 text-center text-sm text-gray-500">No repositories embedded yet</td></tr>`
                   : repositories
                       .map(
                         (repo) => `
@@ -250,6 +251,13 @@ async function handler(req: VercelRequest, res: VercelResponse) {
                   <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">${new Date(
                     repo.lastProcessedAt
                   ).toLocaleString()}</td>
+                  <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                    <button 
+                      class="diff-reembed-btn px-3 py-1 bg-indigo-100 text-indigo-700 rounded hover:bg-indigo-200 transition"
+                      data-repository="${repo.repository}">
+                      Re-embed Diff
+                    </button>
+                  </td>
                 </tr>
               `
                       )

@@ -14,6 +14,7 @@ const EMBEDDING_MODEL = 'text-embedding-3-small';
 const MAX_RESULTS = 10;
 const SIMILARITY_THRESHOLD = 0.45; // Slightly higher than 0.4 to get quality matches
 const CHUNK_PAGE_SIZE = 100; // Number of chunks to process at once to avoid Redis size limits
+const CONCURRENT_PAGES = 5; // Number of pages to process in parallel
 
 // Redis key structure for embeddings
 const getChunkKey = (repo: string) => `embedding:repo:${repo}:chunks`;
@@ -134,10 +135,6 @@ async function searchCodeChunks(
       return [];
     }
 
-    // Initialize results array
-    const results: SearchResult[] = [];
-    const allScores: { path: string; score: number }[] = [];
-
     // Use pagination to avoid request size limits
     const totalPages = Math.ceil(chunkCount / CHUNK_PAGE_SIZE);
 
@@ -145,8 +142,14 @@ async function searchCodeChunks(
       `Processing ${chunkCount} chunks in ${totalPages} pages of ${CHUNK_PAGE_SIZE} items each`
     );
 
-    // Process each page of chunks
-    for (let page = 0; page < totalPages; page++) {
+    const results: SearchResult[] = [];
+    const allScores: { path: string; score: number }[] = [];
+
+    // Function to process a single page of chunks
+    async function processPage(page: number): Promise<{
+      results: SearchResult[];
+      scores: { path: string; score: number }[];
+    }> {
       const startIdx = page * CHUNK_PAGE_SIZE;
       const endIdx = Math.min(startIdx + CHUNK_PAGE_SIZE - 1, chunkCount - 1);
 
@@ -159,6 +162,9 @@ async function searchCodeChunks(
       // Get this page of chunks
       const chunks = await redis.lrange(chunkKey, startIdx, endIdx);
       console.log(`Retrieved ${chunks.length} chunks for page ${page + 1}`);
+
+      const pageResults: SearchResult[] = [];
+      const pageScores: { path: string; score: number }[] = [];
 
       // Process chunks in this page
       for (let i = 0; i < chunks.length; i++) {
@@ -221,11 +227,11 @@ async function searchCodeChunks(
         );
 
         // Track all scores for debugging
-        allScores.push({ path: parsedChunk.path, score: similarity });
+        pageScores.push({ path: parsedChunk.path, score: similarity });
 
         // Only include results above the threshold
         if (similarity > SIMILARITY_THRESHOLD) {
-          results.push({
+          pageResults.push({
             repository: parsedChunk.repository,
             path: parsedChunk.path,
             content: parsedChunk.content,
@@ -238,6 +244,37 @@ async function searchCodeChunks(
             lineCount: parsedChunk.metadata?.lineCount || 0,
           });
         }
+      }
+
+      return { results: pageResults, scores: pageScores };
+    }
+
+    // Process pages in parallel with concurrency control
+    const pagePromises = [];
+
+    // Create a queue of pages to process
+    for (let page = 0; page < totalPages; page++) {
+      pagePromises.push(processPage(page));
+
+      // If we've reached our concurrency limit or this is the last page,
+      // wait for the current batch to complete before continuing
+      if (pagePromises.length === CONCURRENT_PAGES || page === totalPages - 1) {
+        console.log(
+          `Waiting for batch of ${pagePromises.length} pages to complete...`
+        );
+        const batchResults = await Promise.all(pagePromises);
+
+        // Collect results from this batch
+        for (const {
+          results: pageResults,
+          scores: pageScores,
+        } of batchResults) {
+          results.push(...pageResults);
+          allScores.push(...pageScores);
+        }
+
+        // Clear the queue for the next batch
+        pagePromises.length = 0;
       }
     }
 
