@@ -569,7 +569,52 @@ async function handler(req: VercelRequest, res: VercelResponse) {
     let isDiffMode = mode === 'diff';
 
     if (existingCheckpoint && (resume || isDiffMode)) {
-      checkpoint = JSON.parse(existingCheckpoint as string);
+      // Handle string representation issue
+      if (existingCheckpoint === '[object Object]') {
+        console.error(
+          `Invalid repository status format for ${repository}: got '[object Object]' string`
+        );
+        stream.write({
+          type: 'error',
+          message: `Repository status data is corrupted. Starting fresh embedding.`,
+        });
+        // Create new checkpoint
+        checkpoint = {
+          repository,
+          status: 'in_progress',
+          startedAt: Date.now(),
+          lastProcessedAt: Date.now(),
+          processedFiles: 0,
+          errors: [],
+          progress: 0,
+          lastCommitSha: latestCommitSha,
+        };
+      } else {
+        try {
+          // Parse checkpoint based on type
+          checkpoint =
+            typeof existingCheckpoint === 'object'
+              ? (existingCheckpoint as unknown as EmbeddingCheckpoint)
+              : JSON.parse(existingCheckpoint as string);
+        } catch (error) {
+          console.error(`Error parsing checkpoint for ${repository}:`, error);
+          stream.write({
+            type: 'error',
+            message: `Error parsing checkpoint: ${error}. Starting fresh embedding.`,
+          });
+          // Create new checkpoint on error
+          checkpoint = {
+            repository,
+            status: 'in_progress',
+            startedAt: Date.now(),
+            lastProcessedAt: Date.now(),
+            processedFiles: 0,
+            errors: [],
+            progress: 0,
+            lastCommitSha: latestCommitSha,
+          };
+        }
+      }
 
       // If doing a diff, check if we have a commit to compare against
       if (
@@ -795,21 +840,38 @@ async function handler(req: VercelRequest, res: VercelResponse) {
 
     // Before setting repository status in Redis, ensure it's properly serialized
     const statusJson = JSON.stringify(checkpoint);
-    console.log(`Setting repository status for ${repository}: ${statusJson}`);
-    await redis.set(getRepoKey(repository), statusJson);
+    console.log(
+      `Setting repository status for ${repository}: ${statusJson.substring(
+        0,
+        100
+      )}...`
+    );
 
-    // Return final status
-    stream.write({
-      type: 'complete',
-      message: `Embedding ${
-        isDiffMode ? 'update' : 'process'
-      } completed for ${repository}. Processed ${processed} files.`,
-      repository,
-      totalChunks: await redis.llen(getChunkKey(repository)),
-      totalFiles: filesToProcess.length,
-      duration: Math.floor((Date.now() - checkpoint.startedAt) / 1000),
-      commitSha: latestCommitSha,
-    });
+    // Double check we're not storing [object Object] literal string
+    if (statusJson === '[object Object]') {
+      console.error(
+        `CRITICAL ERROR: Attempted to store '[object Object]' string instead of JSON for ${repository}`
+      );
+      stream.write({
+        type: 'error',
+        message: `Error storing repository status. Please contact support.`,
+      });
+    } else {
+      await redis.set(getRepoKey(repository), statusJson);
+
+      // Return final status
+      stream.write({
+        type: 'complete',
+        message: `Embedding ${
+          isDiffMode ? 'update' : 'process'
+        } completed for ${repository}. Processed ${processed} files.`,
+        repository,
+        totalChunks: await redis.llen(getChunkKey(repository)),
+        totalFiles: filesToProcess.length,
+        duration: Math.floor((Date.now() - checkpoint.startedAt) / 1000),
+        commitSha: latestCommitSha,
+      });
+    }
 
     stream.end();
   } catch (error) {
