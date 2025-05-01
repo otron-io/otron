@@ -330,8 +330,21 @@ async function handler(req: VercelRequest, res: VercelResponse) {
 
   // Extract parameters from the request - support both query params and body
   const params = req.method === 'GET' ? req.query : req.body || {};
+
+  // Log raw request details for debugging
+  console.log(`Request details:`, {
+    method: req.method,
+    url: req.url,
+    headers: req.headers,
+    query: req.query,
+    body: req.body,
+  });
+
+  console.log(`Raw params received:`, params);
+
   const {
     method = 'vector',
+    repository,
     rawRepository,
     query,
     fileFilter,
@@ -342,7 +355,7 @@ async function handler(req: VercelRequest, res: VercelResponse) {
   console.log(`Search request received:`, {
     requestMethod: req.method,
     searchMethod: method,
-    repository: rawRepository,
+    repository: repository || rawRepository,
     query,
     fileFilter,
     limit,
@@ -351,9 +364,13 @@ async function handler(req: VercelRequest, res: VercelResponse) {
       : undefined,
   });
 
-  // Input validation
-  if (!rawRepository || typeof rawRepository !== 'string') {
-    return res.status(400).json({ error: 'Repository parameter is required' });
+  // Input validation - support both repository and rawRepository parameter names
+  const repoParam = rawRepository || repository;
+  if (!repoParam || typeof repoParam !== 'string') {
+    return res.status(400).json({
+      error: 'Repository parameter is required',
+      providedParams: Object.keys(params),
+    });
   }
 
   if (!query || typeof query !== 'string') {
@@ -367,15 +384,15 @@ async function handler(req: VercelRequest, res: VercelResponse) {
   }
 
   // Normalize repository name (trim whitespace, remove status suffix if present)
-  const repository = rawRepository.trim().replace(/\s*\(.*\)$/, '');
+  const repositoryName = repoParam.trim().replace(/\s*\(.*\)$/, '');
   console.log(
-    `Original repository: '${rawRepository}', normalized to: '${repository}'`
+    `Original repository: '${repoParam}', normalized to: '${repositoryName}'`
   );
 
   try {
     // Check if repository is embedded before processing
-    const isEmbedded = await isRepositoryEmbedded(repository);
-    console.log(`Repository ${repository} embedded status: ${isEmbedded}`);
+    const isEmbedded = await isRepositoryEmbedded(repositoryName);
+    console.log(`Repository ${repositoryName} embedded status: ${isEmbedded}`);
 
     if (!isEmbedded) {
       // For debugging, let's list what repositories we do have
@@ -388,7 +405,7 @@ async function handler(req: VercelRequest, res: VercelResponse) {
           .filter(Boolean);
 
         console.log(
-          `Repository ${repository} not embedded. Available repositories:`,
+          `Repository ${repositoryName} not embedded. Available repositories:`,
           availableRepos
         );
 
@@ -407,14 +424,14 @@ async function handler(req: VercelRequest, res: VercelResponse) {
 
     // Search code chunks
     const results = await searchCodeChunks(
-      repository,
+      repositoryName,
       queryEmbedding,
       Number(limit),
       typeof fileFilter === 'string' ? fileFilter : undefined
     );
 
     return res.status(200).json({
-      repository,
+      repository: repositoryName,
       query,
       results,
       totalResults: results.length,
