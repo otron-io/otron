@@ -183,6 +183,7 @@ IMPORTANT:
 - No one sees your output except for the results of your actions such as comments and code changes.
 - service-frontend is the main frontend repository for the hubs.com manufacturing platform - angular/typescript
 - service-supply is the main backend repository for the hubs.com manufacturing platform - python
+- marvin-linear is the repository for the marvin-linear application - this is where you are located - typescript
 `;
 }
 
