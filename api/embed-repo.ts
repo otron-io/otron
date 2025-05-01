@@ -565,30 +565,33 @@ async function handler(req: VercelRequest, res: VercelResponse) {
         .json({ error: 'Missing or invalid repository parameter' });
     }
 
+    // Sanitize repository name - trim whitespace and remove tabs/newlines
+    const sanitizedRepo = repository.trim().replace(/[\t\n\r]/g, '');
+
     try {
-      console.log(`Deleting repository ${repository} from Redis`);
+      console.log(`Deleting repository ${sanitizedRepo} from Redis`);
 
       // List all processed files to get keys to delete
       const processedFiles = await redis.smembers(
-        getProcessedFilesKey(repository)
+        getProcessedFilesKey(sanitizedRepo)
       );
 
       // Delete all file-specific keys
       for (const filePath of processedFiles) {
-        await redis.del(getFileKey(repository, filePath));
+        await redis.del(getFileKey(sanitizedRepo, filePath));
       }
 
       // Delete all repository-level keys
-      await redis.del(getRepoKey(repository));
-      await redis.del(getChunkKey(repository));
-      await redis.del(getProcessedFilesKey(repository));
+      await redis.del(getRepoKey(sanitizedRepo));
+      await redis.del(getChunkKey(sanitizedRepo));
+      await redis.del(getProcessedFilesKey(sanitizedRepo));
 
       return res.status(200).json({
         success: true,
-        message: `Repository ${repository} has been completely deleted from the embedding system`,
+        message: `Repository ${sanitizedRepo} has been completely deleted from the embedding system`,
       });
     } catch (error) {
-      console.error(`Error deleting repository ${repository}:`, error);
+      console.error(`Error deleting repository ${sanitizedRepo}:`, error);
       return res.status(500).json({
         error: `Failed to delete repository: ${
           error instanceof Error ? error.message : String(error)
@@ -602,13 +605,19 @@ async function handler(req: VercelRequest, res: VercelResponse) {
     return res.status(405).json({ error: 'Method not allowed' });
   }
 
-  const { repository, resume = false, mode = 'full' } = req.body;
+  const { repository: rawRepository, resume = false, mode = 'full' } = req.body;
 
-  if (!repository || typeof repository !== 'string') {
+  if (!rawRepository || typeof rawRepository !== 'string') {
     return res
       .status(400)
       .json({ error: 'Missing or invalid repository parameter' });
   }
+
+  // Sanitize repository name - trim whitespace and remove tabs/newlines
+  const repository = rawRepository.trim().replace(/[\t\n\r]/g, '');
+  console.log(
+    `Sanitized repository name: '${rawRepository}' -> '${repository}'`
+  );
 
   // Setup streaming response
   const stream = createJsonStream(res as EnhancedResponse);
