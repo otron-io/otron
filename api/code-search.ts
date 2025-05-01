@@ -161,14 +161,105 @@ async function searchCodeChunks(
  * Check if a repository has been embedded
  */
 async function isRepositoryEmbedded(repository: string): Promise<boolean> {
-  const repoStatus = await redis.get(getRepoKey(repository));
-
-  if (!repoStatus) return false;
+  console.log(`Checking if repository '${repository}' is embedded...`);
 
   try {
-    const status = JSON.parse(repoStatus as string);
-    return status.status === 'completed';
+    // Get the key for the repository status
+    const repoKey = getRepoKey(repository);
+    console.log(`Repository key: ${repoKey}`);
+
+    // Check if there's a status entry for this repository
+    const repoStatus = await redis.get(repoKey);
+    console.log(
+      `Repository status raw for ${repository}: ${
+        repoStatus === null
+          ? 'null'
+          : typeof repoStatus === 'string'
+          ? repoStatus
+          : JSON.stringify(repoStatus)
+      }`
+    );
+
+    // Special case debugging for 3DHubs repository
+    if (repository.includes('3DHubs')) {
+      console.log('🔍 Found 3DHubs repository query');
+
+      // List all keys that might match this repository
+      const allKeys = await redis.keys('embedding:repo:*3DHubs*');
+      console.log(`All 3DHubs related keys (${allKeys.length}):`, allKeys);
+
+      // Check for chunks directly
+      const chunkKey = getChunkKey(repository);
+      const chunkCount = await redis.llen(chunkKey);
+      console.log(`Checking chunks at ${chunkKey}: ${chunkCount} chunks found`);
+
+      if (chunkCount > 0) {
+        // Get a sample chunk to verify content
+        const sampleChunk = await redis.lindex(chunkKey, 0);
+        console.log(`Sample chunk exists: ${!!sampleChunk}`);
+
+        // If we have chunks but status is missing, let's consider it embedded
+        if (!repoStatus && chunkCount > 0) {
+          console.log(
+            `No status found but ${chunkCount} chunks exist - considering repository as embedded`
+          );
+          return true;
+        }
+      }
+    }
+
+    if (!repoStatus) {
+      console.log(`No status found for repository ${repository}`);
+      return false;
+    }
+
+    // Try to parse the status
+    try {
+      const status =
+        typeof repoStatus === 'object'
+          ? repoStatus
+          : JSON.parse(repoStatus as string);
+
+      console.log(
+        `Repository status parsed: ${JSON.stringify(status, null, 2)}`
+      );
+
+      // Check for chunks to verify the repository actually has content
+      const chunkCount = await redis.llen(getChunkKey(repository));
+      console.log(`Repository chunk count: ${chunkCount}`);
+
+      // More lenient check - either status is completed or we have chunks
+      const isComplete = status.status === 'completed';
+      const hasChunks = chunkCount > 0;
+
+      console.log(
+        `Repository ${repository} status check: isComplete=${isComplete}, hasChunks=${hasChunks}`
+      );
+
+      // If we have chunks, consider it embedded even if status isn't "completed"
+      return hasChunks;
+    } catch (parseError) {
+      console.error(
+        `Error parsing status for repository ${repository}:`,
+        parseError
+      );
+
+      // Check if we have chunks anyway
+      const chunkCount = await redis.llen(getChunkKey(repository));
+      if (chunkCount > 0) {
+        console.log(
+          `Status parsing failed but found ${chunkCount} chunks - considering repository as embedded`
+        );
+        return true;
+      }
+
+      return false;
+    }
   } catch (error) {
+    console.error(
+      `Error checking repository embedding status for ${repository}:`,
+      error
+    );
     return false;
   }
 }
@@ -177,64 +268,100 @@ async function isRepositoryEmbedded(repository: string): Promise<boolean> {
  * Main handler for the code search endpoint
  */
 async function handler(req: VercelRequest, res: VercelResponse) {
-  // Only accept GET or POST requests
-  if (req.method !== 'GET' && req.method !== 'POST') {
+  // Only accept POST requests
+  if (req.method !== 'POST') {
     return res.status(405).json({ error: 'Method not allowed' });
   }
 
-  // Extract search parameters
-  const params = req.method === 'GET' ? req.query : req.body;
-  const { repository, query, fileFilter, limit = MAX_RESULTS } = params;
+  // Extract parameters from the request
+  const {
+    method,
+    rawRepository,
+    query,
+    fileFilter,
+    limit = MAX_RESULTS,
+  } = req.body || {};
 
-  if (!repository || typeof repository !== 'string') {
-    return res
-      .status(400)
-      .json({ error: 'Missing or invalid repository parameter' });
+  // Add detailed logging of all incoming parameters
+  console.log(`Search request received:`, {
+    method,
+    repository: rawRepository,
+    query,
+    fileFilter,
+    limit,
+    headers: req.headers['x-vercel-id']
+      ? `trace: ${req.headers['x-vercel-id']}`
+      : undefined,
+  });
+
+  // Input validation
+  if (!rawRepository || typeof rawRepository !== 'string') {
+    return res.status(400).json({ error: 'Repository parameter is required' });
   }
 
   if (!query || typeof query !== 'string') {
-    return res
-      .status(400)
-      .json({ error: 'Missing or invalid query parameter' });
+    return res.status(400).json({ error: 'Search query is required' });
   }
 
+  if (!method || method !== 'vector') {
+    return res
+      .status(400)
+      .json({ error: 'Only vector search method is supported' });
+  }
+
+  // Normalize repository name (trim whitespace, remove status suffix if present)
+  const repository = rawRepository.trim().replace(/\s*\(.*\)$/, '');
+  console.log(
+    `Original repository: '${rawRepository}', normalized to: '${repository}'`
+  );
+
   try {
-    // Check if repository has been embedded
+    // Check if repository is embedded before processing
     const isEmbedded = await isRepositoryEmbedded(repository);
+    console.log(`Repository ${repository} embedded status: ${isEmbedded}`);
 
     if (!isEmbedded) {
-      return res.status(404).json({
-        error: 'Repository not embedded',
-        message: `Repository ${repository} has not been embedded yet. Please run the embedding process first.`,
-        embedUrl: `/api/embed-repo`,
-      });
+      // For debugging, let's list what repositories we do have
+      try {
+        const allRepoKeys = await redis.keys('embedding:repo:*:status');
+        const availableRepos = allRepoKeys
+          .map((key) =>
+            key.replace('embedding:repo:', '').replace(':status', '')
+          )
+          .filter(Boolean);
+
+        console.log(
+          `Repository ${repository} not embedded. Available repositories:`,
+          availableRepos
+        );
+
+        return res.status(404).json({
+          error: 'Repository not embedded',
+          available: availableRepos,
+        });
+      } catch (keysError) {
+        console.error('Error getting available repositories:', keysError);
+        return res.status(404).json({ error: 'Repository not embedded' });
+      }
     }
 
     // Get query embedding
     const queryEmbedding = await getQueryEmbedding(query);
 
-    // Search for matching code chunks
+    // Search code chunks
     const results = await searchCodeChunks(
       repository,
       queryEmbedding,
-      Math.min(parseInt(limit as string) || MAX_RESULTS, 50),
-      fileFilter as string
+      Number(limit),
+      fileFilter
     );
 
-    // Return results
-    return res.status(200).json({
-      repository,
-      query,
-      results,
-      totalResults: results.length,
-      searchTime: new Date().toISOString(),
-    });
+    return res.status(200).json({ results });
   } catch (error) {
-    console.error('Error searching code:', error);
-
+    console.error(`Error in search:`, error);
     return res.status(500).json({
       error: 'Search failed',
-      message: `Error searching code: ${error}`,
+      message: error instanceof Error ? error.message : String(error),
     });
   }
 }
