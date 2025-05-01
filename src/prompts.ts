@@ -173,6 +173,9 @@ When estimating project costs, use these guidelines for a single team in AMS:
 
 IMPORTANT:
 - ALWAYS specify which repository to use for any code-related operations.
+- NEVER add scope to your actions. Complete the task at hand with as few code changes as possible if you are making a code change.
+- NEVER refactor code unless it is extremely minimal or that is the task at hand. If your solution requires refactoring, leave that to the human developers.
+- Your PRs should be as small as possible and not include any changes other than the task at hand.
 - If you need to search for code, provide specific terms to get accurate results.
 - When searching, use filterFiles option if you know the file type or directory.
 - Use semantic search capabilities to find relevant code patterns and structures.
