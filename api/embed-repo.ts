@@ -429,12 +429,16 @@ async function processFile(
   stream: ReturnType<typeof createJsonStream>
 ): Promise<boolean> {
   try {
-    // Check if file has already been processed
+    console.log(`Processing file ${repository}:${path}`);
+
+    // Check if file has already been processed - we're now handling this at the loop level
+    // so this is just a safety check
     const isProcessed = await redis.sismember(
       getProcessedFilesKey(repository),
       path
     );
     if (isProcessed) {
+      console.log(`File ${path} is already marked as processed, skipping`);
       stream.write({
         type: 'log',
         message: `Skipping already processed file: ${path}`,
@@ -450,83 +454,98 @@ async function processFile(
     const octokit = await getOctokitForRepo(repository);
 
     // Get file content
+    console.log(`Fetching content for ${repository}:${path}`);
     const [owner, repo] = repository.split('/');
-    const { data } = await octokit.repos.getContent({
-      owner,
-      repo,
-      path,
-    });
 
-    if ('content' in data && data.encoding === 'base64') {
-      const content = Buffer.from(data.content, 'base64').toString('utf-8');
-
-      // Skip empty files
-      if (!content.trim()) {
-        await redis.sadd(getProcessedFilesKey(repository), path);
-        stream.write({ type: 'log', message: `Skipped empty file: ${path}` });
-        return true;
-      }
-
-      // Split file into chunks
-      const chunks = chunkCodeFile(repository, path, content);
-      stream.write({
-        type: 'log',
-        message: `Processing ${path}: Split into ${chunks.length} semantic chunks`,
+    try {
+      const { data } = await octokit.repos.getContent({
+        owner,
+        repo,
+        path,
       });
 
-      // Create embeddings for chunks
-      if (chunks.length > 0) {
-        // Process in batches to avoid token limits (16 chunks at a time)
-        const BATCH_SIZE = 16;
-        for (let i = 0; i < chunks.length; i += BATCH_SIZE) {
-          const batch = chunks.slice(i, i + BATCH_SIZE);
-          const chunksWithEmbeddings = await createEmbeddings(batch);
+      if ('content' in data && data.encoding === 'base64') {
+        const content = Buffer.from(data.content, 'base64').toString('utf-8');
+        console.log(`Fetched content for ${path}, ${content.length} bytes`);
 
-          // Store chunks in Redis
-          for (const chunk of chunksWithEmbeddings) {
-            await redis.lpush(getChunkKey(repository), JSON.stringify(chunk));
-            console.log(
-              `Stored chunk for ${repository} - type: ${typeof chunk}, length: ${
-                JSON.stringify(chunk).length
-              }`
-            );
-            if (i === 0) {
-              console.log(
-                `Sample chunk stored: ${JSON.stringify(chunk).substring(
-                  0,
-                  200
-                )}...`
-              );
-            }
-          }
-
-          stream.write({
-            type: 'progress',
-            message: `Embedded batch ${
-              Math.floor(i / BATCH_SIZE) + 1
-            }/${Math.ceil(chunks.length / BATCH_SIZE)} of ${path}`,
-          });
+        // Skip empty files
+        if (!content.trim()) {
+          await redis.sadd(getProcessedFilesKey(repository), path);
+          stream.write({ type: 'log', message: `Skipped empty file: ${path}` });
+          return true;
         }
+
+        // Split file into chunks
+        const chunks = chunkCodeFile(repository, path, content);
+        console.log(`Split ${path} into ${chunks.length} chunks`);
+        stream.write({
+          type: 'log',
+          message: `Processing ${path}: Split into ${chunks.length} semantic chunks`,
+        });
+
+        // Create embeddings for chunks
+        if (chunks.length > 0) {
+          // Process in batches to avoid token limits (16 chunks at a time)
+          const BATCH_SIZE = 16;
+          for (let i = 0; i < chunks.length; i += BATCH_SIZE) {
+            const batch = chunks.slice(i, i + BATCH_SIZE);
+            const chunksWithEmbeddings = await createEmbeddings(batch);
+
+            // Store chunks in Redis
+            for (const chunk of chunksWithEmbeddings) {
+              await redis.lpush(getChunkKey(repository), JSON.stringify(chunk));
+              console.log(
+                `Stored chunk for ${repository} - type: ${typeof chunk}, length: ${
+                  JSON.stringify(chunk).length
+                }`
+              );
+              if (i === 0) {
+                console.log(
+                  `Sample chunk stored: ${JSON.stringify(chunk).substring(
+                    0,
+                    200
+                  )}...`
+                );
+              }
+            }
+
+            stream.write({
+              type: 'progress',
+              message: `Embedded batch ${
+                Math.floor(i / BATCH_SIZE) + 1
+              }/${Math.ceil(chunks.length / BATCH_SIZE)} of ${path}`,
+            });
+          }
+        }
+
+        // Mark file as processed
+        await redis.sadd(getProcessedFilesKey(repository), path);
+        stream.write({
+          type: 'log',
+          message: `Completed processing file: ${path}`,
+        });
+
+        return true;
+      } else {
+        throw new Error(`Unexpected file data format for ${path}`);
       }
-
-      // Mark file as processed
-      await redis.sadd(getProcessedFilesKey(repository), path);
+    } catch (error) {
+      console.error(`Error processing file ${path}:`, error);
+      checkpoint.errors.push(`Error processing ${path}: ${error}`);
+      await redis.set(getRepoKey(repository), JSON.stringify(checkpoint));
       stream.write({
-        type: 'log',
-        message: `Completed processing file: ${path}`,
+        type: 'error',
+        message: `Error processing ${path}: ${error}`,
       });
-
-      return true;
-    } else {
-      throw new Error(`Unexpected file data format for ${path}`);
+      return false;
     }
   } catch (error) {
     console.error(`Error processing file ${path}:`, error);
-    checkpoint.errors.push(`Error processing ${path}: ${error}`);
+    checkpoint.errors.push(`Global error: ${error}`);
     await redis.set(getRepoKey(repository), JSON.stringify(checkpoint));
     stream.write({
       type: 'error',
-      message: `Error processing ${path}: ${error}`,
+      message: `Failed to process file: ${error}`,
     });
     return false;
   }
@@ -814,18 +833,56 @@ async function handler(req: VercelRequest, res: VercelResponse) {
 
     // Process each file
     let processed = 0;
+    let skipped = 0;
     if (resume && checkpoint.processedFiles > 0 && !isDiffMode) {
       processed = checkpoint.processedFiles;
+      stream.write({
+        type: 'log',
+        message: `Resuming from checkpoint: Starting at file ${processed} of ${filesToProcess.length}`,
+      });
     }
 
     // Start processing from where we left off
     const MAX_RUNTIME_MS = 750000; // 12.5 minutes max to allow for cleanup
     const startTime = Date.now();
 
+    // Get list of already processed files to avoid dependency on the processed counter
+    const processedFilesSet = new Set(
+      await redis.smembers(getProcessedFilesKey(repository))
+    );
+    stream.write({
+      type: 'log',
+      message: `Found ${processedFilesSet.size} already processed files in the set`,
+    });
+
+    // Update the processed files count from the actual set
+    processed = processedFilesSet.size;
+
+    // Update progress to reflect actual processed files
+    let currentProgress = Math.floor((processed / filesToProcess.length) * 100);
+    stream.write({
+      type: 'progress',
+      progress: currentProgress,
+      processedFiles: processed,
+      totalFiles: filesToProcess.length,
+    });
+
     for (let i = 0; i < filesToProcess.length; i++) {
       // Check if we should process this file or skip (if resuming)
-      if (resume && !isDiffMode && i < processed) {
-        continue;
+      if (resume && !isDiffMode) {
+        // Skip if file is already in the processed set
+        if (processedFilesSet.has(filesToProcess[i])) {
+          skipped++;
+
+          // Log skipped files occasionally for debugging
+          if (skipped % 100 === 0 || skipped === 1) {
+            stream.write({
+              type: 'log',
+              message: `Skipped ${skipped} already processed files so far. Current: ${filesToProcess[i]}`,
+            });
+          }
+          continue;
+        }
       }
 
       // Check if we're approaching the Vercel function timeout
