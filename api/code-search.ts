@@ -137,6 +137,19 @@ async function searchCodeChunks(
     const chunks = await redis.lrange(chunkKey, 0, -1);
     console.log(`Retrieved ${chunks.length} chunks from Redis`);
 
+    // Get a sample chunk for debugging
+    if (chunks.length > 0) {
+      const sampleChunk = chunks[0];
+      console.log(`Sample chunk type: ${typeof sampleChunk}`);
+      console.log(
+        `Sample chunk preview: ${
+          typeof sampleChunk === 'string'
+            ? sampleChunk.substring(0, 100)
+            : JSON.stringify(sampleChunk).substring(0, 100)
+        }...`
+      );
+    }
+
     // Filter and score chunks
     const results: SearchResult[] = [];
 
@@ -149,9 +162,46 @@ async function searchCodeChunks(
       // Parse the chunk
       let parsedChunk: CodeChunk;
       try {
-        parsedChunk = JSON.parse(chunk as string);
+        // Check if chunk is already an object
+        if (typeof chunk === 'object' && chunk !== null) {
+          parsedChunk = chunk as unknown as CodeChunk;
+        } else if (typeof chunk === 'string') {
+          // Handle string representation of an object
+          if (chunk === '[object Object]') {
+            console.error(
+              `Chunk ${i} is corrupted with '[object Object]' string representation`
+            );
+            continue;
+          }
+          parsedChunk = JSON.parse(chunk);
+        } else {
+          console.error(`Chunk ${i} has unexpected type: ${typeof chunk}`);
+          continue;
+        }
+
+        // Validate chunk has required fields
+        if (
+          !parsedChunk.repository ||
+          !parsedChunk.path ||
+          !parsedChunk.embedding
+        ) {
+          console.error(
+            `Chunk ${i} is missing required fields:`,
+            `repository: ${!!parsedChunk.repository}, `,
+            `path: ${!!parsedChunk.path}, `,
+            `embedding: ${!!parsedChunk.embedding}`
+          );
+          continue;
+        }
       } catch (e) {
         console.error(`Error parsing chunk ${i}: ${e}`);
+        console.error(
+          `Problematic chunk content: ${
+            typeof chunk === 'string'
+              ? chunk.substring(0, 200)
+              : 'non-string chunk'
+          }`
+        );
         continue;
       }
 
@@ -173,12 +223,12 @@ async function searchCodeChunks(
           path: parsedChunk.path,
           content: parsedChunk.content,
           score: similarity,
-          language: parsedChunk.metadata.language,
-          type: parsedChunk.metadata.type,
-          name: parsedChunk.metadata.name,
-          startLine: parsedChunk.metadata.startLine,
-          endLine: parsedChunk.metadata.endLine,
-          lineCount: parsedChunk.metadata.lineCount,
+          language: parsedChunk.metadata?.language || 'unknown',
+          type: parsedChunk.metadata?.type || 'block',
+          name: parsedChunk.metadata?.name,
+          startLine: parsedChunk.metadata?.startLine || 0,
+          endLine: parsedChunk.metadata?.endLine || 0,
+          lineCount: parsedChunk.metadata?.lineCount || 0,
         });
       }
     }

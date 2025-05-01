@@ -484,6 +484,19 @@ async function processFile(
           // Store chunks in Redis
           for (const chunk of chunksWithEmbeddings) {
             await redis.lpush(getChunkKey(repository), JSON.stringify(chunk));
+            console.log(
+              `Stored chunk for ${repository} - type: ${typeof chunk}, length: ${
+                JSON.stringify(chunk).length
+              }`
+            );
+            if (i === 0) {
+              console.log(
+                `Sample chunk stored: ${JSON.stringify(chunk).substring(
+                  0,
+                  200
+                )}...`
+              );
+            }
           }
 
           stream.write({
@@ -666,21 +679,10 @@ async function handler(req: VercelRequest, res: VercelResponse) {
     checkpoint.lastProcessedAt = Date.now();
     checkpoint.progress = 100;
 
-    // Ensure checkpoint is always properly stringified
-    try {
-      await redis.set(getRepoKey(repository), JSON.stringify(checkpoint));
-
-      // Double-check the stored value for debugging
-      const storedValue = await redis.get(getRepoKey(repository));
-      console.log(
-        `Stored repository status for ${repository}: ${typeof storedValue}`,
-        typeof storedValue === 'string'
-          ? storedValue.substring(0, 100) + '...'
-          : 'Non-string value'
-      );
-    } catch (error) {
-      console.error(`Error storing repository completion status: ${error}`);
-    }
+    // Before setting repository status in Redis, ensure it's properly serialized
+    const statusJson = JSON.stringify(checkpoint);
+    console.log(`Setting repository status for ${repository}: ${statusJson}`);
+    await redis.set(getRepoKey(repository), statusJson);
 
     // Return final status
     stream.write({
