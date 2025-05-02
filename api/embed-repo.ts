@@ -155,6 +155,18 @@ async function getOctokitForRepo(repository: string): Promise<Octokit> {
   throw new Error('GitHub App service not initialized');
 }
 
+// Maximum tokens per embedding request
+const MAX_TOKENS_PER_BATCH = 8000;
+
+/**
+ * Estimate the number of tokens in a text string
+ * This is a simple heuristic and not a precise count
+ */
+function estimateTokenCount(text: string): number {
+  // A rough approximation: 1 token ≈ 4 characters for English text
+  return Math.ceil(text.length / 4);
+}
+
 /**
  * Use OpenAI API to generate embeddings for code chunks
  */
@@ -162,7 +174,57 @@ async function createEmbeddings(chunks: CodeChunk[]): Promise<CodeChunk[]> {
   if (chunks.length === 0) return [];
 
   const texts = chunks.map((chunk) => chunk.content);
+  const results: CodeChunk[] = [];
+  
+  // Process in batches to avoid token limits
+  let currentBatch: string[] = [];
+  let currentBatchTokens = 0;
+  let currentChunks: CodeChunk[] = [];
+  
+  for (let i = 0; i < texts.length; i++) {
+    const text = texts[i];
+    const chunk = chunks[i];
+    const estimatedTokens = estimateTokenCount(text);
+    
+    // Skip chunks that are individually too large
+    if (estimatedTokens > MAX_TOKENS_PER_BATCH) {
+      console.warn(`Chunk is too large (${estimatedTokens} tokens) and exceeds limit: ${chunk.path}`);
+      // Add the chunk without embedding
+      results.push(chunk);
+      continue;
+    }
+    
+    // If adding this text would exceed the token limit, process the current batch
+    if (currentBatchTokens + estimatedTokens > MAX_TOKENS_PER_BATCH) {
+      // Process the current batch
+      const batchResults = await processEmbeddingBatch(currentChunks, currentBatch);
+      results.push(...batchResults);
+      
+      // Reset the batch
+      currentBatch = [text];
+      currentBatchTokens = estimatedTokens;
+      currentChunks = [chunk];
+    } else {
+      // Add to current batch
+      currentBatch.push(text);
+      currentBatchTokens += estimatedTokens;
+      currentChunks.push(chunk);
+    }
+  }
+  
+  // Process any remaining chunks
+  if (currentBatch.length > 0) {
+    const batchResults = await processEmbeddingBatch(currentChunks, currentBatch);
+    results.push(...batchResults);
+  }
+  
+  return results;
+}
 
+/**
+ * Process a batch of texts to generate embeddings
+ */
+async function processEmbeddingBatch(chunks: CodeChunk[], texts: string[]): Promise<CodeChunk[]> {
   try {
     const response = await fetch('https://api.openai.com/v1/embeddings', {
       method: 'POST',
@@ -210,156 +272,173 @@ function chunkCodeFile(
   // Simple chunking for now - we'll enhance this with AST parsing
   const chunks: CodeChunk[] = [];
 
-  // Detect functions, classes and methods using regex patterns
-  // This is a simplified approach - ideally we'd use language-specific parsers
-  const functionPattern = /(?:function|def|fun|func|fn)\s+(\w+)\s*\(/g;
-  const methodPattern =
-    /(?:public|private|protected)?\s*(?:static)?\s*(?:async)?\s*(?:function)?\s*(\w+)\s*\(/g;
-  const classPattern = /(?:class|interface|trait|struct|enum)\s+(\w+)/g;
+  // Detect functions, classes, or methods
+  let inFunction = false;
+  let functionStart = 0;
+  let currentFunction = '';
+  let bracketCount = 0;
 
-  // Track blocks of code
-  let currentBlock: {
-    type: 'function' | 'class' | 'method' | 'block' | 'file';
-    name?: string;
-    startLine: number;
-    endLine?: number;
-    content: string[];
-  } | null = null;
+  // For non-curly bracket languages like Python
+  let indentLevel = 0;
+  let currentIndent = 0;
 
-  // Process line by line
-  let openBraces = 0;
-  let hasStartedBlock = false;
-
-  // Handle files without clear functions/classes as a single chunk
-  if (
-    !functionPattern.test(content) &&
-    !classPattern.test(content) &&
-    !methodPattern.test(content)
-  ) {
-    return [
-      {
-        repository,
-        path,
-        content,
-        metadata: {
-          language,
-          type: 'file',
-          startLine: 1,
-          endLine: lines.length,
-          lineCount: lines.length,
-        },
-      },
-    ];
-  }
-
-  // Reset regex
-  functionPattern.lastIndex = 0;
-  classPattern.lastIndex = 0;
-  methodPattern.lastIndex = 0;
-
-  // Process line by line with context
   for (let i = 0; i < lines.length; i++) {
     const line = lines[i];
 
-    // Check for the start of a new block
-    let match: RegExpExecArray | null;
-
-    functionPattern.lastIndex = 0;
-    if ((match = functionPattern.exec(line)) !== null && !currentBlock) {
-      currentBlock = {
-        type: 'function',
-        name: match[1],
-        startLine: i + 1,
-        content: [line],
-      };
-      hasStartedBlock = true;
-      openBraces +=
-        (line.match(/{/g) || []).length - (line.match(/}/g) || []).length;
+    // Skip empty lines and comments
+    if (line.trim() === '' || line.trim().startsWith('//')) {
       continue;
     }
 
-    classPattern.lastIndex = 0;
-    if ((match = classPattern.exec(line)) !== null && !currentBlock) {
-      currentBlock = {
-        type: 'class',
-        name: match[1],
-        startLine: i + 1,
-        content: [line],
-      };
-      hasStartedBlock = true;
-      openBraces +=
-        (line.match(/{/g) || []).length - (line.match(/}/g) || []).length;
-      continue;
+    // Check for function/class/method declarations
+    const isFunctionStart =
+      (language === 'typescript' || language === 'javascript') &&
+      (/function\s+[\w$]+\s*\(/.test(line) || // function declaration
+        /const\s+[\w$]+\s*=\s*function\s*\(/.test(line) || // function expression
+        /const\s+[\w$]+\s*=\s*\(.*\)\s*=>/.test(line) || // arrow function
+        /class\s+[\w$]+/.test(line) || // class declaration
+        /[\w$.]+\.prototype\.[\w$]+\s*=\s*function/.test(line) || // prototype method
+        /[\w$]+\s*\([^)]*\)\s*{/.test(line)); // method
+
+    // Track bracket count to determine when a function/class ends
+    if (line.includes('{')) {
+      bracketCount += (line.match(/{/g) || []).length;
+    }
+    if (line.includes('}')) {
+      bracketCount -= (line.match(/}/g) || []).length;
     }
 
-    methodPattern.lastIndex = 0;
-    if ((match = methodPattern.exec(line)) !== null && !currentBlock) {
-      currentBlock = {
-        type: 'method',
-        name: match[1],
-        startLine: i + 1,
-        content: [line],
-      };
-      hasStartedBlock = true;
-      openBraces +=
-        (line.match(/{/g) || []).length - (line.match(/}/g) || []).length;
-      continue;
-    }
+    // For Python-like languages, track indentation
+    if (language === 'python') {
+      const indent = line.length - line.trimLeft().length;
+      if (
+        line.trimLeft().startsWith('def ') ||
+        line.trimLeft().startsWith('class ')
+      ) {
+        // Start of a function or class in Python
+        if (!inFunction) {
+          inFunction = true;
+          functionStart = i;
+          currentFunction = line.trim();
+          indentLevel = indent;
+        }
+      } else if (inFunction) {
+        currentIndent = indent;
+        // End of a function or class if we go back to the original indent level
+        if (currentIndent <= indentLevel && i > functionStart + 1) {
+          // Create a chunk for the function/class
+          const functionCode = lines
+            .slice(functionStart, i)
+            .join('\n');
+          chunks.push({
+            repository,
+            path,
+            content: functionCode,
+            metadata: {
+              language,
+              type: currentFunction.includes('class') ? 'class' : 'function',
+              name: currentFunction
+                .replace('def ', '')
+                .replace('class ', '')
+                .split('(')[0]
+                .trim(),
+              startLine: functionStart + 1,
+              endLine: i,
+              lineCount: i - functionStart,
+            },
+          });
 
-    // If we're inside a block, add the line
-    if (currentBlock) {
-      currentBlock.content.push(line);
-
-      // Update brace count
-      openBraces +=
-        (line.match(/{/g) || []).length - (line.match(/}/g) || []).length;
-
-      // Check if the block is complete
-      if (hasStartedBlock && openBraces <= 0) {
-        // Save the current block
-        currentBlock.endLine = i + 1;
+          inFunction = false;
+          i--; // Re-process the current line
+        }
+      }
+    } else {
+      // For curly-brace languages
+      if (isFunctionStart && !inFunction) {
+        inFunction = true;
+        functionStart = i;
+        currentFunction = line.trim();
+      } else if (inFunction && bracketCount === 0) {
+        // End of a function or class
+        const functionCode = lines.slice(functionStart, i + 1).join('\n');
         chunks.push({
           repository,
           path,
-          content: currentBlock.content.join('\n'),
+          content: functionCode,
           metadata: {
             language,
-            type: currentBlock.type,
-            name: currentBlock.name,
-            startLine: currentBlock.startLine,
-            endLine: currentBlock.endLine,
-            lineCount: currentBlock.endLine - currentBlock.startLine + 1,
+            type: currentFunction.includes('class') ? 'class' : 'function',
+            name: currentFunction
+              .replace('function ', '')
+              .replace('class ', '')
+              .split('(')[0]
+              .split('=')[0]
+              .trim(),
+            startLine: functionStart + 1,
+            endLine: i + 1,
+            lineCount: i - functionStart + 1,
           },
         });
 
-        // Reset
-        currentBlock = null;
-        hasStartedBlock = false;
-        openBraces = 0;
+        inFunction = false;
       }
     }
   }
 
-  // Handle any remaining block
-  if (currentBlock) {
-    currentBlock.endLine = lines.length;
-    chunks.push({
-      repository,
-      path,
-      content: currentBlock.content.join('\n'),
-      metadata: {
-        language,
-        type: currentBlock.type,
-        name: currentBlock.name,
-        startLine: currentBlock.startLine,
-        endLine: currentBlock.endLine!,
-        lineCount: currentBlock.endLine! - currentBlock.startLine + 1,
-      },
+  // If there are no functions/classes or some code outside of functions,
+  // add the remaining code as separate chunks in blocks of suitable size
+  if (chunks.length === 0 || chunks.some((c) => c.metadata.lineCount < lines.length)) {
+    // Create chunks of approximately 50-100 lines each
+    const BLOCK_SIZE = 100;
+    let currentBlock: string[] = [];
+    let blockStart = 0;
+
+    // Skip lines that are already in chunks
+    const chunkedLines = new Set<number>();
+    chunks.forEach((chunk) => {
+      for (
+        let line = chunk.metadata.startLine - 1;
+        line < chunk.metadata.endLine;
+        line++
+      ) {
+        chunkedLines.add(line);
+      }
     });
+
+    // Create blocks for unchunked lines
+    for (let i = 0; i < lines.length; i++) {
+      if (!chunkedLines.has(i)) {
+        if (currentBlock.length === 0) {
+          blockStart = i;
+        }
+        currentBlock.push(lines[i]);
+
+        // When we reach the desired block size or the end of the file,
+        // create a chunk for this block
+        if (
+          currentBlock.length >= BLOCK_SIZE ||
+          i === lines.length - 1
+        ) {
+          chunks.push({
+            repository,
+            path,
+            content: currentBlock.join('\n'),
+            metadata: {
+              language,
+              type: 'block',
+              startLine: blockStart + 1,
+              endLine: i + 1,
+              lineCount: currentBlock.length,
+            },
+          });
+          currentBlock = [];
+        }
+      }
+    }
   }
 
-  // If no chunks were created, create a single chunk for the whole file
-  if (chunks.length === 0) {
+  // If the file is very small, just include the whole file as one chunk
+  if (chunks.length === 0 && lines.length <= BLOCK_SIZE) {
     chunks.push({
       repository,
       path,
@@ -378,762 +457,291 @@ function chunkCodeFile(
 }
 
 /**
- * Get all code files from a repository recursively
+ * Check if a file should be excluded based on its path
  */
-async function listAllCodeFiles(
-  repository: string,
-  path: string = ''
-): Promise<string[]> {
+function shouldExcludeFile(path: string): boolean {
+  // Skip excluded directories
+  if (EXCLUDED_DIRS.some((dir) => path.includes(`/${dir}/`))) {
+    return true;
+  }
+
+  // Skip files without a relevant extension
+  const extension = path.substring(path.lastIndexOf('.'));
+  if (!CODE_EXTENSIONS.includes(extension)) {
+    return true;
+  }
+
+  return false;
+}
+
+/**
+ * Recursively list files in a repository
+ */
+async function listFiles(octokit: Octokit, repository: string): Promise<string[]> {
   const [owner, repo] = repository.split('/');
   const files: string[] = [];
 
-  try {
-    // Get octokit client for this repository
-    const octokit = await getOctokitForRepo(repository);
+  // Get the default branch
+  const { data: repoData } = await octokit.repos.get({ owner, repo });
+  const branch = repoData.default_branch;
 
-    const { data } = await octokit.repos.getContent({
-      owner,
-      repo,
-      path,
-    });
+  // Get the root tree
+  const { data: commit } = await octokit.repos.getCommit({
+    owner,
+    repo,
+    ref: branch,
+  });
 
-    if (Array.isArray(data)) {
-      for (const item of data) {
-        // Skip excluded directories
-        if (item.type === 'dir' && !EXCLUDED_DIRS.includes(item.name)) {
-          const subFiles = await listAllCodeFiles(repository, item.path);
-          files.push(...subFiles);
-        } else if (item.type === 'file') {
-          const extension = item.name.substring(item.name.lastIndexOf('.'));
-          if (CODE_EXTENSIONS.includes(extension)) {
-            files.push(item.path);
-          }
-        }
-      }
+  // Store the commit SHA for later
+  const commitSha = commit.sha;
+
+  // Get the root tree
+  const { data: rootTree } = await octokit.git.getTree({
+    owner,
+    repo,
+    tree_sha: commit.commit.tree.sha,
+    recursive: '1',
+  });
+
+  // Filter for code files and exclude binary files
+  for (const item of rootTree.tree) {
+    if (item.type === 'blob' && item.path && !shouldExcludeFile(item.path)) {
+      files.push(item.path);
     }
-
-    return files;
-  } catch (error) {
-    console.error(`Error listing files in ${repository}:${path}:`, error);
-    return [];
   }
+
+  return files;
 }
 
 /**
- * Process a single file into chunks and store embeddings
+ * Processes a repository's code files and creates embeddings
  */
-async function processFile(
+async function processRepository(
+  octokit: Octokit,
   repository: string,
-  path: string,
-  checkpoint: EmbeddingCheckpoint,
-  stream: ReturnType<typeof createJsonStream>
-): Promise<boolean> {
-  try {
-    console.log(`Processing file ${repository}:${path}`);
+  stream: ReturnType<typeof createJsonStream>,
+  resume: boolean = false
+): Promise<void> {
+  const [owner, repo] = repository.split('/');
+  let checkpoint: EmbeddingCheckpoint | null = null;
 
-    // Check if file has already been processed - we're now handling this at the loop level
-    // so this is just a safety check
-    const isProcessed = await redis.sismember(
-      getProcessedFilesKey(repository),
-      path
-    );
-    if (isProcessed) {
-      console.log(`File ${path} is already marked as processed, skipping`);
-      stream.write({
-        type: 'log',
-        message: `Skipping already processed file: ${path}`,
-      });
-      return true;
-    }
-
-    // Update checkpoint with current file
-    checkpoint.currentPath = path;
-    await redis.set(getRepoKey(repository), JSON.stringify(checkpoint));
-
-    // Get octokit client for this repository
-    const octokit = await getOctokitForRepo(repository);
-
-    // Get file content
-    console.log(`Fetching content for ${repository}:${path}`);
-    const [owner, repo] = repository.split('/');
-
-    try {
-      const { data } = await octokit.repos.getContent({
-        owner,
-        repo,
-        path,
-      });
-
-      if ('content' in data && data.encoding === 'base64') {
-        const content = Buffer.from(data.content, 'base64').toString('utf-8');
-        console.log(`Fetched content for ${path}, ${content.length} bytes`);
-
-        // Skip empty files
-        if (!content.trim()) {
-          await redis.sadd(getProcessedFilesKey(repository), path);
-          stream.write({ type: 'log', message: `Skipped empty file: ${path}` });
-          return true;
+  // Check for existing checkpoint
+  if (resume) {
+    const checkpointStr = await redis.get(getRepoKey(repository));
+    if (checkpointStr) {
+      try {
+        checkpoint = JSON.parse(checkpointStr);
+        if (checkpoint.status === 'completed') {
+          stream.write({
+            status: 'success',
+            message: 'Repository already fully embedded',
+            repository,
+            progress: 100,
+            checkpoint,
+          });
+          return;
+        } else if (checkpoint.status === 'in_progress') {
+          stream.write({
+            status: 'info',
+            message: `Resuming from checkpoint (${checkpoint.processedFiles} files processed)`,
+            progress: checkpoint.progress,
+            checkpoint,
+          });
         }
-
-        // Split file into chunks
-        const chunks = chunkCodeFile(repository, path, content);
-        console.log(`Split ${path} into ${chunks.length} chunks`);
-        stream.write({
-          type: 'log',
-          message: `Processing ${path}: Split into ${chunks.length} semantic chunks`,
-        });
-
-        // Create embeddings for chunks
-        if (chunks.length > 0) {
-          // Process in batches to avoid token limits (16 chunks at a time)
-          const BATCH_SIZE = 16;
-          for (let i = 0; i < chunks.length; i += BATCH_SIZE) {
-            const batch = chunks.slice(i, i + BATCH_SIZE);
-            const chunksWithEmbeddings = await createEmbeddings(batch);
-
-            // Store chunks in Redis
-            for (const chunk of chunksWithEmbeddings) {
-              await redis.lpush(getChunkKey(repository), JSON.stringify(chunk));
-              console.log(
-                `Stored chunk for ${repository} - type: ${typeof chunk}, length: ${
-                  JSON.stringify(chunk).length
-                }`
-              );
-              if (i === 0) {
-                console.log(
-                  `Sample chunk stored: ${JSON.stringify(chunk).substring(
-                    0,
-                    200
-                  )}...`
-                );
-              }
-            }
-
-            stream.write({
-              type: 'progress',
-              message: `Embedded batch ${
-                Math.floor(i / BATCH_SIZE) + 1
-              }/${Math.ceil(chunks.length / BATCH_SIZE)} of ${path}`,
-            });
-          }
-        }
-
-        // Mark file as processed
-        await redis.sadd(getProcessedFilesKey(repository), path);
-        stream.write({
-          type: 'log',
-          message: `Completed processing file: ${path}`,
-        });
-
-        return true;
-      } else {
-        throw new Error(`Unexpected file data format for ${path}`);
+      } catch (error) {
+        console.error('Error parsing checkpoint:', error);
+        checkpoint = null;
       }
-    } catch (error) {
-      console.error(`Error processing file ${path}:`, error);
-      checkpoint.errors.push(`Error processing ${path}: ${error}`);
-      await redis.set(getRepoKey(repository), JSON.stringify(checkpoint));
-      stream.write({
-        type: 'error',
-        message: `Error processing ${path}: ${error}`,
-      });
-      return false;
     }
-  } catch (error) {
-    console.error(`Error processing file ${path}:`, error);
-    checkpoint.errors.push(`Global error: ${error}`);
-    await redis.set(getRepoKey(repository), JSON.stringify(checkpoint));
+  }
+
+  // Initialize checkpoint if needed
+  if (!checkpoint) {
+    checkpoint = {
+      repository,
+      status: 'in_progress',
+      startedAt: Date.now(),
+      lastProcessedAt: Date.now(),
+      processedFiles: 0,
+      errors: [],
+      progress: 0,
+    };
+  }
+
+  try {
+    // Get the list of files
     stream.write({
-      type: 'error',
-      message: `Failed to process file: ${error}`,
+      status: 'info',
+      message: 'Listing repository files...',
+      progress: checkpoint.progress,
     });
-    return false;
+
+    const files = await listFiles(octokit, repository);
+    checkpoint.totalFiles = files.length;
+
+    // Get already processed files from Redis
+    let processedFilesSet = new Set<string>();
+    if (resume && checkpoint.processedFiles > 0) {
+      const processedFiles = await redis.smembers(
+        getProcessedFilesKey(repository)
+      );
+      processedFilesSet = new Set(processedFiles);
+      stream.write({
+        status: 'info',
+        message: `Found ${processedFilesSet.size} previously processed files`,
+        progress: checkpoint.progress,
+      });
+    }
+
+    // Calculate progress increment per file
+    const progressIncrement = 100 / files.length;
+
+    // Process each file
+    for (const filePath of files) {
+      // Skip already processed files when resuming
+      if (processedFilesSet.has(filePath)) {
+        continue;
+      }
+
+      checkpoint.currentPath = filePath;
+      stream.write({
+        status: 'info',
+        message: `Processing ${filePath}`,
+        progress: checkpoint.progress,
+        currentFile: filePath,
+      });
+
+      try {
+        // Get file content
+        const { data } = await octokit.repos.getContent({
+          owner,
+          repo,
+          path: filePath,
+        });
+
+        if ('content' in data && 'encoding' in data) {
+          // Decode base64 content
+          const content = Buffer.from(data.content, 'base64').toString('utf-8');
+
+          // Skip empty files
+          if (!content.trim()) {
+            continue;
+          }
+
+          // Chunk and create embeddings
+          const chunks = chunkCodeFile(repository, filePath, content);
+          const embeddedChunks = await createEmbeddings(chunks);
+
+          // Store embeddings in Redis
+          for (const chunk of embeddedChunks) {
+            if (chunk.embedding) {
+              // Store the chunk with embedding
+              await redis.zadd(
+                getChunkKey(repository),
+                { score: 1, member: JSON.stringify(chunk) }
+              );
+            }
+          }
+
+          // Mark file as processed
+          await redis.sadd(getProcessedFilesKey(repository), filePath);
+          checkpoint.processedFiles++;
+          checkpoint.progress += progressIncrement;
+          checkpoint.lastProcessedAt = Date.now();
+        }
+      } catch (error) {
+        // Log error but continue with next file
+        console.error(`Error processing ${filePath}:`, error);
+        checkpoint.errors.push(
+          `Error processing ${filePath}: ${(error as Error).message}`
+        );
+
+        stream.write({
+          status: 'warning',
+          message: `Error processing ${filePath}: ${(error as Error).message}`,
+          progress: checkpoint.progress,
+        });
+      }
+
+      // Update checkpoint
+      await redis.set(
+        getRepoKey(repository),
+        JSON.stringify(checkpoint),
+        {
+          ex: 60 * 60 * 24 * 7, // 1 week expiry
+        }
+      );
+    }
+
+    // Mark as completed
+    checkpoint.status = 'completed';
+    checkpoint.progress = 100;
+    checkpoint.lastProcessedAt = Date.now();
+    await redis.set(getRepoKey(repository), JSON.stringify(checkpoint), {
+      ex: 60 * 60 * 24 * 30, // 30 days expiry for completed embeddings
+    });
+
+    stream.write({
+      status: 'success',
+      message: `Completed embedding ${checkpoint.processedFiles} files`,
+      progress: 100,
+      checkpoint,
+    });
+  } catch (error) {
+    // Handle errors during processing
+    console.error('Error processing repository:', error);
+    checkpoint.status = 'failed';
+    checkpoint.errors.push(`Repository error: ${(error as Error).message}`);
+    await redis.set(getRepoKey(repository), JSON.stringify(checkpoint), {
+      ex: 60 * 60 * 24 * 7, // 1 week expiry
+    });
+
+    stream.write({
+      status: 'error',
+      message: `Failed to process repository: ${(error as Error).message}`,
+      progress: checkpoint.progress,
+      checkpoint,
+    });
   }
 }
 
 /**
- * Main handler for the embedding endpoint
+ * API endpoint to start repository embedding
  */
-async function handler(req: VercelRequest, res: VercelResponse) {
-  // Check if this is a delete request
-  if (req.method === 'DELETE') {
-    const { repository } = req.query;
-
-    if (!repository || typeof repository !== 'string') {
-      return res
-        .status(400)
-        .json({ error: 'Missing or invalid repository parameter' });
-    }
-
-    // Sanitize repository name - trim whitespace and remove tabs/newlines
-    const sanitizedRepo = repository.trim().replace(/[\t\n\r]/g, '');
-
-    try {
-      console.log(`Deleting repository ${sanitizedRepo} from Redis`);
-
-      // List all processed files to get keys to delete
-      const processedFiles = await redis.smembers(
-        getProcessedFilesKey(sanitizedRepo)
-      );
-
-      // Delete all file-specific keys
-      for (const filePath of processedFiles) {
-        await redis.del(getFileKey(sanitizedRepo, filePath));
-      }
-
-      // Delete all repository-level keys
-      await redis.del(getRepoKey(sanitizedRepo));
-      await redis.del(getChunkKey(sanitizedRepo));
-      await redis.del(getProcessedFilesKey(sanitizedRepo));
-
-      return res.status(200).json({
-        success: true,
-        message: `Repository ${sanitizedRepo} has been completely deleted from the embedding system`,
-      });
-    } catch (error) {
-      console.error(`Error deleting repository ${sanitizedRepo}:`, error);
-      return res.status(500).json({
-        error: `Failed to delete repository: ${
-          error instanceof Error ? error.message : String(error)
-        }`,
-      });
-    }
-  }
-
-  // Original POST handler for embedding
+export default withInternalAccess(async function handler(
+  req: VercelRequest,
+  res: EnhancedResponse
+) {
+  // Only allow POST requests
   if (req.method !== 'POST') {
     return res.status(405).json({ error: 'Method not allowed' });
   }
 
-  const { repository: rawRepository, resume = false, mode = 'full' } = req.body;
-
-  if (!rawRepository || typeof rawRepository !== 'string') {
-    return res
-      .status(400)
-      .json({ error: 'Missing or invalid repository parameter' });
+  // Validate request body
+  if (!req.body || !req.body.repository) {
+    return res.status(400).json({ error: 'Repository name is required' });
   }
 
-  // Sanitize repository name - trim whitespace and remove tabs/newlines
-  const repository = rawRepository.trim().replace(/[\t\n\r]/g, '');
-  console.log(
-    `Sanitized repository name: '${rawRepository}' -> '${repository}'`
-  );
-
-  // Setup streaming response
-  const stream = createJsonStream(res as EnhancedResponse);
+  const { repository, resume = false } = req.body;
 
   try {
-    // Get latest commit SHA for the repository
-    const latestCommitSha = await getLatestCommitSha(repository);
-
-    // Check if there's an existing checkpoint
-    let checkpoint: EmbeddingCheckpoint;
-    const existingCheckpoint = await redis.get(getRepoKey(repository));
-    let filesToProcess: string[] = [];
-    let isDiffMode = mode === 'diff';
-
-    if (existingCheckpoint && (resume || isDiffMode)) {
-      console.log(
-        `Found existing checkpoint for ${repository}, type: ${typeof existingCheckpoint}`
-      );
-      console.log(`Resume: ${resume}, isDiffMode: ${isDiffMode}`);
-
-      // Handle string representation issue
-      if (existingCheckpoint === '[object Object]') {
-        console.error(
-          `Invalid repository status format for ${repository}: got '[object Object]' string`
-        );
-        stream.write({
-          type: 'error',
-          message: `Repository status data is corrupted. Starting fresh embedding.`,
-        });
-        // Create new checkpoint
-        checkpoint = {
-          repository,
-          status: 'in_progress',
-          startedAt: Date.now(),
-          lastProcessedAt: Date.now(),
-          processedFiles: 0,
-          errors: [],
-          progress: 0,
-          lastCommitSha: latestCommitSha,
-        };
-      } else {
-        try {
-          // Parse checkpoint based on type
-          if (typeof existingCheckpoint === 'object') {
-            checkpoint = existingCheckpoint as unknown as EmbeddingCheckpoint;
-            console.log(`Using existing checkpoint object for ${repository}`);
-          } else {
-            const checkpointStr = existingCheckpoint as string;
-            console.log(
-              `Parsing checkpoint string for ${repository}: ${checkpointStr.substring(
-                0,
-                100
-              )}...`
-            );
-            checkpoint = JSON.parse(checkpointStr);
-          }
-
-          console.log(
-            `Loaded checkpoint for ${repository}: status=${checkpoint.status}, progress=${checkpoint.progress}%, processedFiles=${checkpoint.processedFiles}`
-          );
-        } catch (error) {
-          console.error(`Error parsing checkpoint for ${repository}:`, error);
-          stream.write({
-            type: 'error',
-            message: `Error parsing checkpoint: ${error}. Starting fresh embedding.`,
-          });
-          // Create new checkpoint on error
-          checkpoint = {
-            repository,
-            status: 'in_progress',
-            startedAt: Date.now(),
-            lastProcessedAt: Date.now(),
-            processedFiles: 0,
-            errors: [],
-            progress: 0,
-            lastCommitSha: latestCommitSha,
-          };
-        }
-      }
-
-      // If doing a diff, check if we have a commit to compare against
-      if (
-        isDiffMode &&
-        checkpoint.status === 'completed' &&
-        checkpoint.lastCommitSha
-      ) {
-        stream.write({
-          type: 'diff',
-          message: `Performing diff-based update for ${repository} from commit ${checkpoint.lastCommitSha.substring(
-            0,
-            7
-          )} to ${latestCommitSha.substring(0, 7)}`,
-        });
-
-        // Get changed files between commits
-        filesToProcess = await getChangedFiles(
-          repository,
-          checkpoint.lastCommitSha,
-          latestCommitSha
-        );
-
-        if (filesToProcess.length === 0) {
-          stream.write({
-            type: 'complete',
-            message: `No code files changed since last embedding. Repository is up to date.`,
-            repository,
-            totalChunks: await redis.llen(getChunkKey(repository)),
-            totalFiles: 0,
-            skippedFiles: 0,
-            duration: 0,
-          });
-          stream.end();
-          return;
-        }
-
-        stream.write({
-          type: 'log',
-          message: `Found ${filesToProcess.length} changed files to process`,
-        });
-
-        // Remove old chunks for changed files
-        stream.write({
-          type: 'log',
-          message: `Removing old chunks for changed files...`,
-        });
-        await removeFileChunks(repository, filesToProcess);
-
-        // Create new checkpoint for diff update
-        checkpoint = {
-          repository,
-          status: 'in_progress',
-          startedAt: Date.now(),
-          lastProcessedAt: Date.now(),
-          processedFiles: 0,
-          errors: [],
-          progress: 0,
-          totalFiles: filesToProcess.length,
-          lastCommitSha: latestCommitSha, // Set new commit SHA
-        };
-      } else if (resume && checkpoint.status === 'in_progress') {
-        stream.write({
-          type: 'resume',
-          message: `Resuming embedding for ${repository} from ${checkpoint.processedFiles} files`,
-        });
-
-        // Force full mode when resuming
-        isDiffMode = false;
-      } else {
-        // Start fresh
-        isDiffMode = false;
-        checkpoint = {
-          repository,
-          status: 'in_progress',
-          startedAt: Date.now(),
-          lastProcessedAt: Date.now(),
-          processedFiles: 0,
-          errors: [],
-          progress: 0,
-          lastCommitSha: latestCommitSha,
-        };
-
-        stream.write({
-          type: 'log',
-          message: `Starting fresh embedding for ${repository}`,
-        });
-
-        // Reset processed files tracking for a fresh start
-        await redis.del(getProcessedFilesKey(repository));
-        if (!resume) {
-          await redis.del(getChunkKey(repository));
-        }
-      }
-    } else {
-      // Create new checkpoint - fresh start
-      checkpoint = {
-        repository,
-        status: 'in_progress',
-        startedAt: Date.now(),
-        lastProcessedAt: Date.now(),
-        processedFiles: 0,
-        errors: [],
-        progress: 0,
-        lastCommitSha: latestCommitSha,
-      };
-
-      // Reset processed files tracking
-      await redis.del(getProcessedFilesKey(repository));
-      if (!resume) {
-        await redis.del(getChunkKey(repository));
-      }
-
-      stream.write({
-        type: 'log',
-        message: `Starting fresh embedding for ${repository}`,
-      });
-
-      // Force full mode for fresh start
-      isDiffMode = false;
-    }
-
-    // Update checkpoint in Redis
-    await redis.set(getRepoKey(repository), JSON.stringify(checkpoint));
-
-    // If not in diff mode, get all files to process
-    if (!isDiffMode || filesToProcess.length === 0) {
-      stream.write({
-        type: 'log',
-        message: `Listing all code files in ${repository}...`,
-      });
-      filesToProcess = await listAllCodeFiles(repository);
-    }
-
-    checkpoint.totalFiles = filesToProcess.length;
-
-    // Update checkpoint with total files
-    await redis.set(getRepoKey(repository), JSON.stringify(checkpoint));
-
-    stream.write({
-      type: 'log',
-      message: `Found ${filesToProcess.length} code files to process in ${repository}`,
-    });
-
-    // Process each file
-    let processed = 0;
-    let skipped = 0;
-    if (resume && checkpoint.processedFiles > 0 && !isDiffMode) {
-      processed = checkpoint.processedFiles;
-      stream.write({
-        type: 'log',
-        message: `Resuming from checkpoint: Starting at file ${processed} of ${filesToProcess.length}`,
-      });
-    }
-
-    // Start processing from where we left off
-    const MAX_RUNTIME_MS = 750000; // 12.5 minutes max to allow for cleanup
-    const startTime = Date.now();
-
-    // Get list of already processed files to avoid dependency on the processed counter
-    const processedFilesSet = new Set(
-      await redis.smembers(getProcessedFilesKey(repository))
-    );
-    stream.write({
-      type: 'log',
-      message: `Found ${processedFilesSet.size} already processed files in the set`,
-    });
-
-    // Update the processed files count from the actual set
-    processed = processedFilesSet.size;
-
-    // Update progress to reflect actual processed files
-    let currentProgress = Math.floor((processed / filesToProcess.length) * 100);
-    stream.write({
-      type: 'progress',
-      progress: currentProgress,
-      processedFiles: processed,
-      totalFiles: filesToProcess.length,
-    });
-
-    for (let i = 0; i < filesToProcess.length; i++) {
-      // Check if we should process this file or skip (if resuming)
-      if (resume && !isDiffMode) {
-        // Skip if file is already in the processed set
-        if (processedFilesSet.has(filesToProcess[i])) {
-          skipped++;
-
-          // Log skipped files occasionally for debugging
-          if (skipped % 100 === 0 || skipped === 1) {
-            stream.write({
-              type: 'log',
-              message: `Skipped ${skipped} already processed files so far. Current: ${filesToProcess[i]}`,
-            });
-          }
-          continue;
-        }
-      }
-
-      // Check if we're approaching the Vercel function timeout
-      if (Date.now() - startTime > MAX_RUNTIME_MS) {
-        stream.write({
-          type: 'timeout',
-          message: `Function nearing timeout, checkpointing after processing ${i} of ${filesToProcess.length} files`,
-        });
-
-        // Update checkpoint for resuming later
-        checkpoint.lastProcessedAt = Date.now();
-        checkpoint.processedFiles = i;
-        checkpoint.progress = Math.floor((i / filesToProcess.length) * 100);
-        await redis.set(getRepoKey(repository), JSON.stringify(checkpoint));
-
-        // Return checkpoint info to client
-        stream.write({
-          type: 'checkpoint',
-          checkpoint: {
-            repository,
-            processedFiles: i,
-            totalFiles: filesToProcess.length,
-            progress: Math.floor((i / filesToProcess.length) * 100),
-            resumeUrl: `/api/embed-repo?repository=${repository}&resume=true`,
-          },
-        });
-
-        stream.end();
-        return;
-      }
-
-      // Process the file
-      const success = await processFile(
-        repository,
-        filesToProcess[i],
-        checkpoint,
-        stream
-      );
-
-      if (success) {
-        processed++;
-        checkpoint.processedFiles = processed;
-        checkpoint.progress = Math.floor(
-          (processed / filesToProcess.length) * 100
-        );
-
-        if (i % 10 === 0 || i === filesToProcess.length - 1) {
-          checkpoint.lastProcessedAt = Date.now();
-          await redis.set(getRepoKey(repository), JSON.stringify(checkpoint));
-
-          stream.write({
-            type: 'progress',
-            progress: checkpoint.progress,
-            processedFiles: processed,
-            totalFiles: filesToProcess.length,
-          });
-        }
-      }
-    }
-
-    // Finalize embedding process
-    checkpoint.status = 'completed';
-    checkpoint.lastProcessedAt = Date.now();
-    checkpoint.progress = 100;
-    checkpoint.lastCommitSha = latestCommitSha; // Store the commit SHA for future diff comparisons
-
-    // Before setting repository status in Redis, ensure it's properly serialized
-    const statusJson = JSON.stringify(checkpoint);
-    console.log(
-      `Setting repository status for ${repository}: ${statusJson.substring(
-        0,
-        100
-      )}...`
-    );
-
-    // Double check we're not storing [object Object] literal string
-    if (statusJson === '[object Object]') {
-      console.error(
-        `CRITICAL ERROR: Attempted to store '[object Object]' string instead of JSON for ${repository}`
-      );
-      stream.write({
-        type: 'error',
-        message: `Error storing repository status. Please contact support.`,
-      });
-    } else {
-      await redis.set(getRepoKey(repository), statusJson);
-
-      // Return final status
-      stream.write({
-        type: 'complete',
-        message: `Embedding ${
-          isDiffMode ? 'update' : 'process'
-        } completed for ${repository}. Processed ${processed} files.`,
-        repository,
-        totalChunks: await redis.llen(getChunkKey(repository)),
-        totalFiles: filesToProcess.length,
-        duration: Math.floor((Date.now() - checkpoint.startedAt) / 1000),
-        commitSha: latestCommitSha,
-      });
-    }
-
-    stream.end();
-  } catch (error) {
-    console.error(`Error embedding repository ${repository}:`, error);
-
-    // Update checkpoint with error
-    const checkpoint = {
-      repository,
-      status: 'failed',
-      startedAt: Date.now(),
-      lastProcessedAt: Date.now(),
-      processedFiles: 0,
-      errors: [`Global error: ${error}`],
-      progress: 0,
-    };
-
-    await redis.set(getRepoKey(repository), JSON.stringify(checkpoint));
-
-    stream.write({
-      type: 'error',
-      message: `Failed to embed repository: ${error}`,
-    });
-
-    stream.end();
-  }
-}
-
-// Export with internal access protection
-export default withInternalAccess(handler);
-
-/**
- * Get the latest commit SHA for a repository
- */
-async function getLatestCommitSha(repository: string): Promise<string> {
-  try {
-    const [owner, repo] = repository.split('/');
+    // Create Octokit client
     const octokit = await getOctokitForRepo(repository);
 
-    const { data } = await octokit.repos.getBranch({
-      owner,
-      repo,
-      branch: 'main', // Assuming main is the default branch
+    // Create JSON stream
+    const stream = createJsonStream(res);
+
+    // Process repository in the background
+    processRepository(octokit, repository, stream, resume).catch((error) => {
+      console.error('Error in background processing:', error);
+      stream.write({
+        status: 'error',
+        message: `Background processing error: ${error.message}`,
+      });
+      stream.end();
     });
-
-    return data.commit.sha;
   } catch (error) {
-    console.error(`Error getting latest commit for ${repository}:`, error);
-    throw error;
+    console.error('Error setting up embedding:', error);
+    return res.status(500).json({ error: `Setup error: ${(error as Error).message}` });
   }
-}
-
-/**
- * Get files changed between two commits
- */
-async function getChangedFiles(
-  repository: string,
-  baseCommit: string,
-  headCommit: string
-): Promise<string[]> {
-  try {
-    const [owner, repo] = repository.split('/');
-    const octokit = await getOctokitForRepo(repository);
-
-    // Get the comparison between the two commits
-    const { data } = await octokit.repos.compareCommits({
-      owner,
-      repo,
-      base: baseCommit,
-      head: headCommit,
-    });
-
-    // Extract all changed files
-    const changedFiles =
-      data.files
-        ?.filter((file) => {
-          // Check if it's a code file
-          const extension = file.filename.substring(
-            file.filename.lastIndexOf('.')
-          );
-          return (
-            CODE_EXTENSIONS.includes(extension) &&
-            // Don't include deleted files
-            file.status !== 'removed'
-          );
-        })
-        .map((file) => file.filename) || [];
-
-    return changedFiles;
-  } catch (error) {
-    console.error(`Error getting changed files for ${repository}:`, error);
-    throw error;
-  }
-}
-
-/**
- * Remove chunks for specific files from Redis
- */
-async function removeFileChunks(
-  repository: string,
-  filePaths: string[]
-): Promise<void> {
-  try {
-    // Get all chunks for the repository
-    const allChunks = await redis.lrange(getChunkKey(repository), 0, -1);
-
-    // For each chunk, check if it belongs to a file path we're updating
-    const chunksToKeep = [];
-
-    for (const chunk of allChunks) {
-      try {
-        const parsedChunk =
-          typeof chunk === 'string' ? JSON.parse(chunk) : chunk;
-
-        // If this chunk is not from a file we're updating, keep it
-        if (!filePaths.includes(parsedChunk.path)) {
-          chunksToKeep.push(chunk);
-        }
-      } catch (error) {
-        // If we can't parse the chunk, keep it to be safe
-        chunksToKeep.push(chunk);
-      }
-    }
-
-    // Clear all chunks and re-add the ones we want to keep
-    await redis.del(getChunkKey(repository));
-
-    // If there are chunks to keep, add them back
-    if (chunksToKeep.length > 0) {
-      // Add in batches to avoid request size limits
-      const BATCH_SIZE = 100;
-      for (let i = 0; i < chunksToKeep.length; i += BATCH_SIZE) {
-        const batch = chunksToKeep.slice(i, i + BATCH_SIZE);
-        await redis.lpush(getChunkKey(repository), ...batch);
-      }
-    }
-
-    // Remove these files from the processed files set
-    for (const path of filePaths) {
-      await redis.srem(getProcessedFilesKey(repository), path);
-    }
-  } catch (error) {
-    console.error(`Error removing file chunks for ${repository}:`, error);
-    throw error;
-  }
-}
+});
