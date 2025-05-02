@@ -161,7 +161,86 @@ async function getOctokitForRepo(repository: string): Promise<Octokit> {
 async function createEmbeddings(chunks: CodeChunk[]): Promise<CodeChunk[]> {
   if (chunks.length === 0) return [];
 
-  const texts = chunks.map((chunk) => chunk.content);
+  // Split very large chunks to avoid token limit errors
+  const maxTokenEstimate = 8000; // Set a conservative limit below the 8192 token model limit
+  const avgCharsPerToken = 4; // Rough estimate: ~4 characters per token
+  const maxCharsPerChunk = maxTokenEstimate * avgCharsPerToken;
+
+  let processableChunks: CodeChunk[] = [];
+
+  for (const chunk of chunks) {
+    if (chunk.content.length > maxCharsPerChunk) {
+      console.log(
+        `Splitting large chunk of ${chunk.content.length} chars for ${chunk.path}`
+      );
+
+      // Split content into smaller parts
+      const lines = chunk.content.split('\n');
+      let currentChunk = '';
+      let startLine = chunk.metadata.startLine;
+
+      for (let i = 0; i < lines.length; i++) {
+        const line = lines[i];
+
+        // If adding this line would exceed the limit, create a new chunk
+        if (
+          currentChunk.length + line.length + 1 > maxCharsPerChunk &&
+          currentChunk.length > 0
+        ) {
+          const endLine = startLine + currentChunk.split('\n').length - 1;
+
+          processableChunks.push({
+            ...chunk,
+            content: currentChunk,
+            metadata: {
+              ...chunk.metadata,
+              startLine: startLine,
+              endLine: endLine,
+              lineCount: endLine - startLine + 1,
+              name: `${chunk.metadata.name || ''} (part ${
+                processableChunks.length + 1
+              })`,
+            },
+          });
+
+          // Start a new chunk
+          startLine = endLine + 1;
+          currentChunk = '';
+        }
+
+        // Add the line to the current chunk
+        currentChunk += (currentChunk.length > 0 ? '\n' : '') + line;
+      }
+
+      // Add the last chunk if there's anything left
+      if (currentChunk.length > 0) {
+        const endLine = startLine + currentChunk.split('\n').length - 1;
+
+        processableChunks.push({
+          ...chunk,
+          content: currentChunk,
+          metadata: {
+            ...chunk.metadata,
+            startLine: startLine,
+            endLine: endLine,
+            lineCount: endLine - startLine + 1,
+            name: `${chunk.metadata.name || ''} (part ${
+              processableChunks.length + 1
+            })`,
+          },
+        });
+      }
+    } else {
+      // Chunk is small enough, add as is
+      processableChunks.push(chunk);
+    }
+  }
+
+  console.log(
+    `Split ${chunks.length} original chunks into ${processableChunks.length} processable chunks`
+  );
+
+  const texts = processableChunks.map((chunk) => chunk.content);
 
   try {
     const response = await fetch('https://api.openai.com/v1/embeddings', {
@@ -185,7 +264,7 @@ async function createEmbeddings(chunks: CodeChunk[]): Promise<CodeChunk[]> {
     const result = await response.json();
 
     // Add embeddings to chunks
-    return chunks.map((chunk, i) => ({
+    return processableChunks.map((chunk, i) => ({
       ...chunk,
       embedding: result.data[i].embedding,
     }));
