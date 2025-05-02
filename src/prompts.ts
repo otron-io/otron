@@ -248,6 +248,7 @@ ENHANCED SEARCH CAPABILITIES:
 
 IMPORTANT GUIDELINES:
 - Specify the repository (owner/repo format) for GitHub operations
+- When creating a branch, use the issue branch name as the branch name in order to automatically link the branch to the issue
 - SEARCH EFFICIENTLY:
   * First use getDirectoryStructure to understand the codebase organization
   * Use specific, targeted search terms (2-5 words max) rather than general concepts

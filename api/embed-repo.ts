@@ -286,6 +286,9 @@ function chunkCodeFile(
   const language = LANGUAGE_MAP[extension] || 'plaintext';
   const lines = content.split('\n');
 
+  // Maximum number of lines per chunk before splitting (to avoid token limits)
+  const MAX_LINES_PER_CHUNK = 300;
+
   // Simple chunking for now - we'll enhance this with AST parsing
   const chunks: CodeChunk[] = [];
 
@@ -296,6 +299,14 @@ function chunkCodeFile(
     /(?:public|private|protected)?\s*(?:static)?\s*(?:async)?\s*(?:function)?\s*(\w+)\s*\(/g;
   const classPattern = /(?:class|interface|trait|struct|enum)\s+(\w+)/g;
 
+  // For very large files, use simpler chunking approach
+  if (lines.length > 3000) {
+    console.log(
+      `Very large file (${lines.length} lines), using simplified chunking for ${path}`
+    );
+    return chunkLargeFile(repository, path, content, language);
+  }
+
   // Track blocks of code
   let currentBlock: {
     type: 'function' | 'class' | 'method' | 'block' | 'file';
@@ -305,16 +316,33 @@ function chunkCodeFile(
     content: string[];
   } | null = null;
 
-  // Process line by line
-  let openBraces = 0;
-  let hasStartedBlock = false;
-
   // Handle files without clear functions/classes as a single chunk
   if (
     !functionPattern.test(content) &&
     !classPattern.test(content) &&
     !methodPattern.test(content)
   ) {
+    // For large files without clear structure, split by MAX_LINES_PER_CHUNK
+    if (lines.length > MAX_LINES_PER_CHUNK) {
+      for (let i = 0; i < lines.length; i += MAX_LINES_PER_CHUNK) {
+        const endLine = Math.min(i + MAX_LINES_PER_CHUNK, lines.length);
+        chunks.push({
+          repository,
+          path,
+          content: lines.slice(i, endLine).join('\n'),
+          metadata: {
+            language,
+            type: 'file',
+            name: `Part ${Math.floor(i / MAX_LINES_PER_CHUNK) + 1}`,
+            startLine: i + 1,
+            endLine: endLine,
+            lineCount: endLine - i,
+          },
+        });
+      }
+      return chunks;
+    }
+
     return [
       {
         repository,
@@ -335,6 +363,10 @@ function chunkCodeFile(
   functionPattern.lastIndex = 0;
   classPattern.lastIndex = 0;
   methodPattern.lastIndex = 0;
+
+  // Process line by line with context
+  let openBraces = 0;
+  let hasStartedBlock = false;
 
   // Process line by line with context
   for (let i = 0; i < lines.length; i++) {
@@ -393,6 +425,30 @@ function chunkCodeFile(
       openBraces +=
         (line.match(/{/g) || []).length - (line.match(/}/g) || []).length;
 
+      // Check if current block is getting too large, split if needed
+      if (currentBlock.content.length > MAX_LINES_PER_CHUNK && openBraces > 0) {
+        // This is a very large block, let's split it
+        const blockContent = currentBlock.content.join('\n');
+        const splitBlocks = splitLargeBlock(
+          repository,
+          path,
+          blockContent,
+          language,
+          currentBlock.type,
+          currentBlock.name,
+          currentBlock.startLine
+        );
+
+        // Add split blocks to chunks
+        chunks.push(...splitBlocks);
+
+        // Reset current block
+        currentBlock = null;
+        hasStartedBlock = false;
+        openBraces = 0;
+        continue;
+      }
+
       // Check if the block is complete
       if (hasStartedBlock && openBraces <= 0) {
         // Save the current block
@@ -422,19 +478,35 @@ function chunkCodeFile(
   // Handle any remaining block
   if (currentBlock) {
     currentBlock.endLine = lines.length;
-    chunks.push({
-      repository,
-      path,
-      content: currentBlock.content.join('\n'),
-      metadata: {
+
+    // If the block is very large, split it
+    if (currentBlock.content.length > MAX_LINES_PER_CHUNK) {
+      const blockContent = currentBlock.content.join('\n');
+      const splitBlocks = splitLargeBlock(
+        repository,
+        path,
+        blockContent,
         language,
-        type: currentBlock.type,
-        name: currentBlock.name,
-        startLine: currentBlock.startLine,
-        endLine: currentBlock.endLine!,
-        lineCount: currentBlock.endLine! - currentBlock.startLine + 1,
-      },
-    });
+        currentBlock.type,
+        currentBlock.name,
+        currentBlock.startLine
+      );
+      chunks.push(...splitBlocks);
+    } else {
+      chunks.push({
+        repository,
+        path,
+        content: currentBlock.content.join('\n'),
+        metadata: {
+          language,
+          type: currentBlock.type,
+          name: currentBlock.name,
+          startLine: currentBlock.startLine,
+          endLine: currentBlock.endLine!,
+          lineCount: currentBlock.endLine! - currentBlock.startLine + 1,
+        },
+      });
+    }
   }
 
   // If no chunks were created, create a single chunk for the whole file
@@ -449,6 +521,142 @@ function chunkCodeFile(
         startLine: 1,
         endLine: lines.length,
         lineCount: lines.length,
+      },
+    });
+  }
+
+  return chunks;
+}
+
+/**
+ * Split a large block of code into smaller chunks
+ */
+function splitLargeBlock(
+  repository: string,
+  path: string,
+  content: string,
+  language: string,
+  type: 'function' | 'class' | 'method' | 'block' | 'file',
+  name?: string,
+  startLineNumber: number = 1
+): CodeChunk[] {
+  const MAX_LINES_PER_CHUNK = 300;
+  const chunks: CodeChunk[] = [];
+  const lines = content.split('\n');
+
+  // Look for logical places to split (empty lines, comment blocks)
+  const splitPoints: number[] = [];
+
+  // Add potential split points at empty lines or comment starts
+  for (let i = 50; i < lines.length - 50; i++) {
+    const line = lines[i].trim();
+    // Prefer empty lines or comment blocks for natural splits
+    if (
+      line === '' ||
+      line.startsWith('//') ||
+      line.startsWith('/*') ||
+      line.startsWith('*')
+    ) {
+      splitPoints.push(i);
+    }
+  }
+
+  // If we couldn't find natural split points, use fixed-size chunks
+  if (splitPoints.length === 0 || lines.length > MAX_LINES_PER_CHUNK * 3) {
+    for (let i = 0; i < lines.length; i += MAX_LINES_PER_CHUNK) {
+      const endLine = Math.min(i + MAX_LINES_PER_CHUNK, lines.length);
+      chunks.push({
+        repository,
+        path,
+        content: lines.slice(i, endLine).join('\n'),
+        metadata: {
+          language,
+          type: type,
+          name: `${name || type} (part ${
+            Math.floor(i / MAX_LINES_PER_CHUNK) + 1
+          })`,
+          startLine: startLineNumber + i,
+          endLine: startLineNumber + endLine - 1,
+          lineCount: endLine - i,
+        },
+      });
+    }
+    return chunks;
+  }
+
+  // Use natural split points to create chunks
+  let currentStart = 0;
+  let currentSplitIndex = 0;
+
+  while (currentStart < lines.length) {
+    // Find the next split point that gives us a reasonable chunk size
+    while (
+      currentSplitIndex < splitPoints.length &&
+      splitPoints[currentSplitIndex] - currentStart < MAX_LINES_PER_CHUNK / 2
+    ) {
+      currentSplitIndex++;
+    }
+
+    let endLine;
+    if (currentSplitIndex < splitPoints.length) {
+      endLine = splitPoints[currentSplitIndex];
+      currentSplitIndex++;
+    } else {
+      endLine = lines.length;
+    }
+
+    // If this chunk would be too large, force a split at MAX_LINES_PER_CHUNK
+    if (endLine - currentStart > MAX_LINES_PER_CHUNK) {
+      endLine = currentStart + MAX_LINES_PER_CHUNK;
+    }
+
+    chunks.push({
+      repository,
+      path,
+      content: lines.slice(currentStart, endLine).join('\n'),
+      metadata: {
+        language,
+        type: type,
+        name: `${name || type} (part ${chunks.length + 1})`,
+        startLine: startLineNumber + currentStart,
+        endLine: startLineNumber + endLine - 1,
+        lineCount: endLine - currentStart,
+      },
+    });
+
+    currentStart = endLine;
+  }
+
+  return chunks;
+}
+
+/**
+ * Simple chunking for very large files
+ */
+function chunkLargeFile(
+  repository: string,
+  path: string,
+  content: string,
+  language: string
+): CodeChunk[] {
+  const MAX_LINES_PER_CHUNK = 300;
+  const chunks: CodeChunk[] = [];
+  const lines = content.split('\n');
+
+  // For very large files, use a simplified chunking approach
+  for (let i = 0; i < lines.length; i += MAX_LINES_PER_CHUNK) {
+    const endLine = Math.min(i + MAX_LINES_PER_CHUNK, lines.length);
+    chunks.push({
+      repository,
+      path,
+      content: lines.slice(i, endLine).join('\n'),
+      metadata: {
+        language,
+        type: 'file',
+        name: `Part ${Math.floor(i / MAX_LINES_PER_CHUNK) + 1}`,
+        startLine: i + 1,
+        endLine: endLine,
+        lineCount: endLine - i,
       },
     });
   }
@@ -545,7 +753,21 @@ async function processFile(
 
       if ('content' in data && data.encoding === 'base64') {
         const content = Buffer.from(data.content, 'base64').toString('utf-8');
-        console.log(`Fetched content for ${path}, ${content.length} bytes`);
+        const contentSizeKb = Math.round(content.length / 1024);
+        console.log(
+          `Fetched content for ${path}, ${contentSizeKb}KB (${content.length} bytes)`
+        );
+
+        // File size warning for extremely large files
+        if (contentSizeKb > 500) {
+          console.warn(
+            `Warning: Very large file detected (${contentSizeKb}KB): ${path}`
+          );
+          stream.write({
+            type: 'log',
+            message: `Processing large file (${contentSizeKb}KB): ${path} - this may take longer than usual`,
+          });
+        }
 
         // Skip empty files
         if (!content.trim()) {
@@ -564,8 +786,20 @@ async function processFile(
 
         // Create embeddings for chunks
         if (chunks.length > 0) {
-          // Process in batches to avoid token limits (16 chunks at a time)
-          const BATCH_SIZE = 16;
+          // Log detailed chunk information for debugging large files
+          if (contentSizeKb > 500) {
+            console.log(`Chunk details for large file ${path}:`);
+            chunks.forEach((chunk, idx) => {
+              console.log(
+                `  Chunk #${idx + 1}: type=${chunk.metadata.type}, lines=${
+                  chunk.metadata.lineCount
+                }, size=${chunk.content.length} bytes`
+              );
+            });
+          }
+
+          // Process in batches to avoid token limits (reduced from 16 to 8 chunks at a time)
+          const BATCH_SIZE = 8;
           for (let i = 0; i < chunks.length; i += BATCH_SIZE) {
             const batch = chunks.slice(i, i + BATCH_SIZE);
             const chunksWithEmbeddings = await createEmbeddings(batch);
