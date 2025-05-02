@@ -15,7 +15,7 @@ interface IssueContext {
 }
 
 /**
- * Builds the main LinearGPT system prompt used when processing notifications
+ * Builds the main Otron system prompt used when processing notifications
  */
 export function buildLinearGptSystemPrompt(context: IssueContext): string {
   const {

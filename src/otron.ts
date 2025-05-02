@@ -31,7 +31,7 @@ interface NotificationContext {
   appUserId?: string;
 }
 
-export class LinearGPT {
+export class Otron {
   private allowedRepositories: string[] = [];
   private localRepoManager: LocalRepositoryManager;
 

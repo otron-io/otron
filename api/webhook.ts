@@ -116,9 +116,9 @@ async function handleAutonomously(
       console.error('Failed to add processing reaction:', e);
     }
 
-    // Get the LinearGPT service and let it handle everything
-    const { LinearGPT } = await import('../src/otron.js');
-    const gpt = new LinearGPT(linearClient);
+    // Get the Otron service and let it handle everything
+    const { Otron } = await import('../src/otron.js');
+    const gpt = new Otron(linearClient);
 
     // Let the model directly handle the notification
     await gpt.processNotification({
