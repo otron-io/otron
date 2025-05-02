@@ -86,4 +86,23 @@ export class LinearService {
       this.organizationId = organization.id;
     }
   }
+
+  /**
+   * Fetch a specific issue by ID
+   * @param issueId The ID of the issue to fetch
+   * @returns The issue data or null if not found
+   */
+  public async getIssue(issueId: string) {
+    if (!this.client) {
+      throw new Error("Linear client not initialized");
+    }
+    
+    try {
+      const issue = await this.client.issue(issueId);
+      return issue;
+    } catch (error) {
+      console.error(`Error fetching issue ${issueId}:`, error);
+      return null;
+    }
+  }
 }
