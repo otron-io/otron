@@ -117,7 +117,7 @@ async function handleAutonomously(
     }
 
     // Get the LinearGPT service and let it handle everything
-    const { LinearGPT } = await import('../src/linear-gpt.js');
+    const { LinearGPT } = await import('../src/otron.js');
     const gpt = new LinearGPT(linearClient);
 
     // Let the model directly handle the notification
