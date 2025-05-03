@@ -31,8 +31,8 @@ async function handler(req: VercelRequest, res: VercelResponse) {
     let linearConnected = false;
 
     try {
-      // First try to get token from Redis
-      const linearToken = await redis.get('linear:access_token');
+      // First try to get token from Redis - using the keys defined in callback.ts
+      const linearToken = await redis.get('linearAccessToken');
 
       if (linearToken && typeof linearToken === 'string') {
         linearClient = new LinearClient({
