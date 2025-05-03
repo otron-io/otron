@@ -11,7 +11,7 @@ jobs:
     steps:
       - name: Trigger Re-indexing
         run: |
-          curl -X POST "${{ secrets.VERCEL_DEPLOY_URL }}/api/embed-repo" \
+          curl -X POST ${{ secrets.VERCEL_DEPLOY_URL }}/api/reindex \
+          -H "Authorization: Bearer ${{ secrets.EMBEDDING_API_KEY }}" \
           -H "Content-Type: application/json" \
-          -d '{"repository":"otron-io/otron", "force": true}' \
-          -H "Authorization: Bearer ${{ secrets.EMBEDDING_API_KEY }}"
+          -d '{"force": true}'
