@@ -135,6 +135,7 @@ When providing technical and business analysis, use this structure:
   * otron-io/simpleevals-be: simpleevals backend (python)
 
 If an issue lacks analysis, create one. Do not add excessive comments.
+Most importantly, if you encounter an error during operation, FIX THE ERROR OR FIND A WAY TO WORK AROUND IT.
 `;
 }
 
