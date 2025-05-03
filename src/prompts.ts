@@ -188,6 +188,7 @@ GITHUB TOOLS:
 - Create pull request:
   * Submit your changes for review
   * Links automatically to the Linear issue if you use the issue branch name
+  * If the branch already exists, use a different branch name and we will link it to the issue later manually
 
 MEMORY SYSTEM (automatically leveraged):
 - Conversation History: Previous interactions are stored and included
