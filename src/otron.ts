@@ -542,7 +542,8 @@ export class Otron {
         },
         {
           name: 'getFileContent',
-          description: 'Get the content of a specific file from a repository',
+          description:
+            'Get the content of a specific file from a repository, with optional line range',
           input_schema: {
             type: 'object',
             properties: {
@@ -554,6 +555,16 @@ export class Otron {
               path: {
                 type: 'string',
                 description: 'Path to the file within the repository',
+              },
+              startLine: {
+                type: 'integer',
+                description:
+                  'Starting line number to retrieve (1-based, defaults to 1)',
+              },
+              maxLines: {
+                type: 'integer',
+                description:
+                  'Maximum number of lines to retrieve (max 200, defaults to 200)',
               },
             },
             required: ['repository', 'path'],
@@ -1120,16 +1131,11 @@ export class Otron {
               } else if (toolName === 'getFileContent') {
                 const content = await this.localRepoManager.getFileContent(
                   toolInput.path,
-                  toolInput.repository
+                  toolInput.repository,
+                  toolInput.startLine || 1,
+                  toolInput.maxLines || 200
                 );
-                toolResponse = `Retrieved content for ${toolInput.path} in ${
-                  toolInput.repository
-                }:\n${
-                  content.length > 5000
-                    ? content.substring(0, 5000) +
-                      '\n... (content truncated due to size)'
-                    : content
-                }`;
+                toolResponse = `Retrieved content for ${toolInput.path} in ${toolInput.repository}:\n${content}`;
                 toolSuccess = true;
               } else if (toolName === 'updateIssueStatus') {
                 await this.updateIssueStatus(

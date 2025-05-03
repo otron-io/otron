@@ -194,7 +194,9 @@ export class LocalRepositoryManager {
   private async getFileContentWithTimeout(
     path: string,
     repository: string,
-    timeoutMs: number
+    timeoutMs: number,
+    startLine: number = 1,
+    maxLines: number = 200
   ): Promise<string> {
     const timeoutPromise = new Promise<string>((_, reject) => {
       setTimeout(() => {
@@ -205,7 +207,7 @@ export class LocalRepositoryManager {
     try {
       // Race between content retrieval and timeout
       return await Promise.race([
-        this.getFileContent(path, repository),
+        this.getFileContent(path, repository, startLine, maxLines),
         timeoutPromise,
       ]);
     } catch (error) {
@@ -215,19 +217,43 @@ export class LocalRepositoryManager {
   }
 
   /**
-   * Get the content of a file from GitHub
+   * Get the content of a file from GitHub, optionally limited to a range of lines
    */
-  async getFileContent(path: string, repository: string): Promise<string> {
+  async getFileContent(
+    path: string,
+    repository: string,
+    startLine: number = 1,
+    maxLines: number = 200
+  ): Promise<string> {
     try {
       // Check if allowed repository
       await this.verifyRepoAccess(repository);
 
-      // Check cache
+      // Validate line ranges
+      if (startLine < 1) {
+        startLine = 1; // Ensure startLine is at least 1
+      }
+      if (maxLines > 200) {
+        maxLines = 200; // Cap the maximum lines to 200
+      }
+
+      // Check cache for full file content
       const cacheKey = `${repository}:${path}`;
       const cached = this.fileCache.get(cacheKey);
+
+      // If we have a cached version and it's still valid, use it
       if (cached && Date.now() - cached.timestamp < this.CACHE_TTL.FILE) {
         console.log(`Using cached content for ${path} in ${repository}`);
-        return cached.content;
+        const allLines = cached.content.split('\n');
+        const totalLines = allLines.length;
+
+        // Extract the requested line range
+        const endLine = Math.min(startLine + maxLines - 1, totalLines);
+        const requestedLines = allLines.slice(startLine - 1, endLine);
+
+        // Return the requested lines with metadata
+        const lineInfo = `// Lines ${startLine}-${endLine} of ${totalLines}\n`;
+        return lineInfo + requestedLines.join('\n');
       }
 
       // Fetch file content
@@ -248,13 +274,23 @@ export class LocalRepositoryManager {
       // Decode base64 content
       const content = Buffer.from(data.content, 'base64').toString('utf-8');
 
-      // Cache the content
+      // Cache the full content
       this.fileCache.set(cacheKey, {
         content,
         timestamp: Date.now(),
       });
 
-      return content;
+      // Split into lines and extract the requested range
+      const allLines = content.split('\n');
+      const totalLines = allLines.length;
+      const endLine = Math.min(startLine + maxLines - 1, totalLines);
+
+      // Extract just the requested lines
+      const requestedLines = allLines.slice(startLine - 1, endLine);
+
+      // Return the requested lines with metadata
+      const lineInfo = `// Lines ${startLine}-${endLine} of ${totalLines}\n`;
+      return lineInfo + requestedLines.join('\n');
     } catch (error: any) {
       console.error(
         `Error getting file content for ${path} from ${repository}:`,
