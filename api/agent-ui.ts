@@ -354,8 +354,39 @@ async function handler(req: VercelRequest, res: VercelResponse) {
             actionsList.className = 'space-y-2 mt-3';
             
             const actionsTitle = document.createElement('div');
-            actionsTitle.className = 'text-sm font-medium text-gray-700 mb-2';
-            actionsTitle.textContent = 'Recent Actions';
+            actionsTitle.className = 'text-sm font-medium text-gray-700 mb-2 flex justify-between items-center';
+            const titleText = document.createElement('span');
+            titleText.textContent = 'Recent Actions';
+            
+            // Add expand/collapse all button
+            const expandAllButton = document.createElement('button');
+            expandAllButton.className = 'text-xs bg-gray-200 hover:bg-gray-300 px-2 py-1 rounded text-gray-700';
+            expandAllButton.textContent = 'Expand All';
+            expandAllButton.addEventListener('click', function() {
+              // Get all content sections in this issue card
+              const issueCard = this.closest('.bg-gray-50');
+              const contentSections = issueCard.querySelectorAll('.action-content');
+              const icons = issueCard.querySelectorAll('.expand-icon');
+              
+              // Check if we should expand or collapse
+              const shouldExpand = this.textContent === 'Expand All';
+              
+              // Update all content sections
+              contentSections.forEach(section => {
+                section.classList.toggle('hidden', !shouldExpand);
+              });
+              
+              // Update all icons
+              icons.forEach(icon => {
+                icon.textContent = shouldExpand ? '▼' : '▶';
+              });
+              
+              // Update button text
+              this.textContent = shouldExpand ? 'Collapse All' : 'Expand All';
+            });
+            
+            actionsTitle.appendChild(titleText);
+            actionsTitle.appendChild(expandAllButton);
             actionsList.appendChild(actionsTitle);
             
             if (issue.recentActions && issue.recentActions.length > 0) {
@@ -363,38 +394,77 @@ async function handler(req: VercelRequest, res: VercelResponse) {
                 if (!action || !action.data) return;
                 
                 const actionItem = document.createElement('div');
-                actionItem.className = 'text-sm border-l-2 border-gray-300 pl-3';
+                actionItem.className = 'text-sm border-l-2 border-gray-300 pl-3 action-item';
                 
                 const actionTimestamp = new Date(action.timestamp).toLocaleTimeString();
                 const success = action.data.success ? 
                   '<span class="text-green-600">✓</span>' : 
                   '<span class="text-red-600">✗</span>';
                 
-                // Format the input data to be more readable
-                let inputDisplay = 'No input data';
-                if (action.data.input) {
-                  if (typeof action.data.input === 'object') {
-                    // Try to find meaningful representations
-                    if (action.data.input.issueId && action.data.tool === 'createComment') {
-                      inputDisplay = \`"\${action.data.input.comment?.substring(0, 80)}..."\`;
-                    } else if (action.data.input.repository && action.data.input.path) {
-                      inputDisplay = \`\${action.data.input.repository}:\${action.data.input.path}\`;
-                    } else {
-                      inputDisplay = JSON.stringify(action.data.input).substring(0, 100) + '...';
-                    }
-                  } else {
-                    inputDisplay = action.data.input.substring(0, 100) + '...';
+                // Create header with tool name, success indicator, and timestamp
+                const header = document.createElement('div');
+                header.className = 'flex justify-between items-center cursor-pointer hover:bg-gray-100 p-1 rounded';
+                header.onclick = function() {
+                  const content = this.nextElementSibling;
+                  content.classList.toggle('hidden');
+                  const expandIcon = this.querySelector('.expand-icon');
+                  if (expandIcon) {
+                    expandIcon.textContent = content.classList.contains('hidden') ? '▶' : '▼';
                   }
-                }
+                };
                 
-                actionItem.innerHTML = \`
-                  <div class="flex justify-between">
-                    <span class="font-medium">\${action.data.tool || 'Unknown tool'} \${success}</span>
-                    <span class="text-gray-500 text-xs">\${actionTimestamp}</span>
-                  </div>
-                  <div class="text-xs text-gray-600 truncate">\${inputDisplay}</div>
+                // Create header content
+                const headerLeft = document.createElement('div');
+                headerLeft.innerHTML = \`
+                  <span class="expand-icon mr-1">▶</span>
+                  <span class="font-medium">\${action.data.tool || 'Unknown tool'}</span> \${success}
                 \`;
                 
+                const headerRight = document.createElement('span');
+                headerRight.className = 'text-gray-500 text-xs';
+                headerRight.textContent = actionTimestamp;
+                
+                header.appendChild(headerLeft);
+                header.appendChild(headerRight);
+                
+                // Create expandable content section
+                const contentSection = document.createElement('div');
+                contentSection.className = 'mt-1 ml-3 hidden action-content';
+                
+                // Format the input data for better display
+                let inputDisplay = '';
+                if (action.data.input) {
+                  if (typeof action.data.input === 'object') {
+                    inputDisplay = \`<pre class="bg-gray-100 p-2 rounded text-xs overflow-x-auto whitespace-pre-wrap max-h-60 overflow-y-auto">\${JSON.stringify(action.data.input, null, 2)}</pre>\`;
+                  } else {
+                    inputDisplay = \`<pre class="bg-gray-100 p-2 rounded text-xs overflow-x-auto whitespace-pre-wrap max-h-60 overflow-y-auto">\${action.data.input}</pre>\`;
+                  }
+                } else {
+                  inputDisplay = '<div class="text-gray-500 italic">No input data</div>';
+                }
+                
+                // Format the response for better display
+                let responseDisplay = '';
+                if (action.data.response) {
+                  responseDisplay = \`<pre class="bg-gray-100 p-2 rounded text-xs overflow-x-auto whitespace-pre-wrap max-h-60 overflow-y-auto">\${action.data.response}</pre>\`;
+                } else {
+                  responseDisplay = '<div class="text-gray-500 italic">No response data</div>';
+                }
+                
+                contentSection.innerHTML = \`
+                  <div class="mb-2">
+                    <div class="font-medium text-xs mb-1">Input:</div>
+                    \${inputDisplay}
+                  </div>
+                  <div>
+                    <div class="font-medium text-xs mb-1">Response:</div>
+                    \${responseDisplay}
+                  </div>
+                \`;
+                
+                // Add header and content to the action item
+                actionItem.appendChild(header);
+                actionItem.appendChild(contentSection);
                 actionsList.appendChild(actionItem);
               });
             } else {
