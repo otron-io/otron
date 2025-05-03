@@ -128,12 +128,10 @@ export class MainAgent {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
+          'x-internal-token': env.INTERNAL_API_TOKEN,
         } as Record<string, string>,
         body: JSON.stringify(context),
       };
-
-      // Add the internal token the same way as the UIs do
-      options.headers['X-Internal-Token'] = env.INTERNAL_API_TOKEN;
 
       const response = await fetch(endpointUrl.toString(), options);
 
