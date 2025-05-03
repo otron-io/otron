@@ -133,324 +133,6 @@ export class LocalRepositoryManager {
   }
 
   /**
-   * Perform search with progressive fallback strategies instead of separate functions
-   */
-  private async performUnifiedSearch(
-    originalQuery: string,
-    queryTerms: string[],
-    repository: string,
-    options: {
-      contextAware: boolean;
-      semanticBoost: boolean;
-      fileFilter: string;
-      maxResults: number;
-    }
-  ): Promise<
-    Array<{ path: string; line: number; content: string; context?: string }>
-  > {
-    const [owner, repo] = repository.split('/');
-    const octokit = await this.getOctokitForRepo(repository);
-
-    // Prepare path and extension filters
-    let pathFilters = options.fileFilter ? ` ${options.fileFilter}` : '';
-    pathFilters += this.getRepositorySpecificFilters(repository, originalQuery);
-
-    console.log(
-      `Starting unified search for "${originalQuery}" in ${repository}`
-    );
-
-    // Track processed files to avoid duplicates across search attempts
-    const processedFiles = new Set<string>();
-    const results: Array<{
-      path: string;
-      line: number;
-      content: string;
-      context?: string;
-      score: number;
-    }> = [];
-
-    const timeoutDuration = 15000; // 15 seconds timeout
-
-    // Progressive search strategies
-    const searchStrategies = [
-      {
-        name: 'specific',
-        queryBuilder: () => {
-          // Build specific search with quoted code patterns
-          let query = `repo:${repository}${pathFilters}`;
-
-          // Sort by length to prioritize more specific terms
-          const sortedPatterns = [
-            ...queryTerms.filter((term) =>
-              /^[a-zA-Z][a-zA-Z0-9]*(?:[_][a-zA-Z0-9]+)+$|^[a-z][a-zA-Z0-9]*[A-Z]/.test(
-                term
-              )
-            ),
-          ].sort((a, b) => b.length - a.length);
-
-          // Quote only the top 2 most specific patterns
-          const patternsToQuote = sortedPatterns.slice(
-            0,
-            Math.min(2, sortedPatterns.length)
-          );
-          const patternsToAddUnquoted = sortedPatterns.slice(
-            Math.min(2, sortedPatterns.length)
-          );
-
-          // Add quoted patterns
-          for (const pattern of patternsToQuote) {
-            query += ` "${pattern}"`;
-          }
-
-          // Add unquoted patterns
-          if (patternsToAddUnquoted.length > 0) {
-            query += ` ${patternsToAddUnquoted.join(' ')}`;
-          }
-
-          // Add remaining terms
-          const remainingTerms = queryTerms.filter(
-            (term) => !sortedPatterns.includes(term)
-          );
-          if (remainingTerms.length > 0) {
-            query += ` ${remainingTerms.join(' ')}`;
-          }
-
-          return query;
-        },
-      },
-      {
-        name: 'relaxed',
-        queryBuilder: () => {
-          // Build a more relaxed query without quotes
-          let query = `repo:${repository}${pathFilters}`;
-
-          // Add all terms unquoted
-          if (queryTerms.length > 0) {
-            query += ` ${queryTerms.join(' ')}`;
-          }
-
-          return query;
-        },
-      },
-      {
-        name: 'simplified',
-        queryBuilder: () => {
-          // Use only top 3 most important terms
-          const priorityTerms = queryTerms.slice(0, 3);
-
-          let query = `repo:${repository}${pathFilters}`;
-
-          if (priorityTerms.length > 0) {
-            query += ` ${priorityTerms.join(' ')}`;
-          }
-
-          return query;
-        },
-      },
-      {
-        name: 'basic',
-        queryBuilder: () => {
-          // Most basic query possible - just the original query with no processing
-          return `repo:${repository}${pathFilters} ${originalQuery}`;
-        },
-      },
-    ];
-
-    // Try each search strategy until we get results
-    for (const strategy of searchStrategies) {
-      try {
-        const searchQuery = strategy.queryBuilder();
-        console.log(`Trying ${strategy.name} search: ${searchQuery}`);
-
-        // Set a timeout for the search request
-        const searchPromise = octokit.search.code({
-          q: searchQuery,
-          per_page: options.maxResults * 2,
-        });
-
-        // Add a timeout to prevent hanging
-        const timeoutPromise = new Promise((_, reject) => {
-          setTimeout(
-            () => reject(new Error(`Search timed out (${strategy.name})`)),
-            timeoutDuration
-          );
-        });
-
-        // Race between search and timeout
-        const response = (await Promise.race([
-          searchPromise,
-          timeoutPromise,
-        ])) as any;
-        const data = response.data;
-
-        // Check if we have valid results
-        if (!data?.items?.length) {
-          console.log(
-            `${strategy.name} search returned no results, trying next strategy`
-          );
-          continue; // Try next strategy
-        }
-
-        // Process each file found by this strategy
-        const filesToProcess = data.items.slice(0, options.maxResults * 2);
-        let foundResults = false;
-
-        for (const item of filesToProcess) {
-          // Skip if we've already processed this file
-          if (processedFiles.has(item.path)) continue;
-          processedFiles.add(item.path);
-
-          try {
-            // Get file content with timeout
-            const content = await this.getFileContentWithTimeout(
-              item.path,
-              repository,
-              5000
-            );
-
-            // Get context information if needed
-            let fileContext = '';
-            if (options.contextAware) {
-              fileContext =
-                strategy.name === 'basic'
-                  ? await this.getSimpleFileContext(item.path, content)
-                  : await this.getFileContext(item.path, content, repository);
-            }
-
-            // Find best matching lines
-            const matchResult = this.findBestMatches(
-              content,
-              queryTerms,
-              originalQuery
-            );
-
-            if (matchResult.matches.length > 0) {
-              // Add each match as a separate result
-              for (const match of matchResult.matches.slice(0, 3)) {
-                results.push({
-                  path: item.path,
-                  line: match.line,
-                  content: match.content,
-                  context: fileContext,
-                  score:
-                    match.score +
-                    (strategy.name === 'specific'
-                      ? 50
-                      : strategy.name === 'relaxed'
-                      ? 30
-                      : strategy.name === 'simplified'
-                      ? 10
-                      : 0),
-                });
-                foundResults = true;
-              }
-            } else {
-              // No exact match found, use first line or best guess
-              const lines = content.split('\n');
-              const matchingLineIndex = this.findMatchingLine(
-                lines,
-                originalQuery
-              );
-
-              if (matchingLineIndex !== -1) {
-                results.push({
-                  path: item.path,
-                  line: matchingLineIndex + 1,
-                  content: lines[matchingLineIndex].trim(),
-                  context: fileContext,
-                  score:
-                    strategy.name === 'specific'
-                      ? 25
-                      : strategy.name === 'relaxed'
-                      ? 15
-                      : strategy.name === 'simplified'
-                      ? 5
-                      : 0,
-                });
-                foundResults = true;
-              } else {
-                // Use first line as fallback
-                results.push({
-                  path: item.path,
-                  line: 1,
-                  content: lines[0]?.trim() || 'File matched search criteria',
-                  context: fileContext,
-                  score:
-                    strategy.name === 'specific'
-                      ? 10
-                      : strategy.name === 'relaxed'
-                      ? 5
-                      : strategy.name === 'simplified'
-                      ? 2
-                      : 0,
-                });
-                foundResults = true;
-              }
-            }
-          } catch (fileError) {
-            console.log(
-              `Error loading file content for ${item.path}:`,
-              fileError
-            );
-            // If we can't get content, still include the file
-            results.push({
-              path: item.path,
-              line: 1,
-              content: 'File matched search criteria',
-              score:
-                strategy.name === 'specific'
-                  ? 5
-                  : strategy.name === 'relaxed'
-                  ? 2
-                  : strategy.name === 'simplified'
-                  ? 1
-                  : 0,
-            });
-            foundResults = true;
-          }
-
-          // Break early if we found enough results
-          if (foundResults && results.length >= options.maxResults * 2) {
-            break;
-          }
-        }
-
-        // If we found results with this strategy, we can stop
-        if (foundResults) {
-          console.log(
-            `Found ${results.length} results using ${strategy.name} search strategy`
-          );
-          break;
-        }
-      } catch (error: any) {
-        // Log error and continue to next strategy
-        console.error(`Error in ${strategy.name} search:`, error.message);
-      }
-    }
-
-    // If we have no results after trying all strategies
-    if (results.length === 0) {
-      console.log('All search strategies failed to find results');
-      return [
-        {
-          path: 'search-error.txt',
-          line: 1,
-          content: `Couldn't find any relevant code for "${originalQuery}". Try with more specific terms or a different query.`,
-        },
-      ];
-    }
-
-    // Sort results by score and return top results
-    results.sort((a, b) => b.score - a.score);
-    return results.slice(0, options.maxResults).map((r) => ({
-      path: r.path,
-      line: r.line,
-      content: r.content,
-      context: r.context,
-    }));
-  }
-
-  /**
    * Search for code in a repository using GitHub search API
    * with effective timeouts and reliable results
    */
@@ -469,7 +151,7 @@ export class LocalRepositoryManager {
     try {
       await this.verifyRepoAccess(repository);
 
-      // First check if vector embeddings are available
+      // Check if vector embeddings are available
       const isEmbedded = await this.isRepositoryEmbedded(repository);
 
       if (isEmbedded) {
@@ -480,55 +162,17 @@ export class LocalRepositoryManager {
         });
       }
 
-      // Fall back to GitHub API search if no embeddings available
+      // Instead of falling back to GitHub API, return an informative message
       console.log(
-        `No embeddings available for ${repository}, using GitHub API`
+        `No embeddings available for ${repository}, returning informative message`
       );
-
-      // Original search logic follows
-      // Apply defaults for options
-      const searchOptions = {
-        contextAware: options.contextAware ?? true,
-        semanticBoost: options.semanticBoost ?? true,
-        fileFilter: options.fileFilter || '',
-        maxResults: options.maxResults || 5,
-      };
-
-      // Pre-process query to extract key terms
-      const queryTerms = this.extractSearchTerms(query);
-
-      // Check cache first - only if not using semantic boost
-      if (!searchOptions.semanticBoost) {
-        const cacheKey = `${repository}:${query}:${searchOptions.fileFilter}`;
-        const cached = this.searchCache.get(cacheKey);
-        if (cached && Date.now() - cached.timestamp < this.CACHE_TTL.SEARCH) {
-          console.log(
-            `Using cached search results for "${query}" in ${repository}`
-          );
-          return cached.results;
-        }
-      }
-
-      console.log(`Searching for "${query}" in ${repository}`);
-
-      // Use unified search instead of separate enhanced and fallback methods
-      const results = await this.performUnifiedSearch(
-        query,
-        queryTerms,
-        repository,
-        searchOptions
-      );
-
-      // Cache results if not semantic boost (semantic results shouldn't be cached)
-      if (!searchOptions.semanticBoost) {
-        const cacheKey = `${repository}:${query}:${searchOptions.fileFilter}`;
-        this.searchCache.set(cacheKey, {
-          results: results,
-          timestamp: Date.now(),
-        });
-      }
-
-      return results;
+      return [
+        {
+          path: 'embedding-required.txt',
+          line: 1,
+          content: `Repository ${repository} needs to be embedded before it can be searched. Please run the embedding process first.`,
+        },
+      ];
     } catch (error) {
       console.error(`Error searching for "${query}" in ${repository}:`, error);
       // Return empty results with a message
@@ -536,502 +180,37 @@ export class LocalRepositoryManager {
         {
           path: 'search-error.txt',
           line: 1,
-          content: `Search could not be completed. Try with more specific terms.`,
+          content: `Search could not be completed: ${
+            error instanceof Error ? error.message : String(error)
+          }`,
         },
       ];
     }
   }
 
   /**
-   * Extract meaningful search terms from a query
-   */
-  private extractSearchTerms(query: string): string[] {
-    // Remove common words and noise
-    const stopWords = [
-      'the',
-      'a',
-      'an',
-      'in',
-      'on',
-      'at',
-      'for',
-      'to',
-      'with',
-      'and',
-      'or',
-      'of',
-    ];
-
-    // Extract camelCase and snake_case terms
-    const codePatterns =
-      query.match(
-        /[a-zA-Z][a-zA-Z0-9]*(?:[_][a-zA-Z0-9]+)+|[a-z][a-zA-Z0-9]*/g
-      ) || [];
-
-    // Split remaining text into words - changed minimum length from 3 to 2 to capture more terms
-    const words = query
-      .toLowerCase()
-      .split(/\s+/)
-      .filter((word) => word.length > 2 && !stopWords.includes(word));
-
-    // Combine and deduplicate
-    return [...new Set([...codePatterns, ...words])];
-  }
-
-  /**
-   * Find best matches in file with context and scoring
-   */
-  private findBestMatches(
-    content: string,
-    queryTerms: string[],
-    originalQuery: string
-  ): {
-    matches: Array<{
-      line: number;
-      content: string;
-      context?: string;
-      score: number;
-    }>;
-  } {
-    const lines = content.split('\n');
-    const matches: Array<{
-      line: number;
-      content: string;
-      context?: string;
-      score: number;
-    }> = [];
-
-    // Look for functions, classes, and methods that might match
-    const functionMatches = this.identifyCodeBlocks(lines, queryTerms);
-
-    // Add function matches with higher scores
-    for (const match of functionMatches) {
-      matches.push({
-        line: match.startLine + 1,
-        content: lines[match.startLine].trim(),
-        context: match.blockType + ': ' + match.name,
-        score: 100 + match.score,
-      });
-    }
-
-    // Also check for direct line matches
-    for (let i = 0; i < lines.length; i++) {
-      const line = lines[i].toLowerCase();
-      let score = 0;
-
-      // Score exact matches of original query highest
-      if (line.includes(originalQuery.toLowerCase())) {
-        score += 50;
-      }
-
-      // Score each term match
-      for (const term of queryTerms) {
-        if (line.includes(term.toLowerCase())) {
-          // Award more points for code identifier matches
-          if (
-            line.includes(`"${term}"`) ||
-            line.includes(`'${term}'`) ||
-            line.includes(` ${term}(`) ||
-            line.includes(`.${term}`)
-          ) {
-            score += 10;
-          } else {
-            score += 5;
-          }
-        }
-      }
-
-      // Get surrounding context if good score
-      if (score >= 10) {
-        let contextLines = '';
-
-        // Add lines before for context
-        const startContextLine = Math.max(0, i - 2);
-        const endContextLine = Math.min(lines.length - 1, i + 2);
-
-        for (let j = startContextLine; j <= endContextLine; j++) {
-          if (j === i) {
-            continue; // Skip the matched line itself
-          }
-          contextLines += lines[j].trim() + '\n';
-        }
-
-        matches.push({
-          line: i + 1,
-          content: lines[i].trim(),
-          context: contextLines,
-          score: score,
-        });
-      }
-    }
-
-    // Sort by score, highest first
-    matches.sort((a, b) => b.score - a.score);
-
-    return { matches };
-  }
-
-  /**
-   * Identify code blocks (functions, classes, methods) in the file
-   */
-  private identifyCodeBlocks(
-    lines: string[],
-    queryTerms: string[]
-  ): Array<{
-    name: string;
-    blockType: string;
-    startLine: number;
-    endLine: number;
-    score: number;
-  }> {
-    const blocks: Array<{
-      name: string;
-      blockType: string;
-      startLine: number;
-      endLine: number;
-      score: number;
-    }> = [];
-
-    // Simple regex patterns for common code constructs
-    const patterns = [
-      // Function declarations - various languages
-      { regex: /\b(?:function|def|func)\s+(\w+)\s*\(/, type: 'function' },
-      // Class declarations
-      { regex: /\b(?:class)\s+(\w+)/, type: 'class' },
-      // Method declarations
-      {
-        regex:
-          /\b(?:public|private|protected)?\s*(?:static)?\s*(?:async)?\s+\w+\s+(\w+)\s*\(/,
-        type: 'method',
-      },
-      // JS/TS arrow functions with name
-      {
-        regex: /\bconst\s+(\w+)\s*=\s*(?:async)?\s*\(.*\)\s*=>/,
-        type: 'function',
-      },
-      // Swift/Kotlin function
-      { regex: /\bfunc\s+(\w+)\s*\(/, type: 'function' },
-    ];
-
-    for (let i = 0; i < lines.length; i++) {
-      const line = lines[i];
-
-      // Check each pattern
-      for (const pattern of patterns) {
-        const match = line.match(pattern.regex);
-        if (match && match[1]) {
-          const name = match[1];
-
-          // Estimate the end of the block (simple approach)
-          let blockEnd = i;
-          let openBraces = line.split('{').length - line.split('}').length;
-
-          // Only proceed if this might be a block start
-          if (openBraces > 0 || line.includes(':')) {
-            // Find matching end, scanning ahead
-            for (let j = i + 1; j < Math.min(lines.length, i + 100); j++) {
-              const braceBalance =
-                lines[j].split('{').length - lines[j].split('}').length;
-              openBraces += braceBalance;
-
-              if (openBraces <= 0) {
-                blockEnd = j;
-                break;
-              }
-            }
-
-            // Calculate score based on query term matches
-            let score = 0;
-
-            // Match function/class name directly
-            for (const term of queryTerms) {
-              // Direct match on name is a strong signal
-              if (name.toLowerCase().includes(term.toLowerCase())) {
-                score += 30;
-              }
-
-              // Also check content of the block for matches
-              if (blockEnd > i) {
-                for (let j = i; j <= blockEnd; j++) {
-                  if (lines[j].toLowerCase().includes(term.toLowerCase())) {
-                    score += 5;
-                  }
-                }
-              }
-            }
-
-            // Only add if this block is relevant
-            if (score > 0) {
-              blocks.push({
-                name,
-                blockType: pattern.type,
-                startLine: i,
-                endLine: blockEnd,
-                score,
-              });
-            }
-          }
-        }
-      }
-    }
-
-    return blocks;
-  }
-
-  /**
-   * Get repository-specific search optimizations
-   */
-  private getRepositorySpecificFilters(
-    repository: string,
-    query: string
-  ): string {
-    // Handle special cases for known repositories
-    if (repository.includes('service-supply')) {
-      // Focus on Python files for service-supply
-      let filters = ' extension:py';
-
-      // Add path filters for common query topics
-      if (
-        query.toLowerCase().includes('ship') ||
-        query.toLowerCase().includes('track') ||
-        query.toLowerCase().includes('order')
-      ) {
-        filters +=
-          ' path:supply/logistics path:supply/order_management path:supply/apis';
-      }
-      return filters;
-    }
-
-    if (repository.includes('service-frontend')) {
-      // For frontend repo, focus on TypeScript and relevant component files
-      let filters = ' extension:ts extension:tsx';
-
-      if (
-        query.toLowerCase().includes('component') ||
-        query.toLowerCase().includes('ui') ||
-        query.toLowerCase().includes('interface')
-      ) {
-        filters += ' path:src/components path:src/ui path:src/views';
-      }
-
-      return filters;
-    }
-
-    return '';
-  }
-
-  /**
-   * Get context information about a file for better search results
-   */
-  private async getFileContext(
-    path: string,
-    content: string,
-    repository: string
-  ): Promise<string> {
-    try {
-      // Check cache first
-      const cacheKey = `ctx:${repository}:${path}`;
-      const cached = this.contextCache.get(cacheKey);
-      if (cached && Date.now() - cached.timestamp < this.CACHE_TTL.CONTEXT) {
-        return this.formatFileContext(cached);
-      }
-
-      // Determine file type from extension
-      const extension = path.substring(path.lastIndexOf('.'));
-      const fileType = this.CODE_EXTENSIONS[extension] || 'unknown';
-
-      // Extract imports, functions, and classes based on file type
-      const imports: string[] = [];
-      const functions: string[] = [];
-      const classes: string[] = [];
-
-      const lines = content.split('\n');
-
-      if (
-        fileType === 'javascript' ||
-        fileType === 'typescript' ||
-        fileType === 'jsx' ||
-        fileType === 'tsx'
-      ) {
-        // Extract JS/TS imports
-        for (const line of lines) {
-          const importMatch = line.match(
-            /import\s+(?:{[^}]+}|\*\s+as\s+\w+|\w+)\s+from\s+['"]([^'"]+)['"]/
-          );
-          if (importMatch) {
-            imports.push(importMatch[1]);
-          }
-
-          // Extract function names (simplified)
-          const funcMatch = line.match(/\bfunction\s+(\w+)|const\s+(\w+)\s*=/);
-          if (funcMatch) {
-            functions.push(funcMatch[1] || funcMatch[2]);
-          }
-
-          // Extract class names
-          const classMatch = line.match(/\bclass\s+(\w+)/);
-          if (classMatch) {
-            classes.push(classMatch[1]);
-          }
-        }
-      } else if (fileType === 'python') {
-        // Extract Python imports
-        for (const line of lines) {
-          const importMatch = line.match(
-            /from\s+(\S+)\s+import|import\s+(\S+)/
-          );
-          if (importMatch) {
-            imports.push(importMatch[1] || importMatch[2]);
-          }
-
-          // Extract function definitions
-          const funcMatch = line.match(/def\s+(\w+)\s*\(/);
-          if (funcMatch) {
-            functions.push(funcMatch[1]);
-          }
-
-          // Extract class definitions
-          const classMatch = line.match(/class\s+(\w+)\s*\(?/);
-          if (classMatch) {
-            classes.push(classMatch[1]);
-          }
-        }
-      }
-
-      // Store in cache
-      const contextData = {
-        fileType,
-        imports,
-        functions,
-        classes,
-        timestamp: Date.now(),
-      };
-
-      this.contextCache.set(cacheKey, contextData);
-
-      return this.formatFileContext(contextData);
-    } catch (error) {
-      console.error(`Error getting file context for ${path}:`, error);
-      return '';
-    }
-  }
-
-  /**
-   * Format file context data into a string for the search results
-   */
-  private formatFileContext(contextData: {
-    fileType: string;
-    imports: string[];
-    functions: string[];
-    classes: string[];
-  }): string {
-    let result = `[${contextData.fileType}] `;
-
-    if (contextData.classes.length > 0) {
-      result += `Classes: ${contextData.classes.slice(0, 3).join(', ')}${
-        contextData.classes.length > 3 ? '...' : ''
-      } `;
-    }
-
-    if (contextData.functions.length > 0) {
-      result += `Functions: ${contextData.functions.slice(0, 5).join(', ')}${
-        contextData.functions.length > 5 ? '...' : ''
-      } `;
-    }
-
-    if (contextData.imports.length > 0) {
-      result += `Imports: ${contextData.imports.slice(0, 3).join(', ')}${
-        contextData.imports.length > 3 ? '...' : ''
-      } `;
-    }
-
-    return result;
-  }
-
-  /**
-   * Get simplified file context for fallback search
-   */
-  private async getSimpleFileContext(
-    path: string,
-    content: string
-  ): Promise<string> {
-    const extension = path.substring(path.lastIndexOf('.'));
-    const fileType = this.CODE_EXTENSIONS[extension] || 'unknown';
-
-    // Just get the first few lines that aren't blank/comment-only
-    const lines = content.split('\n');
-    const contextLines: string[] = [];
-
-    for (let i = 0; i < Math.min(lines.length, 10); i++) {
-      const line = lines[i].trim();
-      if (
-        line &&
-        !line.startsWith('//') &&
-        !line.startsWith('#') &&
-        !line.startsWith('/*')
-      ) {
-        contextLines.push(line);
-        if (contextLines.length >= 3) break;
-      }
-    }
-
-    return `[${fileType}] ${contextLines.join(' | ')}`;
-  }
-
-  /**
-   * Find a line in the file that matches the search query
-   */
-  private findMatchingLine(lines: string[], query: string): number {
-    const queryTerms = query.toLowerCase().split(/\s+/);
-
-    // First try to find lines containing all terms
-    for (let i = 0; i < Math.min(lines.length, 100); i++) {
-      const line = lines[i].toLowerCase();
-      if (queryTerms.every((term) => line.includes(term))) {
-        return i;
-      }
-    }
-
-    // Then try to find lines with any important term
-    for (let i = 0; i < Math.min(lines.length, 100); i++) {
-      const line = lines[i].toLowerCase();
-      const hasImportantTerm = queryTerms
-        .filter((term) => term.length > 3)
-        .some((term) => line.includes(term));
-
-      if (hasImportantTerm) {
-        return i;
-      }
-    }
-
-    return -1; // No match found
-  }
-
-  /**
-   * Get the content of a file with a timeout
+   * Get file content with timeout
    */
   private async getFileContentWithTimeout(
     path: string,
     repository: string,
     timeoutMs: number
   ): Promise<string> {
-    try {
-      // Create a promise that will timeout
-      const timeoutPromise = new Promise<string>((_, reject) => {
-        setTimeout(
-          () => reject(new Error('File content retrieval timed out')),
-          timeoutMs
-        );
-      });
+    const timeoutPromise = new Promise<string>((_, reject) => {
+      setTimeout(() => {
+        reject(new Error(`Timeout getting content for ${path}`));
+      }, timeoutMs);
+    });
 
-      // Get the content (with timeout race)
+    try {
+      // Race between content retrieval and timeout
       return await Promise.race([
         this.getFileContent(path, repository),
         timeoutPromise,
       ]);
     } catch (error) {
-      console.error(`Error getting file content for ${path}:`, error);
-      return `# Error retrieving file content for ${path}`;
+      console.error(`Error or timeout getting ${path}:`, error);
+      throw error;
     }
   }
 
@@ -1368,16 +547,51 @@ export class LocalRepositoryManager {
 
   // Helper function to check if a repository is embedded
   private async isRepositoryEmbedded(repository: string): Promise<boolean> {
-    const repoKey = `embedding:repo:${repository}:status`;
-    const repoStatus = await this.redis.get(repoKey);
-
-    if (!repoStatus) return false;
-
     try {
-      const status = JSON.parse(repoStatus as string);
-      return status.status === 'completed';
+      // First check if chunks exist for this repository, regardless of status
+      const chunkKey = `embedding:repo:${repository}:chunks`;
+      const chunkCount = await this.redis.llen(chunkKey);
+
+      if (chunkCount > 0) {
+        console.log(
+          `Repository ${repository} has ${chunkCount} embedded chunks available`
+        );
+        return true;
+      }
+
+      // If no chunks found, fall back to checking status
+      const repoKey = `embedding:repo:${repository}:status`;
+      const repoStatus = await this.redis.get(repoKey);
+
+      if (!repoStatus) {
+        console.log(`No embedding status found for repository ${repository}`);
+        return false;
+      }
+
+      // Try to parse the status object
+      try {
+        const status = JSON.parse(repoStatus as string);
+        // Consider any status with progress as valid, not just 'completed'
+        console.log(
+          `Repository ${repository} has embedding status: ${
+            status.status
+          }, progress: ${status.progress || 0}%`
+        );
+        return true;
+      } catch (error) {
+        // If we can't parse the status but it exists, we'll still consider it embedded
+        console.log(
+          `Could not parse embedding status for ${repository}, but status entry exists`
+        );
+        return true;
+      }
     } catch (error) {
-      return false;
+      console.error(
+        `Error checking embedding status for ${repository}:`,
+        error
+      );
+      // If there's an error checking Redis, be permissive and assume embedded
+      return true;
     }
   }
 
@@ -1413,6 +627,12 @@ export class LocalRepositoryManager {
         metadata: any;
       }> = [];
 
+      // Use a lower similarity threshold for better recall (0.35 instead of 0.7)
+      const SIMILARITY_THRESHOLD = 0.4;
+      console.log(
+        `Searching with similarity threshold: ${SIMILARITY_THRESHOLD}`
+      );
+
       for (const chunk of chunks) {
         // Skip chunks without embeddings
         if (!chunk.embedding) continue;
@@ -1425,8 +645,8 @@ export class LocalRepositoryManager {
         // Calculate similarity score
         const score = this.cosineSimilarity(embedding, chunk.embedding);
 
-        // Add to results if score is above threshold (0.7 is a good starting point)
-        if (score > 0.7) {
+        // Add to results if score is above threshold
+        if (score > SIMILARITY_THRESHOLD) {
           results.push({
             path: chunk.path,
             content: chunk.content,
@@ -1438,6 +658,19 @@ export class LocalRepositoryManager {
 
       // Sort by similarity score (highest first)
       results.sort((a, b) => b.score - a.score);
+
+      // Log search stats
+      console.log(
+        `Found ${results.length} chunks above threshold ${SIMILARITY_THRESHOLD} for "${query}"`
+      );
+      if (results.length > 0) {
+        console.log(
+          `Top scores: ${results
+            .slice(0, 3)
+            .map((r) => r.score.toFixed(2))
+            .join(', ')}`
+        );
+      }
 
       // Limit results
       const topResults = results.slice(0, options.maxResults || 10);
