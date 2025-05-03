@@ -34,7 +34,7 @@ async function handler(req: VercelRequest, res: VercelResponse) {
     <nav class="bg-indigo-600 text-white shadow-md">
       <div class="max-w-6xl mx-auto px-4 py-3">
         <div class="flex justify-between items-center">
-          <a href="/api/dashboard" class="text-xl font-bold">Otron Dashboard</a>
+          <a href="/pages/dashboard" class="text-xl font-bold">Otron Dashboard</a>
         </div>
       </div>
     </nav>

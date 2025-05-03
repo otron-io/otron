@@ -234,14 +234,51 @@ async function handler(req: VercelRequest, res: VercelResponse) {
             const header = document.createElement('div');
             header.className = 'flex justify-between items-start mb-3';
             
+            // Format issue info with Linear data if available
             const issueInfo = document.createElement('div');
-            issueInfo.innerHTML = \`
-              <h3 class="font-medium text-indigo-600">Issue: \${issue.issueId}</h3>
-              <div class="text-sm text-gray-500">
-                Last Activity: \${timeAgo(issue.lastActivity)} •
-                Repository: \${issue.repository || 'Unknown'}
-              </div>
-            \`;
+            
+            if (issue.issueDetails) {
+              const id = issue.issueDetails.identifier || issue.issueId;
+              const title = issue.issueDetails.title || 'Untitled';
+              const state = issue.issueDetails.state || 'Unknown';
+              const priority = getPriorityLabel(issue.issueDetails.priority);
+              const url = issue.issueDetails.url;
+              
+              issueInfo.innerHTML = \`
+                <h3 class="font-medium text-indigo-600">
+                  <a href="\${url}" target="_blank" class="hover:underline flex items-center">
+                    <span>Issue: \${id}</span>
+                    <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 ml-1" viewBox="0 0 20 20" fill="currentColor">
+                      <path d="M11 3a1 1 0 100 2h2.586l-6.293 6.293a1 1 0 101.414 1.414L15 6.414V9a1 1 0 102 0V4a1 1 0 00-1-1h-5z" />
+                      <path d="M5 5a2 2 0 00-2 2v8a2 2 0 002 2h8a2 2 0 002-2v-3a1 1 0 10-2 0v3H5V7h3a1 1 0 000-2H5z" />
+                    </svg>
+                  </a>
+                </h3>
+                <div class="text-sm font-medium mt-1">\${title}</div>
+                <div class="flex mt-2 space-x-2 text-xs">
+                  <span class="px-2 py-1 bg-gray-200 text-gray-800 rounded-full">\${state}</span>
+                  <span class="px-2 py-1 bg-gray-200 text-gray-800 rounded-full">\${priority}</span>
+                  \${issue.issueDetails.assignee ? \`<span class="px-2 py-1 bg-gray-200 text-gray-800 rounded-full">Assigned: \${issue.issueDetails.assignee}</span>\` : ''}
+                </div>
+                <div class="text-xs text-gray-500 mt-1">
+                  Last Activity: \${timeAgo(issue.lastActivity)} • 
+                  Repository: \${
+                    issue.repository ? 
+                    \`<span class="font-medium">\${issue.repository}</span>\` : 
+                    'Unknown'
+                  }
+                </div>
+              \`;
+            } else {
+              // Fallback to old format if no Linear data
+              issueInfo.innerHTML = \`
+                <h3 class="font-medium text-indigo-600">Issue: \${issue.issueId}</h3>
+                <div class="text-sm text-gray-500">
+                  Last Activity: \${timeAgo(issue.lastActivity)} •
+                  Repository: \${issue.repository || 'Unknown'}
+                </div>
+              \`;
+            }
             
             const actionsCount = document.createElement('div');
             actionsCount.className = 'text-xs font-medium px-2 py-1 bg-blue-100 text-blue-800 rounded-full';
@@ -250,9 +287,48 @@ async function handler(req: VercelRequest, res: VercelResponse) {
             header.appendChild(issueInfo);
             header.appendChild(actionsCount);
             
+            // Create GitHub details if available
+            if (issue.branchDetails || issue.pullRequests) {
+              const githubDetails = document.createElement('div');
+              githubDetails.className = 'mb-3 mt-2 p-2 bg-gray-100 rounded';
+              
+              let githubHtml = '<div class="text-sm font-medium text-gray-700">GitHub Resources</div><div class="mt-1 space-y-1">';
+              
+              if (issue.branchDetails) {
+                githubHtml += \`
+                  <div class="text-xs">
+                    <span class="font-medium">Branch:</span> 
+                    \${issue.branchDetails.repository}:\${issue.branchDetails.branch}
+                  </div>
+                \`;
+              }
+              
+              if (issue.pullRequests && issue.pullRequests.length > 0) {
+                for (const pr of issue.pullRequests) {
+                  githubHtml += \`
+                    <div class="text-xs">
+                      <span class="font-medium">Pull Request:</span> 
+                      <a href="\${pr.url}" target="_blank" class="text-indigo-600 hover:underline">
+                        \${pr.owner}/\${pr.repo} #\${pr.number}
+                      </a>
+                    </div>
+                  \`;
+                }
+              }
+              
+              githubHtml += '</div>';
+              githubDetails.innerHTML = githubHtml;
+              issueCard.appendChild(githubDetails);
+            }
+            
             // Create recent actions list
             const actionsList = document.createElement('div');
-            actionsList.className = 'space-y-2 mt-2';
+            actionsList.className = 'space-y-2 mt-3';
+            
+            const actionsTitle = document.createElement('div');
+            actionsTitle.className = 'text-sm font-medium text-gray-700 mb-2';
+            actionsTitle.textContent = 'Recent Actions';
+            actionsList.appendChild(actionsTitle);
             
             if (issue.recentActions && issue.recentActions.length > 0) {
               issue.recentActions.forEach(action => {
@@ -266,24 +342,35 @@ async function handler(req: VercelRequest, res: VercelResponse) {
                   '<span class="text-green-600">✓</span>' : 
                   '<span class="text-red-600">✗</span>';
                 
+                // Format the input data to be more readable
+                let inputDisplay = 'No input data';
+                if (action.data.input) {
+                  if (typeof action.data.input === 'object') {
+                    // Try to find meaningful representations
+                    if (action.data.input.issueId && action.data.tool === 'createComment') {
+                      inputDisplay = \`"\${action.data.input.comment?.substring(0, 80)}..."\`;
+                    } else if (action.data.input.repository && action.data.input.path) {
+                      inputDisplay = \`\${action.data.input.repository}:\${action.data.input.path}\`;
+                    } else {
+                      inputDisplay = JSON.stringify(action.data.input).substring(0, 100) + '...';
+                    }
+                  } else {
+                    inputDisplay = action.data.input.substring(0, 100) + '...';
+                  }
+                }
+                
                 actionItem.innerHTML = \`
                   <div class="flex justify-between">
                     <span class="font-medium">\${action.data.tool || 'Unknown tool'} \${success}</span>
                     <span class="text-gray-500 text-xs">\${actionTimestamp}</span>
                   </div>
-                  <div class="text-xs text-gray-600 truncate">\${
-                    action.data.input 
-                      ? typeof action.data.input === 'object' 
-                        ? JSON.stringify(action.data.input).substring(0, 100) + '...'
-                        : action.data.input.substring(0, 100) + '...'
-                      : 'No input data'
-                  }</div>
+                  <div class="text-xs text-gray-600 truncate">\${inputDisplay}</div>
                 \`;
                 
                 actionsList.appendChild(actionItem);
               });
             } else {
-              actionsList.innerHTML = '<div class="text-gray-500 text-sm">No recent actions</div>';
+              actionsList.innerHTML += '<div class="text-gray-500 text-sm">No recent actions</div>';
             }
             
             issueCard.appendChild(header);
@@ -326,7 +413,7 @@ async function handler(req: VercelRequest, res: VercelResponse) {
             
             toolCard.innerHTML = \`
               <div class="flex justify-between items-center mb-2">
-                <h3 class="font-medium">\${toolName}</h3>
+                <h3 class="font-medium">\${formatToolName(toolName)}</h3>
                 <div class="text-sm text-gray-700">\${successes} / \${attempts} (\${successRate}% success)</div>
               </div>
               <div class="w-full bg-gray-200 rounded-full h-3 overflow-hidden">
@@ -340,6 +427,28 @@ async function handler(req: VercelRequest, res: VercelResponse) {
             toolStatsContainer.appendChild(toolCard);
           }
         }
+      }
+
+      // Helper function to display priority in a readable format
+      function getPriorityLabel(priority) {
+        switch(priority) {
+          case 0: return 'No Priority';
+          case 1: return 'Priority: Urgent';
+          case 2: return 'Priority: High';
+          case 3: return 'Priority: Medium';
+          case 4: return 'Priority: Low';
+          default: return 'Unknown Priority';
+        }
+      }
+      
+      // Helper to format tool names in a more readable way
+      function formatToolName(toolName) {
+        return toolName
+          // Add space before capital letters
+          .replace(/([A-Z])/g, ' $1')
+          // Capitalize first letter
+          .replace(/^./, (str) => str.toUpperCase())
+          .trim();
       }
 
       // Refresh button click handler

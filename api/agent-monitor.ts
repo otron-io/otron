@@ -2,12 +2,24 @@ import type { VercelRequest, VercelResponse } from '@vercel/node';
 import { Redis } from '@upstash/redis';
 import { env } from '../src/env.js';
 import { withPasswordProtection } from '../src/utils/auth.js';
+import { LinearClient } from '@linear/sdk';
+import { RepositoryUtils } from '../src/utils/repo-utils.js';
 
 // Initialize Redis client
 const redis = new Redis({
   url: env.KV_REST_API_URL,
   token: env.KV_REST_API_TOKEN,
 });
+
+// Initialize Linear client using personal API key (should be added to env)
+const linearClient = new LinearClient({
+  apiKey: process.env.LINEAR_API_KEY || '',
+});
+
+// Initialize repository utilities
+const repoUtils = new RepositoryUtils(
+  env.ALLOWED_REPOSITORIES?.split(',').map((r) => r.trim()) || []
+);
 
 async function handler(req: VercelRequest, res: VercelResponse) {
   // Only accept GET requests
@@ -18,7 +30,7 @@ async function handler(req: VercelRequest, res: VercelResponse) {
   try {
     // Fetch active issues (issues with memory entries in the last 24 hours)
     const issueKeys = await redis.keys('memory:issue:*:action');
-    const activeIssues = new Map();
+    const activeIssues = new Map<string, any>();
 
     // Process each issue to get its activity data
     for (const key of issueKeys) {
@@ -64,15 +76,90 @@ async function handler(req: VercelRequest, res: VercelResponse) {
         }
       );
 
-      // Store issue data
-      activeIssues.set(issueId, {
+      // Store basic issue data
+      const issueData = {
         issueId,
         lastActivity: mostRecentTimestamp,
         actionsCount: parsedActions.length,
         recentActions: parsedActions.slice(0, 5),
         repository: repoUsage && repoUsage.length > 0 ? repoUsage[0] : null,
-      });
+        issueDetails: null,
+        branchDetails: null,
+      };
+
+      // Add to the map
+      activeIssues.set(issueId, issueData);
     }
+
+    // Fetch Linear issue details in parallel
+    const issuePromises = Array.from(activeIssues.entries()).map(
+      async ([issueId, issueData]) => {
+        try {
+          // Fetch issue details from Linear
+          const issue = await linearClient.issue(issueId);
+
+          // Update issue data with details from Linear
+          if (issue) {
+            issueData.issueDetails = {
+              id: issue.id,
+              identifier: issue.identifier,
+              title: issue.title,
+              description: issue.description,
+              state: issue.state ? issue.state.toString() : 'Unknown',
+              assignee: issue.assignee ? issue.assignee.toString() : null,
+              priority: issue.priority,
+              url: issue.url,
+            };
+          }
+
+          // Look for branch information in memory
+          const branches = await redis.smembers(
+            `memory:issue:branch:${issueId}`
+          );
+          if (branches && branches.length > 0) {
+            const branchInfo = branches[0].split(':');
+            if (branchInfo.length >= 2) {
+              const [repo, branch] = branchInfo;
+              issueData.branchDetails = {
+                repository: repo,
+                branch: branch,
+              };
+            }
+          }
+
+          // Look for pull requests
+          const pullRequests = await redis.smembers(
+            `memory:issue:pr:${issueId}`
+          );
+          if (pullRequests && pullRequests.length > 0) {
+            issueData.pullRequests = pullRequests.map((pr) => {
+              // For PR URLs like https://github.com/owner/repo/pull/123
+              const match = pr.match(
+                /github\.com\/([^\/]+)\/([^\/]+)\/pull\/(\d+)/
+              );
+              if (match) {
+                return {
+                  owner: match[1],
+                  repo: match[2],
+                  number: match[3],
+                  url: pr,
+                };
+              }
+              return { url: pr };
+            });
+          }
+
+          return [issueId, issueData] as [string, any];
+        } catch (error) {
+          console.error(`Error fetching details for issue ${issueId}:`, error);
+          return [issueId, issueData] as [string, any];
+        }
+      }
+    );
+
+    // Wait for all issue details to be fetched
+    const updatedIssuesEntries = await Promise.all(issuePromises);
+    const updatedIssues = new Map<string, any>(updatedIssuesEntries);
 
     // Get tool usage statistics
     const toolKeys = await redis.keys('memory:tools:*:stats');
@@ -95,7 +182,7 @@ async function handler(req: VercelRequest, res: VercelResponse) {
 
     // Return the data
     return res.status(200).json({
-      activeIssues: Array.from(activeIssues.values()),
+      activeIssues: Array.from(updatedIssues.values()),
       toolStats,
       timestamp: Date.now(),
     });
