@@ -158,16 +158,7 @@ export class MainAgent {
     const allTools = getToolDefinitions();
 
     // Convert from the tools index format to the Claude API format
-    return allTools
-      .filter((tool) => mainAgentToolNames.includes(tool.name))
-      .map((tool) => ({
-        type: 'function',
-        function: {
-          name: tool.name,
-          description: tool.description,
-          parameters: tool.input_schema,
-        },
-      }));
+    return allTools.filter((tool) => mainAgentToolNames.includes(tool.name));
   }
 
   /**
