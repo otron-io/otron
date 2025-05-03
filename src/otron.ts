@@ -731,6 +731,26 @@ export class Otron {
           },
         },
         {
+          name: 'getPullRequest',
+          description:
+            'Get details of a pull request including its comments and review comments',
+          input_schema: {
+            type: 'object',
+            properties: {
+              repository: {
+                type: 'string',
+                description:
+                  'Repository containing the pull request (owner/repo format)',
+              },
+              pullNumber: {
+                type: 'integer',
+                description: 'The pull request number to retrieve',
+              },
+            },
+            required: ['repository', 'pullNumber'],
+          },
+        },
+        {
           name: 'updateIssueStatus',
           description: 'Update the status of an issue in Linear',
           input_schema: {
@@ -1340,6 +1360,42 @@ export class Otron {
                 }${
                   toolInput.branch ? ` (branch: ${toolInput.branch})` : ''
                 }:\n${content}`;
+                toolSuccess = true;
+              } else if (toolName === 'getPullRequest') {
+                const pullRequest = await this.localRepoManager.getPullRequest(
+                  toolInput.repository,
+                  toolInput.pullNumber
+                );
+                toolResponse = `Pull request details for ${toolInput.repository}#${toolInput.pullNumber}\n\n`;
+                toolResponse += `Title: ${pullRequest.title}\n`;
+                toolResponse += `State: ${pullRequest.state}\n`;
+                toolResponse += `Author: ${pullRequest.user}\n`;
+                toolResponse += `Description: ${pullRequest.body}\n\n`;
+
+                if (pullRequest.comments.length > 0) {
+                  toolResponse += `Comments:\n`;
+                  pullRequest.comments.forEach((comment) => {
+                    toolResponse += `- User: ${comment.user}\n  ${comment.body}\n  Created at: ${comment.createdAt}\n\n`;
+                  });
+                } else {
+                  toolResponse += `No comments found.\n\n`;
+                }
+
+                if (pullRequest.reviewComments.length > 0) {
+                  toolResponse += `Review Comments:\n`;
+                  pullRequest.reviewComments.forEach((comment) => {
+                    toolResponse += `- User: ${comment.user}\n  File: ${
+                      comment.path
+                    }${
+                      comment.position ? ` (Line: ${comment.position})` : ''
+                    }\n  ${comment.body}\n  Created at: ${
+                      comment.createdAt
+                    }\n\n`;
+                  });
+                } else {
+                  toolResponse += `No review comments found.\n`;
+                }
+
                 toolSuccess = true;
               } else if (toolName === 'updateIssueStatus') {
                 await this.updateIssueStatus(

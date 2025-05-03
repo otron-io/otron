@@ -178,6 +178,11 @@ GITHUB TOOLS:
   * Can specify branch to get content from specific branch
   * Essential for understanding implementation details
 
+- Get pull request details:
+  * Retrieves information about a specific pull request
+  * Includes PR comments and code review comments
+  * Essential for reviewing and addressing feedback
+
 - Create branch:
   * Makes a new branch for your code changes
   * Specify base branch or it defaults to main/master

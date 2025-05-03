@@ -828,4 +828,87 @@ export class LocalRepositoryManager {
 
     return dotProduct / (Math.sqrt(normA) * Math.sqrt(normB));
   }
+
+  /**
+   * Get details of a pull request including comments
+   */
+  async getPullRequest(
+    repository: string,
+    pullNumber: number
+  ): Promise<{
+    title: string;
+    body: string;
+    state: string;
+    user: string;
+    comments: Array<{
+      user: string;
+      body: string;
+      createdAt: string;
+    }>;
+    reviewComments: Array<{
+      user: string;
+      body: string;
+      path: string;
+      position: number | null;
+      createdAt: string;
+    }>;
+  }> {
+    try {
+      // Verify repository access
+      await this.verifyRepoAccess(repository);
+
+      // Split the repository string into owner and repo
+      const [owner, repo] = repository.split('/');
+
+      // Get octokit for this repository
+      const octokit = await this.getOctokitForRepo(repository);
+
+      // Get the PR details
+      const { data: pullRequest } = await octokit.pulls.get({
+        owner,
+        repo,
+        pull_number: pullNumber,
+      });
+
+      // Get issue comments (general PR comments)
+      const { data: issueComments } = await octokit.issues.listComments({
+        owner,
+        repo,
+        issue_number: pullNumber,
+      });
+
+      // Get review comments (inline code comments)
+      const { data: reviewComments } = await octokit.pulls.listReviewComments({
+        owner,
+        repo,
+        pull_number: pullNumber,
+      });
+
+      // Format the response
+      return {
+        title: pullRequest.title,
+        body: pullRequest.body || '',
+        state: pullRequest.state,
+        user: pullRequest.user?.login || 'Unknown',
+        comments: issueComments.map((comment) => ({
+          user: comment.user?.login || 'Unknown',
+          body: comment.body || '',
+          createdAt: comment.created_at,
+        })),
+        reviewComments: reviewComments.map((comment) => ({
+          user: comment.user?.login || 'Unknown',
+          body: comment.body || '',
+          path: comment.path || '',
+          position: comment.position === undefined ? null : comment.position,
+          createdAt: comment.created_at,
+        })),
+      };
+    } catch (error) {
+      console.error(
+        `Error getting pull request details for PR #${pullNumber} in ${repository}:`,
+        error
+      );
+      throw error;
+    }
+  }
 }
