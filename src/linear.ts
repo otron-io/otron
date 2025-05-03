@@ -72,6 +72,20 @@ export class LinearService {
     this.client = new LinearClient({ accessToken: this.accessToken });
   }
 
+  public async getIssue(issueId: string) {
+    if (!this.client) {
+      throw new Error("Linear client not initialized");
+    }
+
+    try {
+      const issue = await this.client.issue(issueId);
+      return issue;
+    } catch (error) {
+      console.error(`Error fetching issue ${issueId}:`, error);
+      return null;
+    }
+  }
+
   private async fetchAppUserAndOrgInfo(): Promise<void> {
     if (!this.client) {
       throw new Error("Linear client not initialized");
