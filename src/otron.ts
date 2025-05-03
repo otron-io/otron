@@ -867,7 +867,7 @@ export class Otron {
       while (hasMoreToolCalls && toolCallCount < MAX_TOOL_CALLS) {
         // Use Anthropic's streaming client
         const stream = anthropic.messages.stream({
-          model: 'claude-3-5-sonnet-latest',
+          model: 'claude-3-7-sonnet-latest',
           max_tokens: 8192,
           system: systemMessage as any,
           messages: messages as any,
