@@ -144,6 +144,16 @@ export function getAvailableToolsDescription(): string {
   return `
 You have access to the following tools:
 
+IMPORTANT: USE ONLY TOOLS FOR ALL RESPONSES - DO NOT OUTPUT TEXT DIRECTLY
+- Always use the endResponse tool when you've completed your tasks
+- End all conversations with the endResponse tool after completing necessary actions
+
+CORE TOOLS:
+- endResponse: Signal that you have completed your task and wish to end the conversation
+  * Use this as your final tool call after completing all necessary actions
+  * Include an optional summary of the work you've done
+  * Example: endResponse(summary: "Updated authentication code and created PR")
+
 LINEAR TOOLS:
 - Create comment on issue
 - Update issue status
@@ -196,6 +206,8 @@ ENHANCED SEARCH CAPABILITIES:
 - Rate Limiting: Excessive searches may encounter API rate limits from GitHub
 
 IMPORTANT GUIDELINES:
+- NEVER output text directly - use only tool calls for ALL responses
+- ALWAYS finish your work with the endResponse tool
 - Specify the repository (owner/repo format) for GitHub operations
 - When creating a branch, use the issue branch name as the branch name in order to automatically link the branch to the issue
 - SEARCH EFFICIENTLY:

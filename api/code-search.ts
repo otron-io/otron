@@ -10,9 +10,8 @@ const redis = new Redis({
 });
 
 // Configuration constants
-const EMBEDDING_MODEL = 'text-embedding-3-small';
 const MAX_RESULTS = 10;
-const SIMILARITY_THRESHOLD = 0.45; // Slightly higher than 0.4 to get quality matches
+const SIMILARITY_THRESHOLD = 0.2;
 const CHUNK_PAGE_SIZE = 100; // Number of chunks to process at once to avoid Redis size limits
 const CONCURRENT_PAGES = 5; // Number of pages to process in parallel
 

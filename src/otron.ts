@@ -845,6 +845,20 @@ export class Otron {
             required: ['issueId', 'estimate'],
           },
         },
+        {
+          name: 'endResponse',
+          description:
+            'Use this to explicitly signal that you have completed your task and wish to end the conversation. This should be the final tool you call after completing all necessary actions.',
+          input_schema: {
+            type: 'object',
+            properties: {
+              summary: {
+                type: 'string',
+                description: 'Optional summary of the work completed',
+              },
+            },
+          },
+        },
       ];
 
       // Initialize message array with the user message - correct format for Anthropic API
@@ -872,6 +886,9 @@ export class Otron {
           system: systemMessage as any,
           messages: messages as any,
           tools: tools as any,
+          tool_choice: {
+            type: 'any',
+          },
           thinking: {
             budget_tokens: 1024,
             type: 'enabled',
@@ -1290,6 +1307,13 @@ export class Otron {
                 );
                 toolResponse = `Successfully set point estimate for issue ${toolInput.issueId} to ${toolInput.estimate} points.`;
                 toolSuccess = true;
+              } else if (toolName === 'endResponse') {
+                // This tool explicitly signals the end of the model's response
+                toolResponse = toolInput.summary
+                  ? `Response ended with summary: ${toolInput.summary}`
+                  : 'Response complete.';
+                toolSuccess = true;
+                hasMoreToolCalls = false; // Signal end of tool calls loop
               } else {
                 toolResponse = `Unknown function: ${toolName}`;
               }

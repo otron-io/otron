@@ -114,7 +114,7 @@ We use OpenAI's `text-embedding-3-small` model with:
 Our search algorithm:
 
 - Calculates cosine similarity between query and all code chunks
-- Applies a relevance threshold (0.7) to filter results
+- Applies a relevance threshold (0.2) to filter results
 - Ranks by similarity score
 - Returns top N results
 

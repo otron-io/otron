@@ -690,8 +690,7 @@ export class LocalRepositoryManager {
         metadata: any;
       }> = [];
 
-      // Use a lower similarity threshold for better recall (0.35 instead of 0.7)
-      const SIMILARITY_THRESHOLD = 0.35;
+      const SIMILARITY_THRESHOLD = 0.2;
       console.log(
         `Searching with similarity threshold: ${SIMILARITY_THRESHOLD}`
       );
