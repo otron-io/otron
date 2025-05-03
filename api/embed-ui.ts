@@ -1,7 +1,7 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
 import { Redis } from '@upstash/redis';
 import { env } from '../src/env.js';
-import { withPasswordProtection } from '../src/auth.js';
+import { withPasswordProtection } from '../src/utils/auth.js';
 
 // Initialize Redis client
 const redis = new Redis({

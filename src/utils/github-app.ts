@@ -1,6 +1,6 @@
 import { createAppAuth } from '@octokit/auth-app';
 import { Octokit } from '@octokit/rest';
-import { env } from './env.js';
+import { env } from '../env.js';
 
 export class GitHubAppService {
   private static instance: GitHubAppService;

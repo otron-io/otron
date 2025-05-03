@@ -1,5 +1,5 @@
 import { VercelRequest, VercelResponse } from '@vercel/node';
-import { env } from './env.js';
+import { env } from '../env.js';
 import crypto from 'crypto';
 
 /**

@@ -1,6 +1,6 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
 import { env } from '../src/env.js';
-import { LinearService } from '../src/linear.js';
+import { LinearService } from '../src/utils/linear.js';
 
 // Initialize Linear service
 const linearService = new LinearService(

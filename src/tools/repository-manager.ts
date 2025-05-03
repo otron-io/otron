@@ -1,6 +1,6 @@
 import { Octokit } from '@octokit/rest';
-import { env } from './env.js';
-import { GitHubAppService } from './github-app.js';
+import { env } from '../env.js';
+import { GitHubAppService } from '../utils/github-app.js';
 import { Redis } from '@upstash/redis';
 
 /**
