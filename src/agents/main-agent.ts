@@ -115,7 +115,9 @@ export class MainAgent {
       ? env.VERCEL_URL
       : `https://${env.VERCEL_URL}`;
 
+    // Add the token as a query parameter instead of a header
     const endpointUrl = new URL(`/api/agents/${agentType}`, baseUrl);
+    endpointUrl.searchParams.append('token', env.INTERNAL_API_TOKEN);
 
     try {
       // Make sure the internal API token is set
@@ -123,20 +125,36 @@ export class MainAgent {
         throw new Error('INTERNAL_API_TOKEN environment variable is not set');
       }
 
+      // Debug info - safe way to log token (first/last 4 chars)
+      const tokenLength = env.INTERNAL_API_TOKEN.length;
+      const tokenPreview =
+        tokenLength > 8
+          ? `${env.INTERNAL_API_TOKEN.substring(
+              0,
+              4
+            )}...${env.INTERNAL_API_TOKEN.substring(tokenLength - 4)}`
+          : '(too short)';
+      console.log(
+        `Delegating to ${agentType} agent with token preview: ${tokenPreview}, length: ${tokenLength}`
+      );
+      console.log(`Full endpoint URL: ${endpointUrl.toString()}`);
+
       // Use the same approach as the UI files for consistency
       const options = {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          'x-internal-token': env.INTERNAL_API_TOKEN,
-        } as Record<string, string>,
+        },
         body: JSON.stringify(context),
       };
 
       const response = await fetch(endpointUrl.toString(), options);
 
       if (!response.ok) {
-        throw new Error(`Agent API returned status ${response.status}`);
+        const responseText = await response.text();
+        throw new Error(
+          `Agent API returned status ${response.status}: ${responseText}`
+        );
       }
 
       // Track the delegation with the new method
