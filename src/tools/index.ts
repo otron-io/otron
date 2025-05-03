@@ -5,38 +5,6 @@ export function getToolDefinitions() {
   // Return an array of tools that Claude can use
   return [
     {
-      name: 'devAgent',
-      description:
-        'Delegate a technical task to the developer agent for code research, implementation, or technical analysis',
-      input_schema: {
-        type: 'object',
-        properties: {
-          task: {
-            type: 'string',
-            description:
-              'A clear description of the technical task to delegate to the dev agent',
-          },
-        },
-        required: ['task'],
-      },
-    },
-    {
-      name: 'linearAgent',
-      description:
-        'Delegate a product management or Linear-related task to the Linear agent for issue management',
-      input_schema: {
-        type: 'object',
-        properties: {
-          task: {
-            type: 'string',
-            description:
-              'A clear description of the product management task to delegate to the Linear agent',
-          },
-        },
-        required: ['task'],
-      },
-    },
-    {
       name: 'createComment',
       description: 'Create a comment on a Linear issue',
       input_schema: {

@@ -1,9 +1,6 @@
 {
   "version": 2,
-  "builds": [
-    { "src": "api/*.ts", "use": "@vercel/node" },
-    { "src": "api/agents/*.ts", "use": "@vercel/node" }
-  ],
+  "builds": [{ "src": "api/*.ts", "use": "@vercel/node" }],
   "rewrites": [
     { "source": "/", "destination": "/api/dashboard.ts" },
     { "source": "/linear-app", "destination": "/api/index.ts" },
@@ -16,14 +13,6 @@
     { "source": "/api/issue-actions", "destination": "/api/issue-actions.ts" },
     { "source": "/pages/embed", "destination": "/api/embed-ui.ts" },
     { "source": "/pages/agent", "destination": "/api/agent-ui.ts" },
-    { "source": "/pages/dashboard", "destination": "/api/dashboard.ts" },
-
-    { "source": "/api/agents/dev", "destination": "/api/agents/dev.ts" },
-    { "source": "/api/agents/linear", "destination": "/api/agents/linear.ts" },
-    {
-      "source": "/api/agents/monitor",
-      "destination": "/api/agents/monitor.ts"
-    },
-    { "source": "/agents-monitor", "destination": "/api/agents/monitor-ui.ts" }
+    { "source": "/pages/dashboard", "destination": "/api/dashboard.ts" }
   ]
 }

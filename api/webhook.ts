@@ -116,12 +116,12 @@ async function handleAutonomously(
       console.error('Failed to add processing reaction:', e);
     }
 
-    // Create the MainAgent to orchestrate the process
-    const { MainAgent } = await import('../src/agents/index.js');
-    const mainAgent = new MainAgent(linearClient);
+    // Get the Otron service and let it handle everything
+    const { Otron } = await import('../src/otron.js');
+    const gpt = new Otron(linearClient);
 
-    // Let the main agent handle the notification and delegate to specialized agents as needed
-    await mainAgent.processNotification({
+    // Let the model directly handle the notification
+    await gpt.processNotification({
       issue,
       notificationType: action,
       commentId,
