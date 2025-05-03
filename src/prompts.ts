@@ -204,7 +204,7 @@ GITHUB TOOLS:
   
 - Create pull request:
   * Submit your changes for review
-  * Links automatically to the Linear issue if you use the issue branch name
+  * Links automatically to the Linear issue if you use the issue branch name (Issue branch name format: otron/[issue-id]-[issue-title])
 
 MEMORY SYSTEM (automatically leveraged):
 - Conversation History: Previous interactions are stored and included
