@@ -6,6 +6,30 @@ type AccessTokenResponse = {
   expires_in: number;
 };
 
+// Interface for LinearIssue response
+export interface LinearIssue {
+  id: string;
+  identifier: string;
+  title: string;
+  description: string;
+  state: {
+    name: string;
+  };
+  priority: number;
+  labels: {
+    nodes: {
+      id: string;
+      name: string;
+    }[];
+  };
+  assignee: {
+    id: string;
+    name: string;
+    email: string;
+  } | null;
+  // Additional properties as needed
+}
+
 export class LinearService {
   private client: LinearClient | null = null;
   private accessToken: string | null = null;
@@ -72,6 +96,25 @@ export class LinearService {
     this.client = new LinearClient({ accessToken: this.accessToken });
   }
 
+  /**
+   * Get a specific Linear issue by ID
+   * @param issueId The ID of the issue to retrieve (e.g., 'OTR-123')
+   * @returns The issue data or null if not found
+   */
+  public async getIssue(issueId: string): Promise<LinearIssue | null> {
+    if (!this.client) {
+      throw new Error("Linear client not initialized");
+    }
+
+    try {
+      const response = await this.client.issue(issueId);
+      return response as unknown as LinearIssue;
+    } catch (error) {
+      console.error(`Error fetching issue ${issueId}:`, error);
+      return null;
+    }
+  }
+
   private async fetchAppUserAndOrgInfo(): Promise<void> {
     if (!this.client) {
       throw new Error("Linear client not initialized");
@@ -84,25 +127,6 @@ export class LinearService {
     const organization = await viewer.organization;
     if (organization) {
       this.organizationId = organization.id;
-    }
-  }
-
-  /**
-   * Fetch a specific issue by ID
-   * @param issueId The ID of the issue to fetch
-   * @returns The issue data or null if not found
-   */
-  public async getIssue(issueId: string) {
-    if (!this.client) {
-      throw new Error("Linear client not initialized");
-    }
-    
-    try {
-      const issue = await this.client.issue(issueId);
-      return issue;
-    } catch (error) {
-      console.error(`Error fetching issue ${issueId}:`, error);
-      return null;
     }
   }
 }
