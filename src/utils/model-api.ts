@@ -1,3 +1,4 @@
+// Lines 1-157 of 157
 import Anthropic from '@anthropic-ai/sdk';
 import { env } from '../env.js';
 
@@ -19,7 +20,7 @@ export class ModelAPI {
     toolCalls: any[];
     hasMoreToolCalls: boolean;
   }> {
-    try {
+        model: 'claude-3-7-sonnet-latest',
       // Use Anthropic's streaming client
       const stream = anthropic.messages.stream({
         model: 'claude-3-7-sonnet-latest',
