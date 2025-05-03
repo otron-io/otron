@@ -1,4 +1,3 @@
-// Lines 1-90 of 90
 import { LinearClient } from "@linear/sdk";
 
 type AccessTokenResponse = {
