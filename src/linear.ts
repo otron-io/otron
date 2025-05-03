@@ -72,6 +72,25 @@ export class LinearService {
     this.client = new LinearClient({ accessToken: this.accessToken });
   }
 
+  /**
+   * Get details of a specific Linear issue by ID
+   * @param issueId The ID of the issue to retrieve
+   * @returns The issue object or null if not found
+   */
+  public async getIssue(issueId: string): Promise<any | null> {
+    if (!this.client) {
+      throw new Error("Linear client not initialized");
+    }
+    
+    try {
+      const issue = await this.client.issue(issueId);
+      return issue;
+    } catch (error) {
+      console.error(`Error fetching issue ${issueId}:`, error);
+      return null;
+    }
+  }
+
   private async fetchAppUserAndOrgInfo(): Promise<void> {
     if (!this.client) {
       throw new Error("Linear client not initialized");
