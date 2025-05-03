@@ -1,0 +1,17 @@
+name: Re-index Codebase
+
+on:
+  push:
+    branches:
+      - main
+
+jobs:
+  reindex:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Trigger Re-indexing
+        run: |
+          curl -X POST ${{ secrets.VERCEL_DEPLOY_URL }}/api/reindex \
+          -H "Authorization: Bearer ${{ secrets.EMBEDDING_API_KEY }}" \
+          -H "Content-Type: application/json" \
+          -d '{"force": true}'
