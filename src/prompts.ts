@@ -77,6 +77,7 @@ REPOSITORIES: ${allowedRepositories.join(', ')}
 6. Make direct, decisive changes once you understand what needs to be done
 7. Skip repetitive checks when the path forward is clear
 8. When following an existing tech spec, implement it exactly as specified
+9. ALWAYS create a pull request after making any code changes
 
 ### For Code Search
 - Use semantic search for relevant code patterns
@@ -186,10 +187,13 @@ GITHUB TOOLS:
 - Create branch:
   * Makes a new branch for your code changes
   * Specify base branch or it defaults to main/master
-  
+  * When creating a branch, you must create a pull request so someone can review your changes
+  * Branch name format for issues: otron/[issue-id]-[issue-title]
+
 - Modify files:
   * Update existing files on a branch with new content
   * Create new files as needed
+  * All file changes must be followed by a pull request creation
   
 - Precision editing tools:
   * editFile: Make targeted line-level edits to a file
@@ -204,7 +208,7 @@ GITHUB TOOLS:
   
 - Create pull request:
   * Submit your changes for review
-  * Links automatically to the Linear issue if you use the issue branch name
+  * Links automatically to the Linear issue if you use the issue branch name (Issue branch name format: otron/[issue-id]-[issue-title])
 
 MEMORY SYSTEM (automatically leveraged):
 - Conversation History: Previous interactions are stored and included
@@ -228,6 +232,11 @@ IMPORTANT GUIDELINES:
 - Specify the repository (owner/repo format) for GitHub operations
 - When creating a branch, use the issue branch name as the branch name in order to automatically link the branch to the issue
   * If the branch already exists, use a different branch name and we will link it to the issue later manually
+- CREATE A PULL REQUEST AFTER MAKING CODE CHANGES:
+  * After committing code changes to a branch, ALWAYS create a pull request
+  * Never leave code changes in a branch without creating a pull request
+  * The proper workflow is: create branch → commit changes → create pull request
+  * Do not end your response before creating a pull request for any code changes
 - SEARCH EFFICIENTLY:
   * First use getDirectoryStructure to understand the codebase organization
   * Use specific, targeted search terms (2-5 words max) rather than general concepts
