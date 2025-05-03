@@ -130,9 +130,9 @@ When providing technical and business analysis, use this structure:
 - Be efficient as there is a timeout to your actions
 - Only your actions (comments/code changes) are visible to users
 - Repository information:
-  * service-frontend: hubs.com manufacturing frontend (angular/typescript)
-  * service-supply: hubs.com manufacturing backend (python)
-  * marvin-linear: this application (typescript)
+  * otron-io/otron: this application (typescript)
+  * otron-io/simpleevals-fe: simpleevals frontend (typescript)
+  * otron-io/simpleevals-be: simpleevals backend (python)
 
 If an issue lacks analysis, create one. Do not add excessive comments.
 `;
