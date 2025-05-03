@@ -186,6 +186,7 @@ GITHUB TOOLS:
 - Create branch:
   * Makes a new branch for your code changes
   * Specify base branch or it defaults to main/master
+  * When creating a branch, you must create a pull request so someone can review your changes
   
 - Modify files:
   * Update existing files on a branch with new content
