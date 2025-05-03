@@ -118,14 +118,24 @@ export class MainAgent {
     const endpointUrl = new URL(`/api/agents/${agentType}`, baseUrl);
 
     try {
-      const response = await fetch(endpointUrl.toString(), {
+      // Make sure the internal API token is set
+      if (!env.INTERNAL_API_TOKEN) {
+        throw new Error('INTERNAL_API_TOKEN environment variable is not set');
+      }
+
+      // Use the same approach as the UI files for consistency
+      const options = {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          'X-Internal-Token': env.INTERNAL_API_TOKEN,
-        },
+        } as Record<string, string>,
         body: JSON.stringify(context),
-      });
+      };
+
+      // Add the internal token the same way as the UIs do
+      options.headers['X-Internal-Token'] = env.INTERNAL_API_TOKEN;
+
+      const response = await fetch(endpointUrl.toString(), options);
 
       if (!response.ok) {
         throw new Error(`Agent API returned status ${response.status}`);
