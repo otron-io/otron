@@ -619,7 +619,34 @@ export class LocalRepositoryManager {
       }
 
       // Calculate similarities and rank results
-      const chunks = allChunks.map((chunk) => JSON.parse(chunk));
+      const chunks = allChunks
+        .map((chunk) => {
+          // Handle different types of chunk data from Redis
+          if (typeof chunk === 'object' && chunk !== null) {
+            // Already an object, use as is
+            return chunk;
+          } else if (typeof chunk === 'string') {
+            // Check for invalid "[object Object]" string
+            if (chunk === '[object Object]') {
+              console.warn(
+                'Found invalid "[object Object]" string representation'
+              );
+              return null; // Skip this chunk
+            }
+            // Parse JSON string
+            try {
+              return JSON.parse(chunk);
+            } catch (e) {
+              console.warn(`Error parsing chunk: ${e}`);
+              return null; // Skip invalid chunks
+            }
+          } else {
+            console.warn(`Unexpected chunk type: ${typeof chunk}`);
+            return null;
+          }
+        })
+        .filter((chunk) => chunk !== null); // Filter out null chunks
+
       const results: Array<{
         path: string;
         content: string;
@@ -628,14 +655,19 @@ export class LocalRepositoryManager {
       }> = [];
 
       // Use a lower similarity threshold for better recall (0.35 instead of 0.7)
-      const SIMILARITY_THRESHOLD = 0.4;
+      const SIMILARITY_THRESHOLD = 0.35;
       console.log(
         `Searching with similarity threshold: ${SIMILARITY_THRESHOLD}`
       );
 
       for (const chunk of chunks) {
         // Skip chunks without embeddings
-        if (!chunk.embedding) continue;
+        if (!chunk.embedding) {
+          console.log(
+            `Skipping chunk without embedding: ${chunk.path || 'unknown'}`
+          );
+          continue;
+        }
 
         // Apply file filter if specified
         if (options.fileFilter && !chunk.path.includes(options.fileFilter)) {
