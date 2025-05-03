@@ -196,24 +196,24 @@ export class LocalRepositoryManager {
     repository: string,
     timeoutMs: number,
     startLine: number = 1,
-    maxLines: number = 200
+    maxLines: number = 200,
+    branch?: string
   ): Promise<string> {
-    const timeoutPromise = new Promise<string>((_, reject) => {
-      setTimeout(() => {
-        reject(new Error(`Timeout getting content for ${path}`));
+    return new Promise((resolve, reject) => {
+      const timer = setTimeout(() => {
+        reject(new Error(`Timeout fetching ${path} after ${timeoutMs}ms`));
       }, timeoutMs);
-    });
 
-    try {
-      // Race between content retrieval and timeout
-      return await Promise.race([
-        this.getFileContent(path, repository, startLine, maxLines),
-        timeoutPromise,
-      ]);
-    } catch (error) {
-      console.error(`Error or timeout getting ${path}:`, error);
-      throw error;
-    }
+      this.getFileContent(path, repository, startLine, maxLines, branch)
+        .then((result) => {
+          clearTimeout(timer);
+          resolve(result);
+        })
+        .catch((error) => {
+          clearTimeout(timer);
+          reject(error);
+        });
+    });
   }
 
   /**
@@ -223,7 +223,8 @@ export class LocalRepositoryManager {
     path: string,
     repository: string,
     startLine: number = 1,
-    maxLines: number = 200
+    maxLines: number = 200,
+    branch?: string
   ): Promise<string> {
     try {
       // Check if allowed repository
@@ -238,12 +239,16 @@ export class LocalRepositoryManager {
       }
 
       // Check cache for full file content
-      const cacheKey = `${repository}:${path}`;
+      const cacheKey = `${repository}:${path}:${branch || 'default'}`;
       const cached = this.fileCache.get(cacheKey);
 
       // If we have a cached version and it's still valid, use it
       if (cached && Date.now() - cached.timestamp < this.CACHE_TTL.FILE) {
-        console.log(`Using cached content for ${path} in ${repository}`);
+        console.log(
+          `Using cached content for ${path} in ${repository}${
+            branch ? ` (branch: ${branch})` : ''
+          }`
+        );
         const allLines = cached.content.split('\n');
         const totalLines = allLines.length;
 
@@ -257,7 +262,11 @@ export class LocalRepositoryManager {
       }
 
       // Fetch file content
-      console.log(`Fetching content of ${path} from ${repository}`);
+      console.log(
+        `Fetching content of ${path} from ${repository}${
+          branch ? ` (branch: ${branch})` : ''
+        }`
+      );
       const [owner, repo] = repository.split('/');
       const octokit = await this.getOctokitForRepo(repository);
 
@@ -265,6 +274,7 @@ export class LocalRepositoryManager {
         owner,
         repo,
         path,
+        ref: branch, // Use the specified branch or default if not provided
       });
 
       if (!('content' in data) || typeof data.content !== 'string') {
@@ -293,15 +303,21 @@ export class LocalRepositoryManager {
       return lineInfo + requestedLines.join('\n');
     } catch (error: any) {
       console.error(
-        `Error getting file content for ${path} from ${repository}:`,
+        `Error getting file content for ${path} from ${repository}${
+          branch ? ` (branch: ${branch})` : ''
+        }:`,
         error
       );
 
       if (error.status === 404) {
-        return `# File not found: ${path}`;
+        return `# File not found: ${path}${
+          branch ? ` (branch: ${branch})` : ''
+        }`;
       }
 
-      return `# Error retrieving content for ${path}`;
+      return `# Error retrieving content for ${path}${
+        branch ? ` (branch: ${branch})` : ''
+      }`;
     }
   }
 
@@ -407,8 +423,12 @@ export class LocalRepositoryManager {
       console.log(`File ${path} updated in ${repository}/${branch}`);
 
       // Clear cache for this file
-      const cacheKey = `${repository}:${path}`;
+      const cacheKey = `${repository}:${path}:${branch}`;
       this.fileCache.delete(cacheKey);
+
+      // Also clear the default branch cache entry if exists
+      const defaultCacheKey = `${repository}:${path}:default`;
+      this.fileCache.delete(defaultCacheKey);
     } catch (error) {
       console.error(
         `Error updating file ${path} in ${repository}/${branch}:`,
