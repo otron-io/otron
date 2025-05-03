@@ -175,6 +175,7 @@ GITHUB TOOLS:
   
 - Read file content:
   * Retrieves the full content of a specific file
+  * Can specify branch to get content from specific branch
   * Essential for understanding implementation details
 
 - Create branch:

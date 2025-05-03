@@ -711,6 +711,11 @@ export class Otron {
                 type: 'string',
                 description: 'Path to the file within the repository',
               },
+              branch: {
+                type: 'string',
+                description:
+                  'Branch to get the file from (defaults to repository default branch)',
+              },
               startLine: {
                 type: 'integer',
                 description:
@@ -1327,9 +1332,14 @@ export class Otron {
                   toolInput.path,
                   toolInput.repository,
                   toolInput.startLine || 1,
-                  toolInput.maxLines || 200
+                  toolInput.maxLines || 200,
+                  toolInput.branch
                 );
-                toolResponse = `Retrieved content for ${toolInput.path} in ${toolInput.repository}:\n${content}`;
+                toolResponse = `Retrieved content for ${toolInput.path} in ${
+                  toolInput.repository
+                }${
+                  toolInput.branch ? ` (branch: ${toolInput.branch})` : ''
+                }:\n${content}`;
                 toolSuccess = true;
               } else if (toolName === 'updateIssueStatus') {
                 await this.updateIssueStatus(
@@ -2183,7 +2193,8 @@ export class Otron {
         path,
         repository,
         1, // startLine
-        10000 // maxLines - large number to get entire file
+        10000, // maxLines - large number to get entire file
+        branch // Use the specified branch
       );
 
       // Split content into lines for processing
@@ -2348,7 +2359,8 @@ export class Otron {
         path,
         repository,
         1, // startLine
-        10000 // maxLines - large number to get entire file
+        10000, // maxLines - large number to get entire file
+        branch // Use the specified branch
       );
 
       // Apply each replacement in order
