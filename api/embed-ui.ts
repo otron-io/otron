@@ -109,6 +109,21 @@ async function handler(req: VercelRequest, res: VercelResponse) {
     </style>
   </head>
   <body class="bg-gray-50 text-gray-900">
+    <!-- Navigation Bar -->
+    <nav class="bg-indigo-600 text-white shadow-md">
+      <div class="max-w-6xl mx-auto px-4 py-3">
+        <div class="flex justify-between items-center">
+          <div class="flex items-center space-x-8">
+            <a href="/api/dashboard" class="text-lg font-bold">Otron</a>
+            <div class="flex space-x-4">
+              <a href="/api/agent-ui" class="px-3 py-2 rounded-md hover:bg-indigo-700 font-medium">Agent Monitor</a>
+              <a href="/api/embed-ui" class="px-3 py-2 rounded-md bg-indigo-700 font-medium">Repository Embeddings</a>
+            </div>
+          </div>
+        </div>
+      </div>
+    </nav>
+
     <div class="max-w-6xl mx-auto p-4 py-8">
       <h1 class="text-3xl font-bold text-gray-900 mb-8 flex items-center">
         <svg xmlns="http://www.w3.org/2000/svg" class="h-8 w-8 mr-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
