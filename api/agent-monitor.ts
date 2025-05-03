@@ -5,7 +5,6 @@ import { withPasswordProtection } from '../src/utils/auth.js';
 import { LinearClient } from '@linear/sdk';
 import { RepositoryUtils } from '../src/utils/repo-utils.js';
 import { LinearManager } from '../src/tools/linear-manager.js';
-import { Otron } from '../src/otron.js';
 
 // Initialize Redis client
 const redis = new Redis({
@@ -18,10 +17,7 @@ const repoUtils = new RepositoryUtils(
   env.ALLOWED_REPOSITORIES?.split(',').map((r) => r.trim()) || []
 );
 
-// Initializing LinearClient with the proper API key from environment variables
-const linearClient = new LinearClient({
-  apiKey: process.env.LINEAR_API_KEY || '',
-});
+// We'll initialize the LinearClient in the handler to handle errors better
 
 async function handler(req: VercelRequest, res: VercelResponse) {
   // Only accept GET requests
@@ -30,19 +26,46 @@ async function handler(req: VercelRequest, res: VercelResponse) {
   }
 
   try {
-    // Create a LinearManager instance for working with Linear
-    const linearManager = new LinearManager(linearClient);
+    // Create a safe LinearClient
+    let linearClient: LinearClient | null = null;
     let linearConnected = false;
 
-    // Verify Linear connection
     try {
-      // Attempt a simple API call to verify the connection works
-      const viewer = await linearClient.viewer;
-      linearConnected = !!viewer;
-      console.log('Linear connection successful');
+      // First try to get token from Redis
+      const linearToken = await redis.get('linear:access_token');
+
+      if (linearToken && typeof linearToken === 'string') {
+        linearClient = new LinearClient({
+          accessToken: linearToken,
+        });
+        console.log('Initializing Linear client with stored access token');
+      } else if (process.env.LINEAR_API_KEY) {
+        // Fallback to API key
+        linearClient = new LinearClient({
+          apiKey: process.env.LINEAR_API_KEY,
+        });
+        console.log('Initializing Linear client with API key');
+      }
+
+      // Test the connection if we have a client
+      if (linearClient) {
+        const viewer = await linearClient.viewer;
+        linearConnected = !!viewer;
+        console.log(
+          'Linear connection successful as:',
+          viewer?.name || 'Unknown user'
+        );
+      }
     } catch (error) {
-      console.warn('Linear connection failed:', error);
+      console.warn('Linear client initialization or connection failed:', error);
+      linearClient = null;
       linearConnected = false;
+    }
+
+    // Create a LinearManager instance if we have a valid client
+    let linearManager = null;
+    if (linearClient && linearConnected) {
+      linearManager = new LinearManager(linearClient);
     }
 
     // Fetch active issues (issues with memory entries in the last 24 hours)
@@ -109,12 +132,12 @@ async function handler(req: VercelRequest, res: VercelResponse) {
     }
 
     // Fetch Linear issue details in parallel if connection is available
-    if (linearConnected) {
+    if (linearConnected && linearClient) {
       const issuePromises = Array.from(activeIssues.entries()).map(
         async ([issueId, issueData]) => {
           try {
-            // Use the linearManager to fetch issue info
-            const issue = await linearClient.issue(issueId);
+            // Fetch issue details from Linear
+            const issue = await linearClient!.issue(issueId);
 
             // Update issue data with details from Linear
             if (issue) {
@@ -123,8 +146,8 @@ async function handler(req: VercelRequest, res: VercelResponse) {
                 identifier: issue.identifier,
                 title: issue.title,
                 description: issue.description,
-                state: issue.state ? issue.state.toString() : 'Unknown',
-                assignee: issue.assignee ? issue.assignee.toString() : null,
+                state: issue.state ? (await issue.state).name : 'Unknown',
+                assignee: issue.assignee ? (await issue.assignee).name : null,
                 priority: issue.priority,
                 url: issue.url,
               };
