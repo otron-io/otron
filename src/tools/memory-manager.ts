@@ -103,6 +103,7 @@ export class MemoryManager {
       issueId: string;
       input: any;
       response: string;
+      agentType?: string;
     }
   ): Promise<void> {
     try {
@@ -112,13 +113,29 @@ export class MemoryManager {
         await redis.hincrby(`memory:tools:${toolName}:stats`, 'successes', 1);
       }
 
+      // Track by agent type if provided
+      if (context.agentType) {
+        const agentType = context.agentType;
+        // Increment agent-specific tool usage
+        await redis.zincrby(`memory:tool_usage:${agentType}`, 1, toolName);
+        await redis.expire(`memory:tool_usage:${agentType}`, MEMORY_EXPIRY);
+      }
+
       // Store context for this specific tool usage
       await this.storeMemory(context.issueId, 'action', {
         tool: toolName,
         input: context.input,
         response: context.response,
         success,
+        agentType: context.agentType || 'main',
       });
+
+      // Update active issues list with timestamp
+      await redis.zadd('memory:active_issues', {
+        score: Date.now(),
+        member: context.issueId,
+      });
+      await redis.expire('memory:active_issues', MEMORY_EXPIRY);
     } catch (error) {
       console.error(`Error tracking tool usage for ${toolName}:`, error);
     }
@@ -335,6 +352,69 @@ export class MemoryManager {
         error
       );
       return '';
+    }
+  }
+
+  /**
+   * Store agent delegation in memory
+   */
+  async trackAgentDelegation(
+    issueId: string,
+    mainAgentId: string,
+    targetAgentType: string,
+    taskDescription: string
+  ): Promise<void> {
+    try {
+      const delegationEntry = {
+        timestamp: Date.now(),
+        issueId,
+        mainAgentId,
+        targetAgentType,
+        taskDescription,
+      };
+
+      // Store in sorted set for monitoring, newest first
+      await redis.zadd('memory:agent_delegations', {
+        score: Date.now(),
+        member: JSON.stringify(delegationEntry),
+      });
+      await redis.expire('memory:agent_delegations', MEMORY_EXPIRY);
+
+      // Store in issue-specific history
+      await this.storeMemory(issueId, 'action', {
+        type: 'agent_delegation',
+        targetAgentType,
+        taskDescription,
+      });
+
+      console.log(
+        `Tracked delegation to ${targetAgentType} agent for issue ${issueId}`
+      );
+    } catch (error) {
+      console.error(`Error tracking agent delegation:`, error);
+    }
+  }
+
+  /**
+   * Get the most recently used repository for an issue
+   */
+  async getMostUsedRepository(issueId: string): Promise<string | null> {
+    try {
+      const repositories = await redis.zrange(
+        `memory:issue:${issueId}:repositories`,
+        0,
+        0,
+        { rev: true }
+      );
+
+      if (repositories && repositories.length > 0) {
+        return repositories[0] as string;
+      }
+
+      return null;
+    } catch (error) {
+      console.error(`Error getting most used repository:`, error);
+      return null;
     }
   }
 }
