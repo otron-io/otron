@@ -189,8 +189,36 @@ async function handler(req: VercelRequest, res: VercelResponse) {
 
       // Update UI elements with fetched data
       function updateUI(data) {
-        const { activeIssues, toolStats, timestamp } = data;
+        const { activeIssues, toolStats, timestamp, linearConnected } = data;
         
+        // Show Linear connection status
+        const summaryContainer = document.getElementById('summaryContainer');
+        const linearStatusElement = document.getElementById('linearStatus');
+        if (!linearStatusElement) {
+          const linearStatusDiv = document.createElement('div');
+          linearStatusDiv.id = 'linearStatus';
+          linearStatusDiv.className = 'bg-gray-50 rounded-lg p-4';
+          
+          const linearLabel = document.createElement('h3');
+          linearLabel.className = 'text-lg font-medium text-gray-700';
+          linearLabel.textContent = 'Linear Connection';
+          linearStatusDiv.appendChild(linearLabel);
+          
+          const statusText = document.createElement('p');
+          statusText.id = 'linearStatusText';
+          statusText.className = 'text-3xl font-bold ' + (linearConnected ? 'text-green-600' : 'text-red-600');
+          statusText.textContent = linearConnected ? 'Connected' : 'Disconnected';
+          linearStatusDiv.appendChild(statusText);
+          
+          summaryContainer.appendChild(linearStatusDiv);
+        } else {
+          const statusText = document.getElementById('linearStatusText');
+          if (statusText) {
+            statusText.className = 'text-3xl font-bold ' + (linearConnected ? 'text-green-600' : 'text-red-600');
+            statusText.textContent = linearConnected ? 'Connected' : 'Disconnected';
+          }
+        }
+
         // Update summary stats
         document.getElementById('activeIssuesCount').textContent = activeIssues.length;
         
