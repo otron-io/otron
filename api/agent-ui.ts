@@ -471,6 +471,139 @@ async function handler(req: VercelRequest, res: VercelResponse) {
               actionsList.innerHTML += '<div class="text-gray-500 text-sm">No recent actions</div>';
             }
             
+            // Add "Show More" button if there are more actions than what we're showing
+            if (issue.actionsCount > issue.recentActions.length) {
+              const showMoreContainer = document.createElement('div');
+              showMoreContainer.className = 'mt-3 text-center';
+              
+              const showMoreButton = document.createElement('button');
+              showMoreButton.className = 'text-xs bg-blue-100 hover:bg-blue-200 text-blue-700 font-medium py-1 px-3 rounded';
+              showMoreButton.textContent = \`Show More (\${issue.recentActions.length}/\${issue.actionsCount})\`;
+              
+              showMoreButton.addEventListener('click', async function() {
+                try {
+                  // Disable button and show loading state
+                  this.disabled = true;
+                  this.textContent = 'Loading...';
+                  
+                  // Fetch more actions for this issue
+                  const response = await fetch(\`/api/issue-actions?issueId=\${issue.issueId}&skip=\${issue.recentActions.length}&limit=20\`);
+                  
+                  if (!response.ok) {
+                    throw new Error(\`Error: \${response.status}\`);
+                  }
+                  
+                  const data = await response.json();
+                  
+                  if (data.actions && data.actions.length > 0) {
+                    // Process and append the new actions
+                    data.actions.forEach(action => {
+                      if (!action || !action.data) return;
+                      
+                      const actionItem = document.createElement('div');
+                      actionItem.className = 'text-sm border-l-2 border-gray-300 pl-3 action-item';
+                      
+                      const actionTimestamp = new Date(action.timestamp).toLocaleTimeString();
+                      const success = action.data.success ? 
+                        '<span class="text-green-600">✓</span>' : 
+                        '<span class="text-red-600">✗</span>';
+                      
+                      // Create header with tool name, success indicator, and timestamp
+                      const header = document.createElement('div');
+                      header.className = 'flex justify-between items-center cursor-pointer hover:bg-gray-100 p-1 rounded';
+                      header.onclick = function() {
+                        const content = this.nextElementSibling;
+                        content.classList.toggle('hidden');
+                        const expandIcon = this.querySelector('.expand-icon');
+                        if (expandIcon) {
+                          expandIcon.textContent = content.classList.contains('hidden') ? '▶' : '▼';
+                        }
+                      };
+                      
+                      // Create header content
+                      const headerLeft = document.createElement('div');
+                      headerLeft.innerHTML = \`
+                        <span class="expand-icon mr-1">▶</span>
+                        <span class="font-medium">\${action.data.tool || 'Unknown tool'}</span> \${success}
+                      \`;
+                      
+                      const headerRight = document.createElement('span');
+                      headerRight.className = 'text-gray-500 text-xs';
+                      headerRight.textContent = actionTimestamp;
+                      
+                      header.appendChild(headerLeft);
+                      header.appendChild(headerRight);
+                      
+                      // Create expandable content section
+                      const contentSection = document.createElement('div');
+                      contentSection.className = 'mt-1 ml-3 hidden action-content';
+                      
+                      // Format the input data for better display
+                      let inputDisplay = '';
+                      if (action.data.input) {
+                        if (typeof action.data.input === 'object') {
+                          inputDisplay = \`<pre class="bg-gray-100 p-2 rounded text-xs overflow-x-auto whitespace-pre-wrap max-h-60 overflow-y-auto">\${JSON.stringify(action.data.input, null, 2)}</pre>\`;
+                        } else {
+                          inputDisplay = \`<pre class="bg-gray-100 p-2 rounded text-xs overflow-x-auto whitespace-pre-wrap max-h-60 overflow-y-auto">\${action.data.input}</pre>\`;
+                        }
+                      } else {
+                        inputDisplay = '<div class="text-gray-500 italic">No input data</div>';
+                      }
+                      
+                      // Format the response for better display
+                      let responseDisplay = '';
+                      if (action.data.response) {
+                        responseDisplay = \`<pre class="bg-gray-100 p-2 rounded text-xs overflow-x-auto whitespace-pre-wrap max-h-60 overflow-y-auto">\${action.data.response}</pre>\`;
+                      } else {
+                        responseDisplay = '<div class="text-gray-500 italic">No response data</div>';
+                      }
+                      
+                      contentSection.innerHTML = \`
+                        <div class="mb-2">
+                          <div class="font-medium text-xs mb-1">Input:</div>
+                          \${inputDisplay}
+                        </div>
+                        <div>
+                          <div class="font-medium text-xs mb-1">Response:</div>
+                          \${responseDisplay}
+                        </div>
+                      \`;
+                      
+                      // Add header and content to the action item
+                      actionItem.appendChild(header);
+                      actionItem.appendChild(contentSection);
+                      actionsList.appendChild(actionItem);
+                    });
+                    
+                    // Update the issue's recentActions array
+                    issue.recentActions = issue.recentActions.concat(data.actions);
+                    
+                    // Update the button text
+                    this.textContent = \`Show More (\${issue.recentActions.length}/\${issue.actionsCount})\`;
+                    this.disabled = false;
+                    
+                    // If we've loaded all actions, remove the button
+                    if (issue.recentActions.length >= issue.actionsCount) {
+                      showMoreContainer.remove();
+                    }
+                  } else {
+                    // No more actions or none returned
+                    this.textContent = 'No more actions';
+                    setTimeout(() => {
+                      showMoreContainer.remove();
+                    }, 2000);
+                  }
+                } catch (error) {
+                  console.error('Error loading more actions:', error);
+                  this.textContent = 'Error loading actions';
+                  this.disabled = false;
+                }
+              });
+              
+              showMoreContainer.appendChild(showMoreButton);
+              actionsList.appendChild(showMoreContainer);
+            }
+            
             issueCard.appendChild(header);
             issueCard.appendChild(actionsList);
             issuesContainer.appendChild(issueCard);
