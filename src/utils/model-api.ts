@@ -22,13 +22,14 @@ export class ModelAPI {
     try {
       // Use Anthropic's streaming client
       const stream = anthropic.messages.stream({
-        model: 'claude-3-5-sonnet-latest',
+        model: 'claude-3-7-sonnet-latest',
         max_tokens: 8192,
         system: systemMessage as any,
         messages: userMessages as any,
         tools: tools as any,
-        tool_choice: {
-          type: 'any',
+        thinking: {
+          type: 'enabled',
+          budget_tokens: 1024,
         },
       });
 
