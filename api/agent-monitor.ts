@@ -4,7 +4,8 @@ import { env } from '../src/env.js';
 import { withPasswordProtection } from '../src/utils/auth.js';
 import { LinearClient } from '@linear/sdk';
 import { RepositoryUtils } from '../src/utils/repo-utils.js';
-import { LinearService } from '../src/utils/linear.js';
+import { LinearManager } from '../src/tools/linear-manager.js';
+import { Otron } from '../src/otron.js';
 
 // Initialize Redis client
 const redis = new Redis({
@@ -17,6 +18,11 @@ const repoUtils = new RepositoryUtils(
   env.ALLOWED_REPOSITORIES?.split(',').map((r) => r.trim()) || []
 );
 
+// Initializing LinearClient with the proper API key from environment variables
+const linearClient = new LinearClient({
+  apiKey: process.env.LINEAR_API_KEY || '',
+});
+
 async function handler(req: VercelRequest, res: VercelResponse) {
   // Only accept GET requests
   if (req.method !== 'GET') {
@@ -24,6 +30,21 @@ async function handler(req: VercelRequest, res: VercelResponse) {
   }
 
   try {
+    // Create a LinearManager instance for working with Linear
+    const linearManager = new LinearManager(linearClient);
+    let linearConnected = false;
+
+    // Verify Linear connection
+    try {
+      // Attempt a simple API call to verify the connection works
+      const viewer = await linearClient.viewer;
+      linearConnected = !!viewer;
+      console.log('Linear connection successful');
+    } catch (error) {
+      console.warn('Linear connection failed:', error);
+      linearConnected = false;
+    }
+
     // Fetch active issues (issues with memory entries in the last 24 hours)
     const issueKeys = await redis.keys('memory:issue:*:action');
     const activeIssues = new Map<string, any>();
@@ -87,37 +108,13 @@ async function handler(req: VercelRequest, res: VercelResponse) {
       activeIssues.set(issueId, issueData);
     }
 
-    // Try to fetch Linear issue details if possible
-    let linearClient: LinearClient | null = null;
-    try {
-      // Check if a stored Linear access token exists - fetch it from Redis
-      const storedLinearToken = await redis.get('linear:access_token');
-      if (storedLinearToken) {
-        // Initialize Linear client with the stored token
-        linearClient = new LinearClient({
-          accessToken: storedLinearToken as string,
-        });
-        console.log('Using stored Linear access token');
-      } else {
-        // Fallback - get API key from environment
-        const apiKey = process.env.LINEAR_API_KEY;
-        if (apiKey) {
-          linearClient = new LinearClient({ apiKey });
-          console.log('Using Linear API key');
-        }
-      }
-    } catch (error) {
-      console.warn('Could not initialize Linear client:', error);
-      linearClient = null;
-    }
-
-    // Fetch Linear issue details in parallel if client is available
-    if (linearClient) {
+    // Fetch Linear issue details in parallel if connection is available
+    if (linearConnected) {
       const issuePromises = Array.from(activeIssues.entries()).map(
         async ([issueId, issueData]) => {
           try {
-            // Fetch issue details from Linear
-            const issue = await linearClient!.issue(issueId);
+            // Use the linearManager to fetch issue info
+            const issue = await linearClient.issue(issueId);
 
             // Update issue data with details from Linear
             if (issue) {
@@ -217,7 +214,7 @@ async function handler(req: VercelRequest, res: VercelResponse) {
       activeIssues: Array.from(activeIssues.values()),
       toolStats,
       timestamp: Date.now(),
-      linearConnected: linearClient !== null,
+      linearConnected,
     });
   } catch (error) {
     console.error('Error retrieving agent status:', error);
