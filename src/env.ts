@@ -26,6 +26,9 @@ export const env = createEnv({
     // Authentication
     ADMIN_PASSWORD: z.string().min(1).default('admin'),
     INTERNAL_API_TOKEN: z.string().min(1).default('internal-token'),
+
+    // Runtime environment
+    VERCEL_URL: z.string().optional().default('http://localhost:3000'),
   },
   runtimeEnv: process.env,
   emptyStringAsUndefined: true,

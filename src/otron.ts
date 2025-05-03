@@ -214,103 +214,124 @@ export class Otron {
                 );
                 toolSuccess = true;
               } else if (toolName === 'searchCodeFiles') {
-                const results = await this.repoUtils
-                  .getLocalRepoManager()
-                  .searchCode(toolInput.query, toolInput.repository, {
-                    contextAware: toolInput.contextAware,
-                    semanticBoost: toolInput.semanticBoost,
-                    fileFilter: toolInput.fileFilter || '',
-                    maxResults: toolInput.maxResults || 5,
+                // Use the code-search API endpoint directly instead of the repository manager
+                // Ensure the base URL includes the protocol
+                const baseUrl = env.VERCEL_URL.startsWith('http')
+                  ? env.VERCEL_URL
+                  : `https://${env.VERCEL_URL}`;
+                const searchUrl = new URL('/api/code-search', baseUrl);
+
+                // Add search parameters
+                searchUrl.searchParams.append(
+                  'repository',
+                  toolInput.repository
+                );
+                searchUrl.searchParams.append('query', toolInput.query);
+                if (toolInput.fileFilter) {
+                  searchUrl.searchParams.append(
+                    'fileFilter',
+                    toolInput.fileFilter
+                  );
+                }
+                if (toolInput.maxResults) {
+                  searchUrl.searchParams.append(
+                    'limit',
+                    toolInput.maxResults.toString()
+                  );
+                }
+
+                // Make the API request
+                try {
+                  const response = await fetch(searchUrl.toString(), {
+                    headers: {
+                      'X-Internal-Token': env.INTERNAL_API_TOKEN,
+                    },
                   });
 
-                // Store search terms for future semantic understanding
-                const searchTerms: string[] = toolInput.query
-                  .toLowerCase()
-                  .split(/\s+/)
-                  .filter((term: string) => term.length > 3)
-                  .slice(0, 5);
-
-                // Store these search terms for future knowledge retrieval
-                for (const term of searchTerms) {
-                  await redis.zincrby(
-                    `memory:issue:${issue.id}:search_terms`,
-                    1,
-                    term
-                  );
-                  await redis.expire(
-                    `memory:issue:${issue.id}:search_terms`,
-                    MEMORY_EXPIRY
-                  );
-                }
-
-                // Prepare a formatted response with a summary and context information
-                let formattedResults = `Found ${results.length} relevant files for query "${toolInput.query}" in ${toolInput.repository}:\n\n`;
-
-                // Add each file with path, content, and context if available
-                for (let i = 0; i < results.length; i++) {
-                  const result = results[i];
-                  formattedResults += `File: ${result.path}\n`;
-                  formattedResults += `Line ${result.line}: ${result.content}\n`;
-
-                  // Include context information if available
-                  if (result.context) {
-                    formattedResults += `Context: ${result.context}\n`;
+                  if (!response.ok) {
+                    throw new Error(
+                      `Search API returned status ${response.status}`
+                    );
                   }
 
-                  formattedResults += '\n';
-                }
+                  const searchData = await response.json();
+                  const results = searchData.results || [];
 
-                // Set the tool response
-                toolResponse = formattedResults;
-                toolSuccess = results.length > 0;
+                  // Store search terms for future semantic understanding
+                  const searchTerms: string[] = toolInput.query
+                    .toLowerCase()
+                    .split(/\s+/)
+                    .filter((term: string) => term.length > 3)
+                    .slice(0, 5);
 
-                // If we found code, store the connection between this issue and these files
-                if (results.length > 0) {
-                  for (const result of results) {
-                    await redis.sadd(
-                      `memory:issue:file:${issue.id}`,
-                      `${toolInput.repository}:${result.path}`
-                    );
-                    await redis.sadd(
-                      `memory:file:issue:${toolInput.repository}:${result.path}`,
-                      issue.id
-                    );
-
-                    // Store expiry for these sets
-                    await redis.expire(
-                      `memory:issue:file:${issue.id}`,
-                      MEMORY_EXPIRY
+                  // Store these search terms for future knowledge retrieval
+                  for (const term of searchTerms) {
+                    await redis.zincrby(
+                      `memory:issue:${issue.id}:search_terms`,
+                      1,
+                      term
                     );
                     await redis.expire(
-                      `memory:file:issue:${toolInput.repository}:${result.path}`,
+                      `memory:issue:${issue.id}:search_terms`,
                       MEMORY_EXPIRY
                     );
+                  }
 
-                    // Extract potential topics from the file path
-                    if (toolInput.path) {
-                      try {
-                        const pathParts = toolInput.path.split('/');
-                        const fileName = pathParts[pathParts.length - 1];
-                        const topics = fileName
-                          .split(/[_.-]/)
-                          .filter((t: string) => t.length > 3);
+                  // Prepare a formatted response with a summary and context information
+                  let formattedResults = `Found ${results.length} relevant files for query "${toolInput.query}" in ${toolInput.repository}:\n\n`;
 
-                        // Store any meaningful topics as code knowledge
-                        for (const topic of topics) {
-                          await memoryManager.storeCodeKnowledge(
-                            toolInput.repository,
-                            toolInput.path,
-                            topic
-                          );
-                        }
-                      } catch (error) {
-                        console.error(
-                          'Error processing file path for topics:',
-                          error
-                        );
-                      }
+                  // Add each file with path, content, and context if available
+                  for (let i = 0; i < results.length; i++) {
+                    const result = results[i];
+                    formattedResults += `File: ${result.path}\n`;
+                    formattedResults += `Line ${result.startLine}: ${
+                      result.content.split('\n')[0]
+                    }\n`;
+
+                    // Include context information if available
+                    formattedResults += `Context: Language: ${result.language}, Type: ${result.type}`;
+                    if (result.name) {
+                      formattedResults += `, Name: ${result.name}`;
+                    }
+                    formattedResults += `, Lines: ${result.startLine}-${result.endLine}`;
+                    formattedResults += `, Score: ${(
+                      result.score * 100
+                    ).toFixed(2)}%\n\n`;
+                    formattedResults += `${result.content}\n\n`;
+                  }
+
+                  // Set the tool response
+                  toolResponse = formattedResults;
+                  toolSuccess = results.length > 0;
+
+                  // If we found code, store the connection between this issue and these files
+                  if (results.length > 0) {
+                    for (const result of results) {
+                      await redis.sadd(
+                        `memory:issue:file:${issue.id}`,
+                        `${toolInput.repository}:${result.path}`
+                      );
+                      await redis.sadd(
+                        `memory:file:issue:${toolInput.repository}:${result.path}`,
+                        issue.id
+                      );
+
+                      // Store expiry for these sets
+                      await redis.expire(
+                        `memory:issue:file:${issue.id}`,
+                        MEMORY_EXPIRY
+                      );
+                      await redis.expire(
+                        `memory:file:issue:${toolInput.repository}:${result.path}`,
+                        MEMORY_EXPIRY
+                      );
                     }
                   }
+                } catch (error) {
+                  toolResponse = `Error searching code: ${
+                    error instanceof Error ? error.message : String(error)
+                  }`;
+                  toolSuccess = false;
                 }
               } else if (toolName === 'getDirectoryStructure') {
                 const directoryStructure = await this.repoUtils
