@@ -447,41 +447,76 @@ export class Otron {
                   toolResponse = branchCheck.errorMessage as string;
                   toolSuccess = false;
                 } else {
-                  // Create a branch
-                  await this.repoUtils
-                    .getLocalRepoManager()
-                    .createBranch(
-                      toolInput.branch,
-                      toolInput.repository,
-                      toolInput.baseBranch || 'main'
-                    );
-
-                  // Apply each change
-                  for (const change of toolInput.changes) {
-                    await this.repoUtils
-                      .getLocalRepoManager()
-                      .createOrUpdateFile(
-                        change.path,
-                        change.content,
-                        `Update ${change.path} for PR`,
-                        toolInput.repository,
-                        toolInput.branch
+                  try {
+                    // First check if the branch exists
+                    try {
+                      await this.repoUtils
+                        .getLocalRepoManager()
+                        .getFileContent(
+                          'README.md',
+                          toolInput.repository,
+                          1,
+                          1,
+                          toolInput.branch
+                        );
+                      console.log(
+                        `Branch ${toolInput.branch} already exists, skipping creation`
                       );
+                    } catch (error: any) {
+                      // If file not found in the branch, branch probably doesn't exist - create it
+                      if (
+                        error.message &&
+                        error.message.includes('not found')
+                      ) {
+                        // Create branch
+                        await this.repoUtils
+                          .getLocalRepoManager()
+                          .createBranch(
+                            toolInput.branch,
+                            toolInput.repository,
+                            toolInput.baseBranch || 'main'
+                          );
+                        console.log(
+                          `Created new branch ${toolInput.branch} in ${toolInput.repository}`
+                        );
+                      } else {
+                        // For other errors, log but continue
+                        console.warn(
+                          `Warning when checking branch existence: ${error.message}`
+                        );
+                      }
+                    }
+
+                    // Apply each change
+                    for (const change of toolInput.changes) {
+                      await this.repoUtils
+                        .getLocalRepoManager()
+                        .createOrUpdateFile(
+                          change.path,
+                          change.content,
+                          `Update ${change.path} for PR`,
+                          toolInput.repository,
+                          toolInput.branch
+                        );
+                    }
+
+                    // Create pull request
+                    const pullRequest = await this.repoUtils
+                      .getLocalRepoManager()
+                      .createPullRequest(
+                        toolInput.title,
+                        toolInput.description,
+                        toolInput.branch,
+                        toolInput.baseBranch || 'main',
+                        toolInput.repository
+                      );
+
+                    toolResponse = `Successfully created pull request: ${pullRequest.url}`;
+                    toolSuccess = true;
+                  } catch (error: any) {
+                    toolResponse = `Error creating pull request: ${error.message}`;
+                    toolSuccess = false;
                   }
-
-                  // Create pull request
-                  const pullRequest = await this.repoUtils
-                    .getLocalRepoManager()
-                    .createPullRequest(
-                      toolInput.title,
-                      toolInput.description,
-                      toolInput.branch,
-                      toolInput.baseBranch || 'main',
-                      toolInput.repository
-                    );
-
-                  toolResponse = `Successfully created pull request: ${pullRequest.url}`;
-                  toolSuccess = true;
                 }
               } else if (toolName === 'createBranchWithChanges') {
                 // Check if branch is protected

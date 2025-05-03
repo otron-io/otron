@@ -454,6 +454,25 @@ export class LocalRepositoryManager {
       await this.verifyRepoAccess(repository);
       const octokit = await this.getOctokitForRepo(repository);
 
+      // Check if head branch exists first - if it doesn't, that's a problem
+      try {
+        await octokit.git.getRef({
+          owner,
+          repo,
+          ref: `heads/${head}`,
+        });
+        console.log(`Branch ${head} exists, proceeding with PR creation`);
+      } catch (error: any) {
+        if (error.status === 404) {
+          throw new Error(
+            `Branch ${head} does not exist. Create it before making a PR.`
+          );
+        }
+        // For other errors, continue anyway
+        console.warn(`Warning when checking branch ${head}: ${error.message}`);
+      }
+
+      // Create the pull request
       const { data } = await octokit.pulls.create({
         owner,
         repo,
