@@ -53,8 +53,8 @@ async function handler(req: VercelRequest, res: VercelResponse) {
           <div class="flex items-center space-x-8">
             <a href="/api/dashboard" class="text-lg font-bold">Otron</a>
             <div class="flex space-x-4">
-              <a href="/api/agent-ui" class="px-3 py-2 rounded-md bg-indigo-700 font-medium">Agent Monitor</a>
-              <a href="/api/embed-ui" class="px-3 py-2 rounded-md hover:bg-indigo-700 font-medium">Repository Embeddings</a>
+              <a href="/pages/agent" class="px-3 py-2 rounded-md bg-indigo-700 font-medium">Agent Monitor</a>
+              <a href="/pages/embed" class="px-3 py-2 rounded-md hover:bg-indigo-700 font-medium">Repository Embeddings</a>
             </div>
           </div>
         </div>

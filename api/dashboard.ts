@@ -44,7 +44,7 @@ async function handler(req: VercelRequest, res: VercelResponse) {
       
       <div class="grid grid-cols-1 md:grid-cols-2 gap-8 mt-12">
         <!-- Agent Monitor Card -->
-        <a href="/api/agent-ui" class="block">
+        <a href="/pages/agent" class="block">
           <div class="bg-white rounded-xl shadow-md p-6 card-hover">
             <div class="flex items-center justify-center h-12 w-12 rounded-md bg-indigo-600 text-white mb-4">
               <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -57,7 +57,7 @@ async function handler(req: VercelRequest, res: VercelResponse) {
         </a>
         
         <!-- Repository Embeddings Card -->
-        <a href="/api/embed-ui" class="block">
+        <a href="/pages/embed" class="block">
           <div class="bg-white rounded-xl shadow-md p-6 card-hover">
             <div class="flex items-center justify-center h-12 w-12 rounded-md bg-indigo-600 text-white mb-4">
               <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
