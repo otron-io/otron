@@ -214,7 +214,9 @@ export class Otron {
                 );
                 toolSuccess = true;
               } else if (toolName === 'searchCodeFiles') {
-                let searchUrl = `/api/code-search?repository=${toolInput.repository}&query=${toolInput.query}`;
+                let searchUrl = `/api/code-search?repository=${
+                  toolInput.repository
+                }&query=${toolInput.query.split(' ').join('+')}`;
 
                 if (toolInput.fileFilter) {
                   searchUrl += `&fileFilter=${toolInput.fileFilter}`;
@@ -230,7 +232,7 @@ export class Otron {
                     `Calling code search API: ${searchUrl.toString()}`
                   );
 
-                  const response = await fetch(searchUrl.toString(), {
+                  const response = await fetch(searchUrl, {
                     headers: {
                       'X-Internal-Token': env.INTERNAL_API_TOKEN,
                     },
