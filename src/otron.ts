@@ -214,34 +214,22 @@ export class Otron {
                 );
                 toolSuccess = true;
               } else if (toolName === 'searchCodeFiles') {
-                // Use the code-search API endpoint directly instead of the repository manager
-                // Ensure the base URL includes the protocol
-                const baseUrl = env.VERCEL_URL.startsWith('http')
-                  ? env.VERCEL_URL
-                  : `https://${env.VERCEL_URL}`;
-                const searchUrl = new URL('/api/code-search', baseUrl);
+                let searchUrl = `/api/code-search?repository=${toolInput.repository}&query=${toolInput.query}`;
 
-                // Add search parameters
-                searchUrl.searchParams.append(
-                  'repository',
-                  toolInput.repository
-                );
-                searchUrl.searchParams.append('query', toolInput.query);
                 if (toolInput.fileFilter) {
-                  searchUrl.searchParams.append(
-                    'fileFilter',
-                    toolInput.fileFilter
-                  );
+                  searchUrl += `&fileFilter=${toolInput.fileFilter}`;
                 }
+
                 if (toolInput.maxResults) {
-                  searchUrl.searchParams.append(
-                    'limit',
-                    toolInput.maxResults.toString()
-                  );
+                  searchUrl += `&limit=${toolInput.maxResults}`;
                 }
 
                 // Make the API request
                 try {
+                  console.log(
+                    `Calling code search API: ${searchUrl.toString()}`
+                  );
+
                   const response = await fetch(searchUrl.toString(), {
                     headers: {
                       'X-Internal-Token': env.INTERNAL_API_TOKEN,
