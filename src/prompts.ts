@@ -80,6 +80,7 @@ REPOSITORIES: ${allowedRepositories.join(', ')}
 9. ALWAYS create a pull request after making any code changes
 
 ### For Code Search
+- This is one of the most powerful tools you have for exploring a codebase
 - Use semantic search for relevant code patterns
 - Look for functions, classes, and structural elements
 - Pay attention to context returned with search results
