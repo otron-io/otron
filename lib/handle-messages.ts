@@ -1,12 +1,12 @@
 import type {
   AssistantThreadStartedEvent,
   GenericMessageEvent,
-} from "@slack/web-api";
-import { client, getThread, updateStatusUtil } from "./slack-utils";
-import { generateResponse } from "./generate-response";
+} from '@slack/web-api';
+import { client, getThread, updateStatusUtil } from './slack-utils.js';
+import { generateResponse } from './generate-response.js';
 
 export async function assistantThreadMessage(
-  event: AssistantThreadStartedEvent,
+  event: AssistantThreadStartedEvent
 ) {
   const { channel_id, thread_ts } = event.assistant_thread;
   console.log(`Thread started: ${channel_id} ${thread_ts}`);
@@ -23,12 +23,12 @@ export async function assistantThreadMessage(
     thread_ts: thread_ts,
     prompts: [
       {
-        title: "Get the weather",
-        message: "What is the current weather in London?",
+        title: 'Get the weather',
+        message: 'What is the current weather in London?',
       },
       {
-        title: "Get the news",
-        message: "What is the latest Premier League news from the BBC?",
+        title: 'Get the news',
+        message: 'What is the latest Premier League news from the BBC?',
       },
     ],
   });
@@ -36,7 +36,7 @@ export async function assistantThreadMessage(
 
 export async function handleNewAssistantMessage(
   event: GenericMessageEvent,
-  botUserId: string,
+  botUserId: string
 ) {
   if (
     event.bot_id ||
@@ -48,7 +48,7 @@ export async function handleNewAssistantMessage(
 
   const { thread_ts, channel } = event;
   const updateStatus = updateStatusUtil(channel, thread_ts);
-  await updateStatus("is thinking...");
+  await updateStatus('is thinking...');
 
   const messages = await getThread(channel, thread_ts, botUserId);
   const result = await generateResponse(messages, updateStatus);
@@ -60,14 +60,14 @@ export async function handleNewAssistantMessage(
     unfurl_links: false,
     blocks: [
       {
-        type: "section",
+        type: 'section',
         text: {
-          type: "mrkdwn",
+          type: 'mrkdwn',
           text: result,
         },
       },
     ],
   });
 
-  await updateStatus("");
+  await updateStatus('');
 }

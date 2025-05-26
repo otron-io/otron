@@ -1,10 +1,10 @@
-import { AppMentionEvent } from "@slack/web-api";
-import { client, getThread } from "./slack-utils";
-import { generateResponse } from "./generate-response";
+import { AppMentionEvent } from '@slack/web-api';
+import { client, getThread } from './slack-utils.js';
+import { generateResponse } from './generate-response.js';
 
 const updateStatusUtil = async (
   initialStatus: string,
-  event: AppMentionEvent,
+  event: AppMentionEvent
 ) => {
   const initialMessage = await client.chat.postMessage({
     channel: event.channel,
@@ -13,7 +13,7 @@ const updateStatusUtil = async (
   });
 
   if (!initialMessage || !initialMessage.ts)
-    throw new Error("Failed to post initial message");
+    throw new Error('Failed to post initial message');
 
   const updateMessage = async (status: string) => {
     await client.chat.update({
@@ -27,16 +27,16 @@ const updateStatusUtil = async (
 
 export async function handleNewAppMention(
   event: AppMentionEvent,
-  botUserId: string,
+  botUserId: string
 ) {
-  console.log("Handling app mention");
+  console.log('Handling app mention');
   if (event.bot_id || event.bot_id === botUserId || event.bot_profile) {
-    console.log("Skipping app mention");
+    console.log('Skipping app mention');
     return;
   }
 
   const { thread_ts, channel } = event;
-  const updateMessage = await updateStatusUtil("is thinking...", event);
+  const updateMessage = await updateStatusUtil('is thinking...', event);
 
   if (thread_ts) {
     const messages = await getThread(channel, thread_ts, botUserId);
@@ -44,8 +44,8 @@ export async function handleNewAppMention(
     await updateMessage(result);
   } else {
     const result = await generateResponse(
-      [{ role: "user", content: event.text }],
-      updateMessage,
+      [{ role: 'user', content: event.text }],
+      updateMessage
     );
     await updateMessage(result);
   }
