@@ -13,6 +13,7 @@
     { "source": "/api/issue-actions", "destination": "/api/issue-actions.ts" },
     { "source": "/pages/embed", "destination": "/api/embed-ui.ts" },
     { "source": "/pages/agent", "destination": "/api/agent-ui.ts" },
-    { "source": "/pages/dashboard", "destination": "/api/dashboard.ts" }
+    { "source": "/pages/dashboard", "destination": "/api/dashboard.ts" },
+    { "source": "/api/events", "destination": "/api/events.ts" }
   ]
 }
