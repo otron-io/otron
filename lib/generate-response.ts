@@ -68,6 +68,7 @@ import {
 } from './tool-executors.js';
 import { LinearClient } from '@linear/sdk';
 import { memoryManager } from './memory/memory-manager.js';
+import { goalEvaluator } from './goal-evaluator.js';
 
 // Helper function to extract issue ID from context
 function extractIssueIdFromContext(
@@ -110,7 +111,125 @@ export const generateResponse = async (
     channelId: string;
     threadTs?: string;
   }
-) => {
+): Promise<string> => {
+  const MAX_RETRY_ATTEMPTS = 2;
+  let attemptNumber = 1;
+  let toolsUsed: string[] = [];
+  let actionsPerformed: string[] = [];
+  let finalResponse = '';
+  let endedExplicitly = false;
+
+  // Store original messages for evaluation
+  const originalMessages = [...messages];
+
+  while (attemptNumber <= MAX_RETRY_ATTEMPTS) {
+    try {
+      updateStatus?.(
+        `Attempt ${attemptNumber}/${MAX_RETRY_ATTEMPTS}: Generating response...`
+      );
+
+      // Generate response using the internal function
+      const result = await generateResponseInternal(
+        messages,
+        updateStatus,
+        linearClient,
+        slackContext,
+        attemptNumber
+      );
+
+      finalResponse = result.text;
+      toolsUsed = result.toolsUsed;
+      actionsPerformed = result.actionsPerformed;
+      endedExplicitly = result.endedExplicitly;
+
+      // If this is the last attempt, don't evaluate - just return
+      if (attemptNumber >= MAX_RETRY_ATTEMPTS) {
+        return finalResponse;
+      }
+
+      // Evaluate goal completion
+      updateStatus?.(
+        `Evaluating goal completion for attempt ${attemptNumber}...`
+      );
+
+      const evaluation = await goalEvaluator.evaluateGoalCompletion(
+        originalMessages,
+        {
+          toolsUsed,
+          actionsPerformed,
+          finalResponse,
+          endedExplicitly,
+        },
+        attemptNumber
+      );
+
+      // If goal is complete or confidence is high enough, return the response
+      if (evaluation.isComplete || evaluation.confidence >= 0.8) {
+        console.log(
+          `Goal evaluation passed on attempt ${attemptNumber}:`,
+          evaluation.reasoning
+        );
+        return finalResponse;
+      }
+
+      // Goal not complete - prepare for retry
+      console.log(
+        `Goal evaluation failed on attempt ${attemptNumber}:`,
+        evaluation.reasoning
+      );
+
+      // Generate retry feedback
+      const retryFeedback = goalEvaluator.generateRetryFeedback(
+        evaluation,
+        attemptNumber
+      );
+
+      // Add the retry feedback as a new user message
+      messages.push({
+        role: 'user',
+        content: retryFeedback,
+      });
+
+      attemptNumber++;
+    } catch (error) {
+      console.error(`Error in attempt ${attemptNumber}:`, error);
+
+      // If this is the last attempt, throw the error
+      if (attemptNumber >= MAX_RETRY_ATTEMPTS) {
+        throw error;
+      }
+
+      // Otherwise, try again
+      attemptNumber++;
+    }
+  }
+
+  return finalResponse;
+};
+
+// Internal function that does the actual response generation
+const generateResponseInternal = async (
+  messages: CoreMessage[],
+  updateStatus?: (status: string) => void,
+  linearClient?: LinearClient,
+  slackContext?: {
+    channelId: string;
+    threadTs?: string;
+  },
+  attemptNumber: number = 1
+): Promise<{
+  text: string;
+  toolsUsed: string[];
+  actionsPerformed: string[];
+  endedExplicitly: boolean;
+}> => {
+  // Track execution details for goal evaluation
+  const executionTracker = {
+    toolsUsed: new Set<string>(),
+    actionsPerformed: [] as string[],
+    endedExplicitly: false,
+  };
+
   // Extract context ID for memory operations
   const contextId = extractIssueIdFromContext(messages, slackContext);
 
@@ -296,6 +415,17 @@ export const generateResponse = async (
         const result = await originalExecutor(...args);
         success = true;
         response = typeof result === 'string' ? result : JSON.stringify(result);
+
+        // Track tool usage for goal evaluation
+        executionTracker.toolsUsed.add(toolName);
+        executionTracker.actionsPerformed.push(
+          `${toolName}: ${response.substring(0, 100)}...`
+        );
+
+        // Check if this is an endActions call
+        if (toolName === 'endActions') {
+          executionTracker.endedExplicitly = true;
+        }
 
         // Track tool usage in memory
         await memoryManager.trackToolUsage(toolName, success, {
@@ -1852,5 +1982,10 @@ export const generateResponse = async (
     console.error('Error storing assistant response in memory:', error);
   }
 
-  return text;
+  return {
+    text,
+    toolsUsed: Array.from(executionTracker.toolsUsed),
+    actionsPerformed: executionTracker.actionsPerformed,
+    endedExplicitly: executionTracker.endedExplicitly,
+  };
 };
