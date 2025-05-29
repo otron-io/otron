@@ -1424,7 +1424,85 @@ export const generateResponse = async (
               'Optional response text (leave empty string if not needed)'
             ),
           blocks: z
-            .array(z.any())
+            .array(
+              z.union([
+                // Section block with text
+                z
+                  .object({
+                    type: z.literal('section'),
+                    text: z.object({
+                      type: z.enum(['mrkdwn', 'plain_text']),
+                      text: z.string(),
+                    }),
+                  })
+                  .strict(),
+                // Section block with fields
+                z
+                  .object({
+                    type: z.literal('section'),
+                    fields: z.array(
+                      z.object({
+                        type: z.enum(['mrkdwn', 'plain_text']),
+                        text: z.string(),
+                      })
+                    ),
+                  })
+                  .strict(),
+                // Header block
+                z
+                  .object({
+                    type: z.literal('header'),
+                    text: z.object({
+                      type: z.literal('plain_text'),
+                      text: z.string(),
+                    }),
+                  })
+                  .strict(),
+                // Divider block
+                z
+                  .object({
+                    type: z.literal('divider'),
+                  })
+                  .strict(),
+                // Context block
+                z
+                  .object({
+                    type: z.literal('context'),
+                    elements: z.array(
+                      z.object({
+                        type: z.enum(['mrkdwn', 'plain_text']),
+                        text: z.string(),
+                      })
+                    ),
+                  })
+                  .strict(),
+                // Actions block
+                z
+                  .object({
+                    type: z.literal('actions'),
+                    elements: z.array(
+                      z.object({
+                        type: z.literal('button'),
+                        text: z.object({
+                          type: z.literal('plain_text'),
+                          text: z.string(),
+                        }),
+                        action_id: z.string(),
+                        style: z.enum(['primary', 'danger']),
+                      })
+                    ),
+                  })
+                  .strict(),
+                // Image block
+                z
+                  .object({
+                    type: z.literal('image'),
+                    image_url: z.string(),
+                    alt_text: z.string(),
+                  })
+                  .strict(),
+              ])
+            )
             .describe(
               'Optional Block Kit blocks for rich formatting (use empty array if not needed)'
             ),
