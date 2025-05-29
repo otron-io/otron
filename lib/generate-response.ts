@@ -92,6 +92,8 @@ export const generateResponse = async (
     - Multi-section content with dividers
     - Lists with proper formatting
     
+    IMPORTANT: Every Block Kit block MUST have a "type" field as the first property.
+    
     Common Block Kit patterns:
     1. Header + Section: [{"type": "header", "text": {"type": "plain_text", "text": "Title"}}, {"type": "section", "text": {"type": "mrkdwn", "text": "Content"}}]
     2. Fields for data: [{"type": "section", "fields": [{"type": "mrkdwn", "text": "*Field:*\\nValue"}]}]
@@ -345,9 +347,19 @@ export const generateResponse = async (
         parameters: z.object({
           channel: z.string().describe('The channel ID to send the message to'),
           blocks: z
-            .array(z.object({}).strict())
+            .array(
+              z
+                .object({
+                  type: z
+                    .string()
+                    .describe(
+                      'Block type (e.g., section, header, divider, image, actions, context)'
+                    ),
+                })
+                .passthrough()
+            )
             .describe(
-              'Array of Slack Block Kit blocks for rich formatting. Common blocks: section (text), header, divider, image, actions (buttons), context'
+              'Array of Slack Block Kit blocks for rich formatting. Each block must have a "type" field. Common blocks: section (text), header, divider, image, actions (buttons), context'
             ),
           text: z
             .string()
@@ -370,9 +382,19 @@ export const generateResponse = async (
             .string()
             .describe('Channel name (with or without #) or channel ID'),
           blocks: z
-            .array(z.object({}).strict())
+            .array(
+              z
+                .object({
+                  type: z
+                    .string()
+                    .describe(
+                      'Block type (e.g., section, header, divider, image, actions, context)'
+                    ),
+                })
+                .passthrough()
+            )
             .describe(
-              'Array of Slack Block Kit blocks for rich formatting. Common blocks: section (text), header, divider, image, actions (buttons), context'
+              'Array of Slack Block Kit blocks for rich formatting. Each block must have a "type" field. Common blocks: section (text), header, divider, image, actions (buttons), context'
             ),
           text: z
             .string()
@@ -396,9 +418,19 @@ export const generateResponse = async (
             .string()
             .describe('User ID or email address of the recipient'),
           blocks: z
-            .array(z.object({}).strict())
+            .array(
+              z
+                .object({
+                  type: z
+                    .string()
+                    .describe(
+                      'Block type (e.g., section, header, divider, image, actions, context)'
+                    ),
+                })
+                .passthrough()
+            )
             .describe(
-              'Array of Slack Block Kit blocks for rich formatting. Common blocks: section (text), header, divider, image, actions (buttons), context'
+              'Array of Slack Block Kit blocks for rich formatting. Each block must have a "type" field. Common blocks: section (text), header, divider, image, actions (buttons), context'
             ),
           text: z
             .string()
