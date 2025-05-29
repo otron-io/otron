@@ -70,13 +70,7 @@ export const generateResponse = async (
       searchWeb: tool({
         description: 'Use this to search the web for information',
         parameters: z.object({
-          query: z.string(),
-          specificDomain: z
-            .string()
-            .nullable()
-            .describe(
-              'a domain to search if the user specifies e.g. bbc.com. Should be only the domain name without the protocol'
-            ),
+          query: z.string().describe('The search query'),
         }),
         execute: (params) => executeSearchWeb(params, updateStatus),
       }),
