@@ -69,21 +69,13 @@ export async function handleLinearNotification(
     // Add issue context
     contextMessage += `\n\nPlease analyze this issue and provide appropriate assistance. You can take actions on Linear, GitHub, or Slack as needed.`;
 
-    // Generate response using AI
-    const response = await generateResponse(
+    // Generate response using AI - let it decide whether and how to respond using its tools
+    await generateResponse(
       [{ role: 'user', content: contextMessage }],
       updateStatus,
       linearClient,
       undefined // No Slack context for Linear notifications
     );
-
-    // Add the response as a comment to the issue
-    if (issue) {
-      await linearClient.createComment({
-        issueId: issue.id,
-        body: response,
-      });
-    }
   } catch (error) {
     console.error('Error handling Linear notification:', error);
   }

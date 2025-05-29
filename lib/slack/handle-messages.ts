@@ -18,12 +18,7 @@ export async function assistantThreadMessage(
   console.log(`Thread started: ${channel_id} ${thread_ts}`);
   console.log(JSON.stringify(event));
 
-  await client.chat.postMessage({
-    channel: channel_id,
-    thread_ts: thread_ts,
-    text: "Hello, I'm an AI assistant built with the AI SDK by Vercel!",
-  });
-
+  // Set up suggested prompts without sending an automatic greeting
   await client.assistant.threads.setSuggestedPrompts({
     channel_id: channel_id,
     thread_ts: thread_ts,
@@ -35,6 +30,10 @@ export async function assistantThreadMessage(
       {
         title: 'Get the news',
         message: 'What is the latest Premier League news from the BBC?',
+      },
+      {
+        title: 'Linear context',
+        message: 'Show me recent Linear issues',
       },
     ],
   });
@@ -67,14 +66,9 @@ export async function handleNewAssistantMessage(
   await updateStatus('is thinking...');
 
   const messages = await getThread(channel, thread_ts, botUserId);
-  const result = await generateResponse(
-    messages,
-    updateStatus,
-    linearClient,
-    slackContext
-  );
 
-  await sendMessage(channel, result, thread_ts);
+  // Let the AI decide whether and how to respond using its tools
+  await generateResponse(messages, updateStatus, linearClient, slackContext);
 
   await updateStatus('');
 }

@@ -56,29 +56,23 @@ export async function handleNewAppMention(
 
   if (thread_ts) {
     const messages = await getThread(channel, thread_ts, botUserId);
-    const result = await generateResponse(
-      messages,
-      updateMessage,
-      linearClient,
-      slackContext
-    );
-    await updateMessage(
-      result.replace(/\[(.*?)\]\((.*?)\)/g, '<$2|$1>').replace(/\*\*/g, '*')
-    );
+    // Let the AI decide whether and how to respond using its tools
+    await generateResponse(messages, updateMessage, linearClient, slackContext);
   } else {
     // For non-threaded messages, include current message context
     const currentMessageContext = `[Message from user ${event.user} at ${
       event.ts
     }]: ${event.text.replace(`<@${botUserId}> `, '')}`;
 
-    const result = await generateResponse(
+    // Let the AI decide whether and how to respond using its tools
+    await generateResponse(
       [{ role: 'user', content: currentMessageContext }],
       updateMessage,
       linearClient,
       slackContext
     );
-    await updateMessage(
-      result.replace(/\[(.*?)\]\((.*?)\)/g, '<$2|$1>').replace(/\*\*/g, '*')
-    );
   }
+
+  // Clear status after processing
+  await updateMessage('');
 }

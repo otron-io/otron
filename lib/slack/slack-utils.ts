@@ -749,3 +749,94 @@ export const unpinMessage = async (channel: string, timestamp: string) => {
     throw error;
   }
 };
+
+/**
+ * Send a rich message using Slack Block Kit
+ * This allows for complex layouts, buttons, images, etc.
+ */
+export const sendRichMessage = async (
+  channel: string,
+  blocks: any[],
+  text?: string,
+  thread_ts?: string
+) => {
+  try {
+    await client.chat.postMessage({
+      channel: channel,
+      blocks: blocks,
+      text: text || 'Rich message', // Fallback text for notifications
+      thread_ts: thread_ts,
+      unfurl_links: false,
+    });
+  } catch (error) {
+    console.error('Error sending rich message:', error);
+    throw error;
+  }
+};
+
+/**
+ * Helper function to create common block types
+ */
+export const createBlocks = {
+  section: (text: string, accessory?: any) => ({
+    type: 'section',
+    text: {
+      type: 'mrkdwn',
+      text: text,
+    },
+    ...(accessory && { accessory }),
+  }),
+
+  header: (text: string) => ({
+    type: 'header',
+    text: {
+      type: 'plain_text',
+      text: text,
+    },
+  }),
+
+  divider: () => ({
+    type: 'divider',
+  }),
+
+  context: (elements: any[]) => ({
+    type: 'context',
+    elements: elements,
+  }),
+
+  image: (imageUrl: string, altText: string, title?: string) => ({
+    type: 'image',
+    image_url: imageUrl,
+    alt_text: altText,
+    ...(title && { title: { type: 'plain_text', text: title } }),
+  }),
+
+  button: (
+    text: string,
+    actionId: string,
+    value?: string,
+    style?: 'primary' | 'danger'
+  ) => ({
+    type: 'button',
+    text: {
+      type: 'plain_text',
+      text: text,
+    },
+    action_id: actionId,
+    ...(value && { value }),
+    ...(style && { style }),
+  }),
+
+  actions: (elements: any[]) => ({
+    type: 'actions',
+    elements: elements,
+  }),
+
+  fields: (fields: { title: string; value: string; short?: boolean }[]) => ({
+    type: 'section',
+    fields: fields.map((field) => ({
+      type: 'mrkdwn',
+      text: `*${field.title}*\n${field.value}`,
+    })),
+  }),
+};

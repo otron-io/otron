@@ -302,6 +302,113 @@ export const executeUnpinSlackMessage = async (
   };
 };
 
+export const executeSendRichSlackMessage = async (
+  {
+    channel,
+    blocks,
+    text,
+    threadTs,
+  }: {
+    channel: string;
+    blocks: any[];
+    text: string;
+    threadTs: string;
+  },
+  updateStatus?: (status: string) => void
+) => {
+  updateStatus?.(`is sending rich message to ${channel}...`);
+
+  await slackUtils.sendRichMessage(
+    channel,
+    blocks,
+    text || undefined,
+    threadTs || undefined
+  );
+  return {
+    success: true,
+    message: `Sent rich message to ${channel}`,
+  };
+};
+
+export const executeSendRichChannelMessage = async (
+  {
+    channelNameOrId,
+    blocks,
+    text,
+    threadTs,
+  }: {
+    channelNameOrId: string;
+    blocks: any[];
+    text: string;
+    threadTs: string;
+  },
+  updateStatus?: (status: string) => void
+) => {
+  updateStatus?.(`is sending rich message to channel ${channelNameOrId}...`);
+
+  // Handle channel name resolution
+  let channelId = channelNameOrId;
+  if (channelNameOrId.startsWith('#')) {
+    const channelName = channelNameOrId.slice(1);
+    const channelInfo = await slackUtils.getChannelByName(channelName);
+    if (!channelInfo?.id) {
+      throw new Error(`Channel ${channelName} not found`);
+    }
+    channelId = channelInfo.id;
+  }
+
+  await slackUtils.sendRichMessage(
+    channelId,
+    blocks,
+    text || undefined,
+    threadTs || undefined
+  );
+  return {
+    success: true,
+    message: `Sent rich message to channel ${channelNameOrId}`,
+  };
+};
+
+export const executeSendRichDirectMessage = async (
+  {
+    userIdOrEmail,
+    blocks,
+    text,
+  }: {
+    userIdOrEmail: string;
+    blocks: any[];
+    text: string;
+  },
+  updateStatus?: (status: string) => void
+) => {
+  updateStatus?.(`is sending rich direct message to ${userIdOrEmail}...`);
+
+  // Handle user resolution
+  let userId = userIdOrEmail;
+  if (userIdOrEmail.includes('@')) {
+    const userInfo = await slackUtils.getUserByEmail(userIdOrEmail);
+    if (!userInfo?.id) {
+      throw new Error(`User with email ${userIdOrEmail} not found`);
+    }
+    userId = userInfo.id;
+  }
+
+  // Open a DM channel with the user
+  const { channel } = await slackUtils.client.conversations.open({
+    users: userId,
+  });
+
+  if (!channel?.id) {
+    throw new Error('Failed to open DM channel');
+  }
+
+  await slackUtils.sendRichMessage(channel.id, blocks, text || undefined);
+  return {
+    success: true,
+    message: `Sent rich direct message to ${userIdOrEmail}`,
+  };
+};
+
 // Linear tool execution functions
 export const executeGetIssueContext = async (
   { issueId, commentId }: { issueId: string; commentId: string },
@@ -797,3 +904,121 @@ export const executeGetLinearWorkflowStates = async (
   );
   return { workflowStates };
 };
+
+export const executeCreateLinearComment = async (
+  { issueId, body }: { issueId: string; body: string },
+  updateStatus?: (status: string) => void,
+  linearClient?: LinearClient
+) => {
+  if (!linearClient) {
+    throw new Error('LinearClient is required for Linear operations');
+  }
+
+  updateStatus?.(`is creating comment on issue ${issueId}...`);
+
+  await linearUtils.createComment(linearClient, issueId, body);
+  return {
+    success: true,
+    message: `Created comment on issue ${issueId}`,
+  };
+};
+
+export async function executeCreateFormattedSlackMessage(
+  args: {
+    channel: string;
+    title?: string;
+    content: string;
+    fields?: Array<{ label: string; value: string }>;
+    context?: string;
+    actions?: Array<{
+      text: string;
+      action_id: string;
+      style?: 'primary' | 'danger';
+    }>;
+    thread_ts?: string;
+  },
+  updateStatus?: (status: string) => void
+): Promise<string> {
+  try {
+    const { channel, title, content, fields, context, actions, thread_ts } =
+      args;
+
+    updateStatus?.(`is creating formatted message for ${channel}...`);
+
+    const blocks: any[] = [];
+
+    // Add header if title provided
+    if (title) {
+      blocks.push({
+        type: 'header',
+        text: {
+          type: 'plain_text',
+          text: title,
+        },
+      });
+    }
+
+    // Add main content
+    blocks.push({
+      type: 'section',
+      text: {
+        type: 'mrkdwn',
+        text: content,
+      },
+    });
+
+    // Add fields if provided
+    if (fields && fields.length > 0) {
+      blocks.push({
+        type: 'section',
+        fields: fields.map((field) => ({
+          type: 'mrkdwn',
+          text: `*${field.label}:*\n${field.value}`,
+        })),
+      });
+    }
+
+    // Add divider if we have context or actions
+    if (context || actions) {
+      blocks.push({ type: 'divider' });
+    }
+
+    // Add context if provided
+    if (context) {
+      blocks.push({
+        type: 'context',
+        elements: [
+          {
+            type: 'mrkdwn',
+            text: context,
+          },
+        ],
+      });
+    }
+
+    // Add actions if provided
+    if (actions && actions.length > 0) {
+      blocks.push({
+        type: 'actions',
+        elements: actions.map((action) => ({
+          type: 'button',
+          text: {
+            type: 'plain_text',
+            text: action.text,
+          },
+          action_id: action.action_id,
+          style: action.style,
+        })),
+      });
+    }
+
+    await slackUtils.sendRichMessage(channel, blocks, undefined, thread_ts);
+
+    return `Formatted message sent successfully to ${channel}`;
+  } catch (error) {
+    console.error('Error sending formatted Slack message:', error);
+    return `Error sending formatted message: ${
+      error instanceof Error ? error.message : 'Unknown error'
+    }`;
+  }
+}

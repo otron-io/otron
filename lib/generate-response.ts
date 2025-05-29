@@ -39,6 +39,10 @@ import {
   executeSetSlackStatus,
   executePinSlackMessage,
   executeUnpinSlackMessage,
+  executeSendRichSlackMessage,
+  executeSendRichChannelMessage,
+  executeSendRichDirectMessage,
+  executeCreateFormattedSlackMessage,
   executeGetLinearTeams,
   executeGetLinearProjects,
   executeGetLinearInitiatives,
@@ -46,6 +50,7 @@ import {
   executeGetLinearRecentIssues,
   executeSearchLinearIssues,
   executeGetLinearWorkflowStates,
+  executeCreateLinearComment,
 } from './tool-executors.js';
 import { LinearClient } from '@linear/sdk';
 
@@ -63,7 +68,58 @@ export const generateResponse = async (
     system: `You are Otron. An omnipresent AI agent. You exist across Slack, Linear, and GitHub.
     - You keep your responses concise and to the point, but friendly and engaging while being as helpful as possible.
     - You can be notified to take action via all 3 platforms, and can take actions on all 3 platforms.
-    - You must decide where to respond. For example, if you are asked in Slack to take action on Linear, you should respond in Slack while also taking action on Linear.
+    
+    CRITICAL: You must EXPLICITLY decide where and how to respond using your available tools.
+    - When you receive a message from Slack, you are NOT automatically responding to Slack - you must use Slack tools to send messages if you want to respond there.
+    - When you receive a Linear notification, you are NOT automatically commenting on Linear - you must use Linear tools to create comments if you want to respond there.
+    - You have full control over whether to respond, where to respond, and what actions to take.
+    - You can choose to respond on the same platform, a different platform, multiple platforms, or not respond at all.
+    - Use the appropriate tools (sendSlackMessage, createIssue, addPullRequestComment, etc.) to take any actions you deem necessary.
+
+    SLACK FORMATTING & BLOCK KIT:
+    - For simple text messages, use sendSlackMessage, sendChannelMessage, or sendDirectMessage
+    - For rich, visually appealing messages, use sendRichSlackMessage, sendRichChannelMessage, or sendRichDirectMessage with Block Kit
+    - Slack uses mrkdwn format: *bold*, _italic_, ~strikethrough~, \`code\`, \`\`\`code block\`\`\`, >quote, • bullet
+    - Links: <https://example.com|Link Text> or just <https://example.com>
+    - User mentions: <@U1234567> or <@U1234567|username>
+    - Channel mentions: <#C1234567> or <#C1234567|channel-name>
+    
+    BLOCK KIT EXAMPLES:
+    Use rich messages for:
+    - Status updates with visual hierarchy
+    - Data presentations (Linear issues, GitHub PRs)
+    - Interactive content with buttons
+    - Multi-section content with dividers
+    - Lists with proper formatting
+    
+    Common Block Kit patterns:
+    1. Header + Section: [{"type": "header", "text": {"type": "plain_text", "text": "Title"}}, {"type": "section", "text": {"type": "mrkdwn", "text": "Content"}}]
+    2. Fields for data: [{"type": "section", "fields": [{"type": "mrkdwn", "text": "*Field:*\\nValue"}]}]
+    3. Dividers for separation: [{"type": "divider"}]
+    4. Context for metadata: [{"type": "context", "elements": [{"type": "mrkdwn", "text": "Last updated: 2024-01-01"}]}]
+    5. Actions with buttons: [{"type": "actions", "elements": [{"type": "button", "text": {"type": "plain_text", "text": "Click Me"}, "action_id": "button_click"}]}]
+
+    WHEN TO USE RICH MESSAGES:
+    - Linear issue summaries (use header + fields + context)
+    - GitHub PR reviews (use sections + dividers + actions)
+    - Status reports (use header + multiple sections)
+    - Lists of items (use sections with bullet points)
+    - Data tables (use fields in sections)
+    - Interactive content (use actions with buttons)
+    
+    EXAMPLE RICH MESSAGE FOR LINEAR ISSUE:
+    [
+      {"type": "header", "text": {"type": "plain_text", "text": "🎯 Linear Issue Update"}},
+      {"type": "section", "fields": [
+        {"type": "mrkdwn", "text": "*Issue:*\\nOTR-123"},
+        {"type": "mrkdwn", "text": "*Status:*\\nIn Progress"},
+        {"type": "mrkdwn", "text": "*Assignee:*\\nJohn Doe"},
+        {"type": "mrkdwn", "text": "*Priority:*\\nHigh"}
+      ]},
+      {"type": "divider"},
+      {"type": "section", "text": {"type": "mrkdwn", "text": "*Description:*\\nImplement new feature for user authentication"}},
+      {"type": "context", "elements": [{"type": "mrkdwn", "text": "Updated 2 hours ago"}]}
+    ]
 
     IMPORTANT CONTEXT AWARENESS:
     - When users refer to "my message", "this message", "the message above", or similar contextual references, look at the message history to identify which specific message they're referring to.
@@ -84,7 +140,9 @@ export const generateResponse = async (
 
     Final notes:
     - Current date is: ${new Date().toISOString().split('T')[0]}
-    - Make sure to ALWAYS include sources in your final response if you use web search. Put sources inline if possible.`,
+    - Make sure to ALWAYS include sources in your final response if you use web search. Put sources inline if possible.
+    - Remember: You control all communication - use your tools to respond where and how you see fit.
+    - Choose rich Block Kit messages when the content benefits from visual structure, formatting, or interactivity.`,
     messages,
     maxSteps: 10,
     tools: {
@@ -280,6 +338,121 @@ export const generateResponse = async (
           timestamp: z.string().describe('The message timestamp'),
         }),
         execute: (params) => executeUnpinSlackMessage(params, updateStatus),
+      }),
+      sendRichSlackMessage: tool({
+        description:
+          'Send a rich formatted message using Slack Block Kit to a specific channel. Use this for complex layouts, buttons, images, and structured content.',
+        parameters: z.object({
+          channel: z.string().describe('The channel ID to send the message to'),
+          blocks: z
+            .array(z.any())
+            .describe(
+              'Array of Slack Block Kit blocks for rich formatting. Common blocks: section (text), header, divider, image, actions (buttons), context'
+            ),
+          text: z
+            .string()
+            .describe(
+              'Fallback text for notifications (optional but recommended)'
+            ),
+          threadTs: z
+            .string()
+            .describe(
+              'Optional thread timestamp to reply in a thread. Leave empty if not replying to a thread.'
+            ),
+        }),
+        execute: (params) => executeSendRichSlackMessage(params, updateStatus),
+      }),
+      sendRichChannelMessage: tool({
+        description:
+          'Send a rich formatted message using Slack Block Kit to a channel by name or ID. Use this for complex layouts, buttons, images, and structured content.',
+        parameters: z.object({
+          channelNameOrId: z
+            .string()
+            .describe('Channel name (with or without #) or channel ID'),
+          blocks: z
+            .array(z.any())
+            .describe(
+              'Array of Slack Block Kit blocks for rich formatting. Common blocks: section (text), header, divider, image, actions (buttons), context'
+            ),
+          text: z
+            .string()
+            .describe(
+              'Fallback text for notifications (optional but recommended)'
+            ),
+          threadTs: z
+            .string()
+            .describe(
+              'Optional thread timestamp to reply in a thread. Leave empty if not replying to a thread.'
+            ),
+        }),
+        execute: (params) =>
+          executeSendRichChannelMessage(params, updateStatus),
+      }),
+      sendRichDirectMessage: tool({
+        description:
+          'Send a rich formatted direct message using Slack Block Kit to a user. Use this for complex layouts, buttons, images, and structured content.',
+        parameters: z.object({
+          userIdOrEmail: z
+            .string()
+            .describe('User ID or email address of the recipient'),
+          blocks: z
+            .array(z.any())
+            .describe(
+              'Array of Slack Block Kit blocks for rich formatting. Common blocks: section (text), header, divider, image, actions (buttons), context'
+            ),
+          text: z
+            .string()
+            .describe(
+              'Fallback text for notifications (optional but recommended)'
+            ),
+        }),
+        execute: (params) => executeSendRichDirectMessage(params, updateStatus),
+      }),
+      createFormattedSlackMessage: tool({
+        description:
+          'Create a beautifully formatted Slack message with structured layout using Block Kit. Perfect for status updates, issue summaries, reports, and rich content.',
+        parameters: z.object({
+          channel: z
+            .string()
+            .describe('The channel ID or name to send the message to'),
+          title: z
+            .string()
+            .optional()
+            .describe('Optional header title for the message'),
+          content: z.string().describe('Main content text (supports markdown)'),
+          fields: z
+            .array(
+              z.object({
+                label: z.string().describe('Field label'),
+                value: z.string().describe('Field value'),
+              })
+            )
+            .optional()
+            .describe('Optional array of key-value fields to display'),
+          context: z
+            .string()
+            .optional()
+            .describe('Optional context text (like timestamps, metadata)'),
+          actions: z
+            .array(
+              z.object({
+                text: z.string().describe('Button text'),
+                action_id: z.string().describe('Unique action identifier'),
+                style: z
+                  .enum(['primary', 'danger'])
+                  .optional()
+                  .describe('Button style'),
+              })
+            )
+            .optional()
+            .describe('Optional array of action buttons'),
+          thread_ts: z
+            .string()
+            .optional()
+            .describe('Optional thread timestamp to reply in a thread'),
+        }),
+        execute: (params) =>
+          executeCreateFormattedSlackMessage(params, updateStatus),
       }),
       // Linear tools
       getIssueContext: tool({
@@ -527,6 +700,20 @@ export const generateResponse = async (
         }),
         execute: async (params) => {
           return await executeGetLinearWorkflowStates(
+            params,
+            updateStatus,
+            linearClient
+          );
+        },
+      }),
+      createLinearComment: tool({
+        description: 'Create a comment on a Linear issue',
+        parameters: z.object({
+          issueId: z.string().describe('The Linear issue ID or identifier'),
+          body: z.string().describe('The comment text to add'),
+        }),
+        execute: async (params) => {
+          return await executeCreateLinearComment(
             params,
             updateStatus,
             linearClient

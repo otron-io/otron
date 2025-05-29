@@ -791,3 +791,31 @@ export const getWorkflowStates = async (
     return 'Error retrieving workflow states from Linear.';
   }
 };
+
+/**
+ * Create a comment on a Linear issue
+ */
+export const createComment = async (
+  linearClient: LinearClient,
+  issueIdOrIdentifier: string,
+  body: string
+): Promise<void> => {
+  try {
+    const issue = await linearClient.issue(issueIdOrIdentifier);
+    if (!issue) {
+      console.error(`Issue ${issueIdOrIdentifier} not found`);
+      return;
+    }
+
+    await linearClient.createComment({
+      issueId: issue.id,
+      body,
+    });
+    console.log(`Created comment on issue ${issueIdOrIdentifier}`);
+  } catch (error: unknown) {
+    console.error(
+      `Error creating comment on issue ${issueIdOrIdentifier}:`,
+      error instanceof Error ? error.message : String(error)
+    );
+  }
+};
