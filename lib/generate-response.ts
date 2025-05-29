@@ -1754,31 +1754,42 @@ export const generateResponse = async (
           branch: z.string().describe('The branch to edit'),
           operations: z
             .array(
-              z.object({
-                type: z
-                  .enum(['insert', 'replace', 'delete'])
-                  .describe('The type of operation'),
-                line: z
-                  .number()
-                  .optional()
-                  .describe('Line number for insert operations (1-based)'),
-                startLine: z
-                  .number()
-                  .optional()
-                  .describe(
-                    'Starting line for replace/delete operations (1-based, inclusive)'
-                  ),
-                endLine: z
-                  .number()
-                  .optional()
-                  .describe(
-                    'Ending line for replace/delete operations (1-based, inclusive)'
-                  ),
-                content: z
-                  .string()
-                  .optional()
-                  .describe('Content for insert/replace operations'),
-              })
+              z.discriminatedUnion('type', [
+                z.object({
+                  type: z.literal('insert'),
+                  line: z
+                    .number()
+                    .describe('Line number for insert operation (1-based)'),
+                  content: z.string().describe('Content to insert'),
+                }),
+                z.object({
+                  type: z.literal('replace'),
+                  startLine: z
+                    .number()
+                    .describe(
+                      'Starting line for replace operation (1-based, inclusive)'
+                    ),
+                  endLine: z
+                    .number()
+                    .describe(
+                      'Ending line for replace operation (1-based, inclusive)'
+                    ),
+                  content: z.string().describe('Content to replace with'),
+                }),
+                z.object({
+                  type: z.literal('delete'),
+                  startLine: z
+                    .number()
+                    .describe(
+                      'Starting line for delete operation (1-based, inclusive)'
+                    ),
+                  endLine: z
+                    .number()
+                    .describe(
+                      'Ending line for delete operation (1-based, inclusive)'
+                    ),
+                }),
+              ])
             )
             .describe('Array of edit operations to apply'),
           message: z.string().describe('Commit message for all the changes'),
