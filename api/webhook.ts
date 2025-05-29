@@ -1,9 +1,11 @@
-import crypto from 'node:crypto';
+import { createHash, timingSafeEqual } from 'node:crypto';
 import { LinearClient } from '@linear/sdk';
 import { Redis } from '@upstash/redis';
 import type { VercelRequest, VercelResponse } from '@vercel/node';
 import { env } from '../src/env.js';
 import { verifyLinearWebhook } from '../src/utils/auth.js';
+import { waitUntil } from '@vercel/functions';
+import { handleLinearNotification } from '../lib/linear/handle-notifications.js';
 
 // Initialize Redis client
 const redis = new Redis({
@@ -49,122 +51,15 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     // Initialize Linear client with stored credentials
     const linearClient = new LinearClient({ accessToken });
 
-    // Process the webhook based on action type
-    if (
-      payload.type === 'AppUserNotification' &&
-      (payload.action === 'issueAssignedToYou' ||
-        payload.action === 'issueCommentMention')
-    ) {
-      const notification = payload.notification;
-
-      // Handle the notification autonomously
-      await handleAutonomously(
-        notification,
-        linearClient,
-        appUserId,
-        payload.action
-      );
+    // Handle different notification types
+    if (payload.type === 'AppUserNotification') {
+      // Use waitUntil to handle the notification asynchronously like events
+      waitUntil(handleLinearNotification(payload, linearClient, appUserId));
     }
 
     return res.status(200).json({ success: true });
   } catch (error) {
     console.error('Error processing webhook:', error);
     return res.status(500).json({ error: 'Failed to process webhook' });
-  }
-}
-
-// Unified autonomous handler for all notifications
-async function handleAutonomously(
-  notification: any,
-  linearClient: LinearClient,
-  appUserId: string,
-  action?: string
-) {
-  try {
-    // Determine if we have an issue ID or comment ID to work with
-    const issueId = notification.issueId;
-    const commentId = notification.commentId;
-
-    // Get the issue either directly or through a comment
-    let issue;
-    if (issueId) {
-      issue = await linearClient.issue(issueId);
-    } else if (commentId) {
-      const comment = await linearClient.comment({ id: commentId });
-      issue = await comment.issue;
-    }
-
-    if (!issue) {
-      console.error('Could not find an issue to process');
-      return;
-    }
-
-    // React to show we're processing
-    try {
-      if (issueId) {
-        await linearClient.createReaction({
-          issueId: issue.id,
-          emoji: 'eyes',
-        });
-      } else if (commentId) {
-        await linearClient.createReaction({
-          commentId,
-          emoji: 'eyes',
-        });
-      }
-    } catch (e) {
-      console.error('Failed to add processing reaction:', e);
-    }
-
-    // Get the Otron service and let it handle everything
-    const { Otron } = await import('../src/otron.js');
-    const gpt = new Otron(linearClient);
-
-    // Let the model directly handle the notification
-    await gpt.processNotification({
-      issue,
-      notificationType: action,
-      commentId,
-      appUserId,
-    });
-
-    // React to show we've completed processing
-    try {
-      if (issueId) {
-        await linearClient.createReaction({
-          issueId: issue.id,
-          emoji: 'white_check_mark',
-        });
-      } else if (commentId) {
-        await linearClient.createReaction({
-          commentId,
-          emoji: 'white_check_mark',
-        });
-      }
-    } catch (e) {
-      console.error('Failed to add completion reaction:', e);
-    }
-  } catch (error) {
-    console.error('Error handling notification:', error);
-    // Try to add an error reaction if possible
-    if (notification.issueId) {
-      try {
-        await linearClient.createReaction({
-          issueId: notification.issueId,
-          emoji: 'x',
-        });
-      } catch (e) {
-        console.error('Failed to add error reaction:', e);
-      }
-    } else if (notification.commentId) {
-      try {
-        await linearClient.createReaction({
-          commentId: notification.commentId,
-          emoji: 'x',
-        });
-      } catch (e) {
-        console.error('Failed to add error reaction:', e);
-      }
-    }
   }
 }

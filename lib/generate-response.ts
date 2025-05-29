@@ -1,7 +1,45 @@
 import { openai } from '@ai-sdk/openai';
 import { CoreMessage, generateText, tool } from 'ai';
 import { z } from 'zod';
-import { exa } from './utils.js';
+import {
+  executeGetWeather,
+  executeSearchWeb,
+  executeGetIssueContext,
+  executeUpdateIssueStatus,
+  executeAddLabel,
+  executeRemoveLabel,
+  executeAssignIssue,
+  executeCreateIssue,
+  executeAddIssueAttachment,
+  executeUpdateIssuePriority,
+  executeSetPointEstimate,
+  executeGetFileContent,
+  executeCreateBranch,
+  executeCreateOrUpdateFile,
+  executeCreatePullRequest,
+  executeGetPullRequest,
+  executeAddPullRequestComment,
+  executeGetPullRequestFiles,
+  executeSearchCode,
+  executeGetDirectoryStructure,
+  executeSendSlackMessage,
+  executeSendDirectMessage,
+  executeSendChannelMessage,
+  executeAddSlackReaction,
+  executeRemoveSlackReaction,
+  executeGetSlackChannelHistory,
+  executeGetSlackThread,
+  executeUpdateSlackMessage,
+  executeDeleteSlackMessage,
+  executeGetSlackUserInfo,
+  executeGetSlackChannelInfo,
+  executeJoinSlackChannel,
+  executeSearchSlackMessages,
+  executeGetSlackPermalink,
+  executeSetSlackStatus,
+  executePinSlackMessage,
+  executeUnpinSlackMessage,
+} from './tool-executors.js';
 
 export const generateResponse = async (
   messages: CoreMessage[],
@@ -27,42 +65,413 @@ export const generateResponse = async (
           longitude: z.number(),
           city: z.string(),
         }),
-        execute: async ({ latitude, longitude, city }) => {
-          updateStatus?.(`is getting weather for ${city}...`);
-
-          const response = await fetch(
-            `https://api.open-meteo.com/v1/forecast?latitude=${latitude}&longitude=${longitude}&current=temperature_2m,weathercode,relativehumidity_2m&timezone=auto`
-          );
-
-          const weatherData = await response.json();
-          return {
-            temperature: weatherData.current.temperature_2m,
-            weatherCode: weatherData.current.weathercode,
-            humidity: weatherData.current.relativehumidity_2m,
-            city,
-          };
-        },
+        execute: (params) => executeGetWeather(params, updateStatus),
       }),
       searchWeb: tool({
         description: 'Use this to search the web for information',
         parameters: z.object({
           query: z.string().describe('The search query'),
         }),
-        execute: async ({ query }) => {
-          updateStatus?.(`is searching the web for ${query}...`);
-          const { results } = await exa.searchAndContents(query, {
-            livecrawl: 'always',
-            numResults: 3,
-          });
-
-          return {
-            results: results.map((result: any) => ({
-              title: result.title,
-              url: result.url,
-              snippet: result.text.slice(0, 1000),
-            })),
-          };
-        },
+        execute: (params) => executeSearchWeb(params, updateStatus),
+      }),
+      // Slack tools
+      sendSlackMessage: tool({
+        description: 'Send a message to a Slack channel or thread',
+        parameters: z.object({
+          channel: z.string().describe('The channel ID to send the message to'),
+          text: z.string().describe('The message text to send'),
+          threadTs: z
+            .string()
+            .optional()
+            .describe('Optional thread timestamp to reply in a thread'),
+        }),
+        execute: (params) => executeSendSlackMessage(params, updateStatus),
+      }),
+      sendDirectMessage: tool({
+        description: 'Send a direct message to a Slack user',
+        parameters: z.object({
+          userIdOrEmail: z
+            .string()
+            .describe('User ID or email address of the recipient'),
+          text: z.string().describe('The message text to send'),
+        }),
+        execute: (params) => executeSendDirectMessage(params, updateStatus),
+      }),
+      sendChannelMessage: tool({
+        description: 'Send a message to a Slack channel by name or ID',
+        parameters: z.object({
+          channelNameOrId: z
+            .string()
+            .describe('Channel name (with or without #) or channel ID'),
+          text: z.string().describe('The message text to send'),
+          threadTs: z
+            .string()
+            .optional()
+            .describe('Optional thread timestamp to reply in a thread'),
+        }),
+        execute: (params) => executeSendChannelMessage(params, updateStatus),
+      }),
+      addSlackReaction: tool({
+        description: 'Add a reaction emoji to a Slack message',
+        parameters: z.object({
+          channel: z.string().describe('The channel ID'),
+          timestamp: z.string().describe('The message timestamp'),
+          emoji: z
+            .string()
+            .describe('The emoji name (without colons, e.g., "thumbsup")'),
+        }),
+        execute: (params) => executeAddSlackReaction(params, updateStatus),
+      }),
+      removeSlackReaction: tool({
+        description: 'Remove a reaction emoji from a Slack message',
+        parameters: z.object({
+          channel: z.string().describe('The channel ID'),
+          timestamp: z.string().describe('The message timestamp'),
+          emoji: z
+            .string()
+            .describe('The emoji name (without colons, e.g., "thumbsup")'),
+        }),
+        execute: (params) => executeRemoveSlackReaction(params, updateStatus),
+      }),
+      getSlackChannelHistory: tool({
+        description: 'Get recent message history from a Slack channel',
+        parameters: z.object({
+          channel: z.string().describe('The channel ID'),
+          limit: z
+            .number()
+            .optional()
+            .describe('Number of messages to retrieve (default: 10)'),
+        }),
+        execute: (params) =>
+          executeGetSlackChannelHistory(params, updateStatus),
+      }),
+      getSlackThread: tool({
+        description: 'Get all messages in a Slack thread',
+        parameters: z.object({
+          channel: z.string().describe('The channel ID'),
+          threadTs: z.string().describe('The thread timestamp'),
+        }),
+        execute: (params) => executeGetSlackThread(params, updateStatus),
+      }),
+      updateSlackMessage: tool({
+        description: 'Update an existing Slack message',
+        parameters: z.object({
+          channel: z.string().describe('The channel ID'),
+          timestamp: z.string().describe('The message timestamp'),
+          text: z.string().describe('The new message text'),
+        }),
+        execute: (params) => executeUpdateSlackMessage(params, updateStatus),
+      }),
+      deleteSlackMessage: tool({
+        description: 'Delete a Slack message',
+        parameters: z.object({
+          channel: z.string().describe('The channel ID'),
+          timestamp: z.string().describe('The message timestamp'),
+        }),
+        execute: (params) => executeDeleteSlackMessage(params, updateStatus),
+      }),
+      getSlackUserInfo: tool({
+        description: 'Get information about a Slack user',
+        parameters: z.object({
+          userIdOrEmail: z
+            .string()
+            .describe('User ID or email address to look up'),
+        }),
+        execute: (params) => executeGetSlackUserInfo(params, updateStatus),
+      }),
+      getSlackChannelInfo: tool({
+        description: 'Get information about a Slack channel',
+        parameters: z.object({
+          channelNameOrId: z
+            .string()
+            .describe('Channel name (with or without #) or channel ID'),
+        }),
+        execute: (params) => executeGetSlackChannelInfo(params, updateStatus),
+      }),
+      joinSlackChannel: tool({
+        description: 'Join a Slack channel',
+        parameters: z.object({
+          channelId: z.string().describe('The channel ID to join'),
+        }),
+        execute: (params) => executeJoinSlackChannel(params, updateStatus),
+      }),
+      searchSlackMessages: tool({
+        description: 'Search for messages in the Slack workspace',
+        parameters: z.object({
+          query: z.string().describe('The search query'),
+          count: z
+            .number()
+            .optional()
+            .describe('Number of results to return (default: 20)'),
+        }),
+        execute: (params) => executeSearchSlackMessages(params, updateStatus),
+      }),
+      getSlackPermalink: tool({
+        description: 'Get a permalink for a Slack message',
+        parameters: z.object({
+          channel: z.string().describe('The channel ID'),
+          messageTs: z.string().describe('The message timestamp'),
+        }),
+        execute: (params) => executeGetSlackPermalink(params, updateStatus),
+      }),
+      setSlackStatus: tool({
+        description: 'Set the bot user status in Slack',
+        parameters: z.object({
+          statusText: z.string().describe('The status text to set'),
+          statusEmoji: z
+            .string()
+            .optional()
+            .describe('Optional status emoji (e.g., ":robot_face:")'),
+          statusExpiration: z
+            .number()
+            .optional()
+            .describe('Optional expiration timestamp (Unix timestamp)'),
+        }),
+        execute: (params) => executeSetSlackStatus(params, updateStatus),
+      }),
+      pinSlackMessage: tool({
+        description: 'Pin a message to a Slack channel',
+        parameters: z.object({
+          channel: z.string().describe('The channel ID'),
+          timestamp: z.string().describe('The message timestamp'),
+        }),
+        execute: (params) => executePinSlackMessage(params, updateStatus),
+      }),
+      unpinSlackMessage: tool({
+        description: 'Unpin a message from a Slack channel',
+        parameters: z.object({
+          channel: z.string().describe('The channel ID'),
+          timestamp: z.string().describe('The message timestamp'),
+        }),
+        execute: (params) => executeUnpinSlackMessage(params, updateStatus),
+      }),
+      // Linear tools
+      getIssueContext: tool({
+        description:
+          'Get the context for a Linear issue including comments, child issues, and parent issue',
+        parameters: z.object({
+          issueId: z.string().describe('The Linear issue ID or identifier'),
+          commentId: z
+            .string()
+            .optional()
+            .describe('Optional comment ID to highlight'),
+        }),
+        execute: (params) => executeGetIssueContext(params, updateStatus),
+      }),
+      updateIssueStatus: tool({
+        description: 'Update the status of a Linear issue',
+        parameters: z.object({
+          issueId: z.string().describe('The Linear issue ID or identifier'),
+          statusName: z
+            .string()
+            .describe(
+              'The name of the status to set (e.g., "In Progress", "Done")'
+            ),
+        }),
+        execute: (params) => executeUpdateIssueStatus(params, updateStatus),
+      }),
+      addLabel: tool({
+        description: 'Add a label to a Linear issue',
+        parameters: z.object({
+          issueId: z.string().describe('The Linear issue ID'),
+          labelName: z.string().describe('The name of the label to add'),
+        }),
+        execute: (params) => executeAddLabel(params, updateStatus),
+      }),
+      removeLabel: tool({
+        description: 'Remove a label from a Linear issue',
+        parameters: z.object({
+          issueId: z.string().describe('The Linear issue ID'),
+          labelName: z.string().describe('The name of the label to remove'),
+        }),
+        execute: (params) => executeRemoveLabel(params, updateStatus),
+      }),
+      assignIssue: tool({
+        description: 'Assign a Linear issue to a team member',
+        parameters: z.object({
+          issueId: z.string().describe('The Linear issue ID'),
+          assigneeEmail: z
+            .string()
+            .describe('The email address of the person to assign the issue to'),
+        }),
+        execute: (params) => executeAssignIssue(params, updateStatus),
+      }),
+      createIssue: tool({
+        description: 'Create a new Linear issue',
+        parameters: z.object({
+          teamId: z.string().describe('The Linear team ID'),
+          title: z.string().describe('The title of the new issue'),
+          description: z.string().describe('The description of the new issue'),
+          status: z
+            .string()
+            .optional()
+            .describe('Optional status name for the new issue'),
+          priority: z
+            .number()
+            .optional()
+            .describe('Optional priority level (1-4, where 1 is highest)'),
+          parentIssueId: z
+            .string()
+            .optional()
+            .describe('Optional parent issue ID to create this as a subtask'),
+        }),
+        execute: (params) => executeCreateIssue(params, updateStatus),
+      }),
+      addIssueAttachment: tool({
+        description: 'Add a URL attachment to a Linear issue',
+        parameters: z.object({
+          issueId: z.string().describe('The Linear issue ID'),
+          url: z.string().describe('The URL to attach'),
+          title: z.string().describe('The title for the attachment'),
+        }),
+        execute: (params) => executeAddIssueAttachment(params, updateStatus),
+      }),
+      updateIssuePriority: tool({
+        description: 'Update the priority of a Linear issue',
+        parameters: z.object({
+          issueId: z.string().describe('The Linear issue ID or identifier'),
+          priority: z
+            .number()
+            .describe('The priority level (1-4, where 1 is highest)'),
+        }),
+        execute: (params) => executeUpdateIssuePriority(params, updateStatus),
+      }),
+      setPointEstimate: tool({
+        description: 'Set the point estimate for a Linear issue',
+        parameters: z.object({
+          issueId: z.string().describe('The Linear issue ID or identifier'),
+          pointEstimate: z.number().describe('The point estimate value'),
+        }),
+        execute: (params) => executeSetPointEstimate(params, updateStatus),
+      }),
+      // GitHub tools
+      getFileContent: tool({
+        description: 'Get the content of a file from a GitHub repository',
+        parameters: z.object({
+          path: z.string().describe('The file path in the repository'),
+          repository: z
+            .string()
+            .describe('The repository in format "owner/repo"'),
+          startLine: z
+            .number()
+            .optional()
+            .describe('Starting line number (default: 1)'),
+          maxLines: z
+            .number()
+            .optional()
+            .describe('Maximum number of lines to return (default: 200)'),
+          branch: z
+            .string()
+            .optional()
+            .describe('Branch name (default: repository default branch)'),
+        }),
+        execute: (params) => executeGetFileContent(params, updateStatus),
+      }),
+      createBranch: tool({
+        description: 'Create a new branch in a GitHub repository',
+        parameters: z.object({
+          branch: z.string().describe('The name of the new branch'),
+          repository: z
+            .string()
+            .describe('The repository in format "owner/repo"'),
+          baseBranch: z
+            .string()
+            .optional()
+            .describe(
+              'Base branch to create from (default: repository default branch)'
+            ),
+        }),
+        execute: (params) => executeCreateBranch(params, updateStatus),
+      }),
+      createOrUpdateFile: tool({
+        description: 'Create or update a file in a GitHub repository',
+        parameters: z.object({
+          path: z.string().describe('The file path in the repository'),
+          content: z.string().describe('The file content'),
+          message: z.string().describe('Commit message'),
+          repository: z
+            .string()
+            .describe('The repository in format "owner/repo"'),
+          branch: z.string().describe('The branch to commit to'),
+        }),
+        execute: (params) => executeCreateOrUpdateFile(params, updateStatus),
+      }),
+      createPullRequest: tool({
+        description: 'Create a pull request in a GitHub repository',
+        parameters: z.object({
+          title: z.string().describe('The title of the pull request'),
+          body: z.string().describe('The body/description of the pull request'),
+          head: z.string().describe('The branch containing the changes'),
+          base: z.string().describe('The branch to merge into'),
+          repository: z
+            .string()
+            .describe('The repository in format "owner/repo"'),
+        }),
+        execute: (params) => executeCreatePullRequest(params, updateStatus),
+      }),
+      getPullRequest: tool({
+        description: 'Get details of a pull request including comments',
+        parameters: z.object({
+          repository: z
+            .string()
+            .describe('The repository in format "owner/repo"'),
+          pullNumber: z.number().describe('The pull request number'),
+        }),
+        execute: (params) => executeGetPullRequest(params, updateStatus),
+      }),
+      addPullRequestComment: tool({
+        description: 'Add a comment to a pull request',
+        parameters: z.object({
+          repository: z
+            .string()
+            .describe('The repository in format "owner/repo"'),
+          pullNumber: z.number().describe('The pull request number'),
+          body: z.string().describe('The comment text'),
+        }),
+        execute: (params) => executeAddPullRequestComment(params, updateStatus),
+      }),
+      getPullRequestFiles: tool({
+        description: 'Get the files changed in a pull request',
+        parameters: z.object({
+          repository: z
+            .string()
+            .describe('The repository in format "owner/repo"'),
+          pullNumber: z.number().describe('The pull request number'),
+        }),
+        execute: (params) => executeGetPullRequestFiles(params, updateStatus),
+      }),
+      searchCode: tool({
+        description: 'Search for code in a GitHub repository',
+        parameters: z.object({
+          query: z.string().describe('The search query'),
+          repository: z
+            .string()
+            .describe('The repository in format "owner/repo"'),
+          fileFilter: z
+            .string()
+            .optional()
+            .describe(
+              'Optional file filter (e.g., "*.ts" for TypeScript files)'
+            ),
+          maxResults: z
+            .number()
+            .optional()
+            .describe('Maximum number of results (default: 10)'),
+        }),
+        execute: (params) => executeSearchCode(params, updateStatus),
+      }),
+      getDirectoryStructure: tool({
+        description: 'Get the directory structure of a GitHub repository',
+        parameters: z.object({
+          repository: z
+            .string()
+            .describe('The repository in format "owner/repo"'),
+          directoryPath: z
+            .string()
+            .optional()
+            .describe('Optional directory path (default: root directory)'),
+        }),
+        execute: (params) => executeGetDirectoryStructure(params, updateStatus),
       }),
     },
   });

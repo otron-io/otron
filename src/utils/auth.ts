@@ -1,6 +1,7 @@
 import { VercelRequest, VercelResponse } from '@vercel/node';
 import { env } from '../env.js';
-import crypto from 'crypto';
+import { Redis } from '@upstash/redis';
+import { createHmac, timingSafeEqual } from 'crypto';
 
 /**
  * Middleware to protect routes with a simple password
@@ -58,7 +59,7 @@ export function withInternalAccess(handler: Function) {
  */
 export function verifyLinearWebhook(signature: string, body: string): boolean {
   try {
-    const hmac = crypto.createHmac('sha256', env.WEBHOOK_SIGNING_SECRET);
+    const hmac = createHmac('sha256', env.WEBHOOK_SIGNING_SECRET);
     const digest = hmac.update(body).digest('hex');
     return signature === digest;
   } catch (error) {
