@@ -24,6 +24,15 @@ async function handler(req: VercelRequest, res: VercelResponse) {
     return res.status(405).json({ error: 'Method not allowed' });
   }
 
+  // Get query parameters for controlling data retrieval
+  const {
+    activeDays = '7', // Days to consider as "active"
+    includeAll = 'false', // Whether to include all historical contexts
+  } = req.query;
+
+  const activeDaysNum = parseInt(activeDays as string) || 7;
+  const includeAllContexts = (includeAll as string).toLowerCase() === 'true';
+
   try {
     // Create a safe LinearClient
     let linearClient: LinearClient | null = null;
@@ -76,8 +85,6 @@ async function handler(req: VercelRequest, res: VercelResponse) {
       // Get the most recent action for this context
       const recentActions = await redis.lrange(key, 0, 19); // Get the 20 most recent actions
 
-      if (recentActions.length === 0) continue;
-
       // Parse the actions
       const parsedActions = recentActions
         .map((action) => {
@@ -89,14 +96,6 @@ async function handler(req: VercelRequest, res: VercelResponse) {
           }
         })
         .filter((a) => a !== null);
-
-      if (parsedActions.length === 0) continue;
-
-      // Check if there's been activity in the last 24 hours
-      const mostRecentTimestamp = Math.max(
-        ...parsedActions.map((a) => a.timestamp || 0)
-      );
-      const isActive = Date.now() - mostRecentTimestamp < 24 * 60 * 60 * 1000;
 
       // Get conversation history for this context
       const conversationHistory = await redis.lrange(
@@ -118,6 +117,33 @@ async function handler(req: VercelRequest, res: VercelResponse) {
           }
         })
         .filter((c) => c !== null);
+
+      // Skip contexts that have no actions AND no conversations
+      if (parsedActions.length === 0 && parsedConversations.length === 0)
+        continue;
+
+      // Check if there's been activity in the last 24 hours
+      const actionTimestamps = parsedActions.map((a) => a.timestamp || 0);
+      const conversationTimestamps = parsedConversations.map(
+        (c) => c.timestamp || 0
+      );
+      const allTimestamps = [...actionTimestamps, ...conversationTimestamps];
+
+      const mostRecentTimestamp =
+        allTimestamps.length > 0 ? Math.max(...allTimestamps) : 0;
+
+      // Consider active if activity in last 7 days (instead of 24 hours) to show more recent work
+      const isActive =
+        mostRecentTimestamp > 0 &&
+        Date.now() - mostRecentTimestamp < activeDaysNum * 24 * 60 * 60 * 1000;
+
+      // If includeAll is true, show contexts even if they're very old
+      const shouldInclude =
+        includeAllContexts ||
+        mostRecentTimestamp > Date.now() - 30 * 24 * 60 * 60 * 1000; // Last 30 days by default
+
+      // Skip contexts that are too old unless includeAll is true
+      if (!shouldInclude) continue;
 
       // Determine context type and platform
       const isSlackContext = contextId.startsWith('slack:');
@@ -372,6 +398,11 @@ async function handler(req: VercelRequest, res: VercelResponse) {
       systemActivity,
       timestamp: Date.now(),
       linearConnected,
+      // Add query parameters for debugging
+      queryParams: {
+        activeDays: activeDaysNum,
+        includeAll: includeAllContexts,
+      },
       summary: {
         totalActiveContexts: activeContexts.size,
         totalCompletedContexts: completedContexts.size,

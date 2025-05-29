@@ -148,6 +148,22 @@ async function handler(req: VercelRequest, res: VercelResponse) {
             <option value="60000">1 minute</option>
           </select>
         </div>
+        <div class="flex items-center">
+          <label for="activeDays" class="mr-2">Active window:</label>
+          <select id="activeDays" class="border rounded px-2 py-1">
+            <option value="1">1 day</option>
+            <option value="3">3 days</option>
+            <option value="7" selected>7 days</option>
+            <option value="14">14 days</option>
+            <option value="30">30 days</option>
+          </select>
+        </div>
+        <div class="flex items-center">
+          <label for="includeAll" class="mr-2">
+            <input type="checkbox" id="includeAll" class="mr-1">
+            Show all historical data
+          </label>
+        </div>
         <div id="lastUpdated" class="ml-auto text-gray-500 self-center"></div>
       </div>
       
@@ -491,7 +507,17 @@ async function handler(req: VercelRequest, res: VercelResponse) {
       // Update UI with agent data
       async function fetchAgentData() {
         try {
-          const response = await fetch('/api/agent-monitor');
+          // Get values from UI controls
+          const activeDays = document.getElementById('activeDays').value || '7';
+          const includeAll = document.getElementById('includeAll').checked;
+          
+          // Build query parameters
+          const params = new URLSearchParams({
+            activeDays: activeDays,
+            includeAll: includeAll.toString()
+          });
+          
+          const response = await fetch(\`/api/agent-monitor?\${params.toString()}\`);
           
           if (!response.ok) {
             throw new Error(\`HTTP error! status: \${response.status}\`);
@@ -501,8 +527,10 @@ async function handler(req: VercelRequest, res: VercelResponse) {
           currentData = data;
           updateUI(data);
           
-          // Update last updated text
-          document.getElementById('lastUpdated').textContent = \`Last updated: \${formatDateTime(Date.now())}\`;
+          // Update last updated text with query params info
+          const queryInfo = data.queryParams ? 
+            \` (Active: \${data.queryParams.activeDays}d, All: \${data.queryParams.includeAll})\` : '';
+          document.getElementById('lastUpdated').textContent = \`Last updated: \${formatDateTime(Date.now())}\${queryInfo}\`;
         } catch (error) {
           console.error('Error fetching agent data:', error);
           document.getElementById('activeIssuesContainer').innerHTML = \`
@@ -874,6 +902,10 @@ async function handler(req: VercelRequest, res: VercelResponse) {
           refreshInterval = setInterval(fetchAgentData, interval);
         }
       });
+
+      // Filter controls event listeners
+      document.getElementById('activeDays').addEventListener('change', fetchAgentData);
+      document.getElementById('includeAll').addEventListener('change', fetchAgentData);
 
       // Initialize everything
       document.addEventListener('DOMContentLoaded', function() {
