@@ -10,7 +10,7 @@ export const getIssueContext = async (
 ): Promise<string> => {
   const issue = await linearClient.issue(issueIdOrIdentifier);
   if (!issue) {
-    throw new Error(`Issue ${issueIdOrIdentifier} not found`);
+    return `ERROR: Issue ${issueIdOrIdentifier} not found. Please check the issue ID or identifier and try again.`;
   }
 
   // Mark this as the assigned issue
@@ -260,14 +260,52 @@ export const assignIssue = async (
  */
 export const createIssue = async (
   linearClient: LinearClient,
-  teamId: string,
+  teamIdOrKeyOrName: string,
   title: string,
   description: string,
   status?: string,
   priority?: number,
   parentIssueId?: string
-): Promise<void> => {
+): Promise<{
+  success: boolean;
+  message: string;
+  issueId?: string;
+  error?: string;
+}> => {
   try {
+    // First, resolve the team ID if a key or name was provided
+    let teamId = teamIdOrKeyOrName;
+
+    // Check if the provided value is already a UUID (contains hyphens and is 36 chars)
+    const isUUID =
+      /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(
+        teamIdOrKeyOrName
+      );
+
+    if (!isUUID) {
+      // It's likely a team key or name, so we need to find the team
+      const teams = await linearClient.teams();
+      const team = teams.nodes.find(
+        (t: any) =>
+          t.key.toLowerCase() === teamIdOrKeyOrName.toLowerCase() ||
+          t.name.toLowerCase() === teamIdOrKeyOrName.toLowerCase()
+      );
+
+      if (!team) {
+        const availableTeams = teams.nodes
+          .map((t: any) => `${t.name} (${t.key})`)
+          .join(', ');
+        return {
+          success: false,
+          error: `Team "${teamIdOrKeyOrName}" not found. Available teams: ${availableTeams}`,
+          message: `Failed to create issue: Team "${teamIdOrKeyOrName}" not found`,
+        };
+      }
+
+      teamId = team.id;
+      console.log(`Resolved team "${teamIdOrKeyOrName}" to ID: ${teamId}`);
+    }
+
     let stateId: string | undefined;
 
     // If status is provided, find the corresponding state
@@ -287,7 +325,12 @@ export const createIssue = async (
       if (state) {
         stateId = state.id;
       } else {
-        console.warn(`Status "${status}" not found, using default`);
+        const availableStates = states.nodes.map((s: any) => s.name).join(', ');
+        return {
+          success: false,
+          error: `Status "${status}" not found for this team. Available statuses: ${availableStates}`,
+          message: `Failed to create issue: Invalid status "${status}"`,
+        };
       }
     }
 
@@ -312,12 +355,29 @@ export const createIssue = async (
 
     const newIssue = await linearClient.createIssue(issuePayload);
     const createdIssue = await newIssue.issue;
-    console.log(`Created issue: ${createdIssue?.identifier}`);
+
+    if (createdIssue) {
+      console.log(`Created issue: ${createdIssue.identifier}`);
+      return {
+        success: true,
+        message: `Successfully created issue: ${createdIssue.identifier} - ${title}`,
+        issueId: createdIssue.id,
+      };
+    } else {
+      return {
+        success: false,
+        error: 'Issue creation returned no issue object',
+        message: 'Failed to create issue: Unknown error occurred',
+      };
+    }
   } catch (error: unknown) {
-    console.error(
-      'Error creating issue:',
-      error instanceof Error ? error.message : String(error)
-    );
+    const errorMessage = error instanceof Error ? error.message : String(error);
+    console.error('Error creating issue:', errorMessage);
+    return {
+      success: false,
+      error: errorMessage,
+      message: `Failed to create issue: ${errorMessage}`,
+    };
   }
 };
 
@@ -412,6 +472,7 @@ export const getTeams = async (linearClient: LinearClient): Promise<string> => {
 
     for (const team of teams.nodes) {
       result += `**${team.name}** (${team.key})\n`;
+      result += `  ID: ${team.id}\n`;
       if (team.description) {
         result += `  Description: ${team.description}\n`;
       }

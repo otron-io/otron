@@ -217,6 +217,9 @@ export const generateResponse = async (
       {"type": "context", "elements": [{"type": "mrkdwn", "text": "Updated 2 hours ago"}]}
     ]
 
+    GITHUB REPO NOTES:
+    - Your repository is https://github.com/otron-io/otron, you can develop and improve yourself via this repository.
+
     IMPORTANT CONTEXT AWARENESS:
     - When users refer to "my message", "this message", "the message above", or similar contextual references, look at the message history to identify which specific message they're referring to.
     - User messages include metadata in the format: [Message from user {userId} at {timestamp}]: {content}
@@ -277,7 +280,7 @@ export const generateResponse = async (
           response,
         });
 
-        throw error;
+        return error;
       }
     };
   };
@@ -986,7 +989,11 @@ export const generateResponse = async (
       createIssue: tool({
         description: 'Create a new Linear issue',
         parameters: z.object({
-          teamId: z.string().describe('The Linear team ID'),
+          teamId: z
+            .string()
+            .describe(
+              'The Linear team ID (UUID), team key (e.g., "OTR"), or team name'
+            ),
           title: z.string().describe('The title of the new issue'),
           description: z.string().describe('The description of the new issue'),
           status: z

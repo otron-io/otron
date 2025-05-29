@@ -416,7 +416,11 @@ export const executeGetIssueContext = async (
   linearClient?: LinearClient
 ) => {
   if (!linearClient) {
-    throw new Error('LinearClient is required for Linear operations');
+    return {
+      context:
+        'ERROR: LinearClient is required for Linear operations. Please ensure Linear integration is properly configured.',
+      error: 'LinearClient not available',
+    };
   }
 
   updateStatus?.(`is getting context for issue ${issueId}...`);
@@ -435,7 +439,11 @@ export const executeUpdateIssueStatus = async (
   linearClient?: LinearClient
 ) => {
   if (!linearClient) {
-    throw new Error('LinearClient is required for Linear operations');
+    return {
+      success: false,
+      error: 'LinearClient is required for Linear operations',
+      message: 'Failed to update issue status: Linear client not available',
+    };
   }
 
   updateStatus?.(`is updating issue ${issueId} status to ${statusName}...`);
@@ -453,7 +461,11 @@ export const executeAddLabel = async (
   linearClient?: LinearClient
 ) => {
   if (!linearClient) {
-    throw new Error('LinearClient is required for Linear operations');
+    return {
+      success: false,
+      error: 'LinearClient is required for Linear operations',
+      message: 'Failed to add label: Linear client not available',
+    };
   }
 
   updateStatus?.(`is adding label ${labelName} to issue ${issueId}...`);
@@ -471,7 +483,11 @@ export const executeRemoveLabel = async (
   linearClient?: LinearClient
 ) => {
   if (!linearClient) {
-    throw new Error('LinearClient is required for Linear operations');
+    return {
+      success: false,
+      error: 'LinearClient is required for Linear operations',
+      message: 'Failed to remove label: Linear client not available',
+    };
   }
 
   updateStatus?.(`is removing label ${labelName} from issue ${issueId}...`);
@@ -489,7 +505,11 @@ export const executeAssignIssue = async (
   linearClient?: LinearClient
 ) => {
   if (!linearClient) {
-    throw new Error('LinearClient is required for Linear operations');
+    return {
+      success: false,
+      error: 'LinearClient is required for Linear operations',
+      message: 'Failed to assign issue: Linear client not available',
+    };
   }
 
   updateStatus?.(`is assigning issue ${issueId} to ${assigneeEmail}...`);
@@ -521,12 +541,16 @@ export const executeCreateIssue = async (
   linearClient?: LinearClient
 ) => {
   if (!linearClient) {
-    throw new Error('LinearClient is required for Linear operations');
+    return {
+      success: false,
+      error: 'LinearClient is required for Linear operations',
+      message: 'Failed to create issue: Linear client not available',
+    };
   }
 
   updateStatus?.(`is creating new issue "${title}"...`);
 
-  await linearUtils.createIssue(
+  const result = await linearUtils.createIssue(
     linearClient,
     teamId,
     title,
@@ -535,10 +559,8 @@ export const executeCreateIssue = async (
     priority === 0 ? undefined : priority,
     parentIssueId || undefined
   );
-  return {
-    success: true,
-    message: `Created new issue "${title}"`,
-  };
+
+  return result;
 };
 
 export const executeAddIssueAttachment = async (
@@ -547,7 +569,11 @@ export const executeAddIssueAttachment = async (
   linearClient?: LinearClient
 ) => {
   if (!linearClient) {
-    throw new Error('LinearClient is required for Linear operations');
+    return {
+      success: false,
+      error: 'LinearClient is required for Linear operations',
+      message: 'Failed to add attachment: Linear client not available',
+    };
   }
 
   updateStatus?.(`is adding attachment "${title}" to issue ${issueId}...`);
@@ -565,7 +591,11 @@ export const executeUpdateIssuePriority = async (
   linearClient?: LinearClient
 ) => {
   if (!linearClient) {
-    throw new Error('LinearClient is required for Linear operations');
+    return {
+      success: false,
+      error: 'LinearClient is required for Linear operations',
+      message: 'Failed to update priority: Linear client not available',
+    };
   }
 
   updateStatus?.(`is updating issue ${issueId} priority to ${priority}...`);
@@ -583,7 +613,11 @@ export const executeSetPointEstimate = async (
   linearClient?: LinearClient
 ) => {
   if (!linearClient) {
-    throw new Error('LinearClient is required for Linear operations');
+    return {
+      success: false,
+      error: 'LinearClient is required for Linear operations',
+      message: 'Failed to set point estimate: Linear client not available',
+    };
   }
 
   updateStatus?.(
@@ -911,7 +945,11 @@ export const executeCreateLinearComment = async (
   linearClient?: LinearClient
 ) => {
   if (!linearClient) {
-    throw new Error('LinearClient is required for Linear operations');
+    return {
+      success: false,
+      error: 'LinearClient is required for Linear operations',
+      message: 'Failed to create comment: Linear client not available',
+    };
   }
 
   updateStatus?.(`is creating comment on issue ${issueId}...`);
