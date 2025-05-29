@@ -3,6 +3,7 @@ import * as linearUtils from './linear/linear-utils.js';
 import * as githubUtils from './github/github-utils.js';
 import * as slackUtils from './slack/slack-utils.js';
 import { LinearClient } from '@linear/sdk';
+import { FileEditor } from './github/file-editor.js';
 
 // General tool execution functions
 export const executeGetWeather = async (
@@ -1197,4 +1198,367 @@ export const executeRespondToSlackInteraction = async (
       message: 'Failed to respond to Slack interaction',
     };
   }
+};
+
+// Advanced GitHub file editing tool execution functions
+export const executeInsertAtLine = async (
+  {
+    path,
+    repository,
+    branch,
+    line,
+    content,
+    message,
+  }: {
+    path: string;
+    repository: string;
+    branch: string;
+    line: number;
+    content: string;
+    message: string;
+  },
+  updateStatus?: (status: string) => void
+) => {
+  updateStatus?.(`is inserting content at line ${line} in ${path}...`);
+
+  await FileEditor.insertAtLine(
+    path,
+    repository,
+    branch,
+    line,
+    content,
+    message
+  );
+  return {
+    success: true,
+    message: `Inserted content at line ${line} in ${path}`,
+  };
+};
+
+export const executeReplaceLines = async (
+  {
+    path,
+    repository,
+    branch,
+    startLine,
+    endLine,
+    content,
+    message,
+  }: {
+    path: string;
+    repository: string;
+    branch: string;
+    startLine: number;
+    endLine: number;
+    content: string;
+    message: string;
+  },
+  updateStatus?: (status: string) => void
+) => {
+  updateStatus?.(`is replacing lines ${startLine}-${endLine} in ${path}...`);
+
+  await FileEditor.replaceLines(
+    path,
+    repository,
+    branch,
+    startLine,
+    endLine,
+    content,
+    message
+  );
+  return {
+    success: true,
+    message: `Replaced lines ${startLine}-${endLine} in ${path}`,
+  };
+};
+
+export const executeDeleteLines = async (
+  {
+    path,
+    repository,
+    branch,
+    startLine,
+    endLine,
+    message,
+  }: {
+    path: string;
+    repository: string;
+    branch: string;
+    startLine: number;
+    endLine: number;
+    message: string;
+  },
+  updateStatus?: (status: string) => void
+) => {
+  updateStatus?.(`is deleting lines ${startLine}-${endLine} in ${path}...`);
+
+  await FileEditor.deleteLines(
+    path,
+    repository,
+    branch,
+    startLine,
+    endLine,
+    message
+  );
+  return {
+    success: true,
+    message: `Deleted lines ${startLine}-${endLine} in ${path}`,
+  };
+};
+
+export const executeAppendToFile = async (
+  {
+    path,
+    repository,
+    branch,
+    content,
+    message,
+  }: {
+    path: string;
+    repository: string;
+    branch: string;
+    content: string;
+    message: string;
+  },
+  updateStatus?: (status: string) => void
+) => {
+  updateStatus?.(`is appending content to ${path}...`);
+
+  await FileEditor.appendToFile(path, repository, branch, content, message);
+  return {
+    success: true,
+    message: `Appended content to ${path}`,
+  };
+};
+
+export const executePrependToFile = async (
+  {
+    path,
+    repository,
+    branch,
+    content,
+    message,
+  }: {
+    path: string;
+    repository: string;
+    branch: string;
+    content: string;
+    message: string;
+  },
+  updateStatus?: (status: string) => void
+) => {
+  updateStatus?.(`is prepending content to ${path}...`);
+
+  await FileEditor.prependToFile(path, repository, branch, content, message);
+  return {
+    success: true,
+    message: `Prepended content to ${path}`,
+  };
+};
+
+export const executeFindAndReplace = async (
+  {
+    path,
+    repository,
+    branch,
+    searchText,
+    replaceText,
+    message,
+    replaceAll,
+    caseSensitive,
+    wholeWord,
+  }: {
+    path: string;
+    repository: string;
+    branch: string;
+    searchText: string;
+    replaceText: string;
+    message: string;
+    replaceAll: boolean;
+    caseSensitive: boolean;
+    wholeWord: boolean;
+  },
+  updateStatus?: (status: string) => void
+) => {
+  updateStatus?.(`is finding and replacing "${searchText}" in ${path}...`);
+
+  const result = await FileEditor.findAndReplace(
+    path,
+    repository,
+    branch,
+    searchText,
+    replaceText,
+    message,
+    {
+      replaceAll: replaceAll || false,
+      caseSensitive: caseSensitive !== false, // Default to true
+      wholeWord: wholeWord || false,
+    }
+  );
+
+  return {
+    success: true,
+    replacements: result.replacements,
+    message: `Made ${result.replacements} replacement(s) in ${path}`,
+  };
+};
+
+export const executeInsertAfterPattern = async (
+  {
+    path,
+    repository,
+    branch,
+    pattern,
+    content,
+    message,
+    caseSensitive,
+    wholeWord,
+  }: {
+    path: string;
+    repository: string;
+    branch: string;
+    pattern: string;
+    content: string;
+    message: string;
+    caseSensitive: boolean;
+    wholeWord: boolean;
+  },
+  updateStatus?: (status: string) => void
+) => {
+  updateStatus?.(
+    `is inserting content after pattern "${pattern}" in ${path}...`
+  );
+
+  const result = await FileEditor.insertAfterPattern(
+    path,
+    repository,
+    branch,
+    pattern,
+    content,
+    message,
+    {
+      caseSensitive: caseSensitive !== false, // Default to true
+      wholeWord: wholeWord || false,
+    }
+  );
+
+  return {
+    success: result.found,
+    found: result.found,
+    line: result.line,
+    message: result.found
+      ? `Inserted content after pattern "${pattern}" at line ${result.line} in ${path}`
+      : `Pattern "${pattern}" not found in ${path}`,
+  };
+};
+
+export const executeInsertBeforePattern = async (
+  {
+    path,
+    repository,
+    branch,
+    pattern,
+    content,
+    message,
+    caseSensitive,
+    wholeWord,
+  }: {
+    path: string;
+    repository: string;
+    branch: string;
+    pattern: string;
+    content: string;
+    message: string;
+    caseSensitive: boolean;
+    wholeWord: boolean;
+  },
+  updateStatus?: (status: string) => void
+) => {
+  updateStatus?.(
+    `is inserting content before pattern "${pattern}" in ${path}...`
+  );
+
+  const result = await FileEditor.insertBeforePattern(
+    path,
+    repository,
+    branch,
+    pattern,
+    content,
+    message,
+    {
+      caseSensitive: caseSensitive !== false, // Default to true
+      wholeWord: wholeWord || false,
+    }
+  );
+
+  return {
+    success: result.found,
+    found: result.found,
+    line: result.line,
+    message: result.found
+      ? `Inserted content before pattern "${pattern}" at line ${result.line} in ${path}`
+      : `Pattern "${pattern}" not found in ${path}`,
+  };
+};
+
+export const executeApplyMultipleEdits = async (
+  {
+    path,
+    repository,
+    branch,
+    operations,
+    message,
+  }: {
+    path: string;
+    repository: string;
+    branch: string;
+    operations: Array<{
+      type: 'insert' | 'replace' | 'delete';
+      line?: number;
+      startLine?: number;
+      endLine?: number;
+      content?: string;
+    }>;
+    message: string;
+  },
+  updateStatus?: (status: string) => void
+) => {
+  updateStatus?.(
+    `is applying ${operations.length} edit operations to ${path}...`
+  );
+
+  // Convert operations to the format expected by FileEditor
+  const editOperations = operations.map((op) => {
+    if (op.type === 'insert') {
+      return {
+        type: op.type,
+        line: op.line,
+        content: op.content,
+      };
+    } else if (op.type === 'replace' || op.type === 'delete') {
+      return {
+        type: op.type,
+        range: {
+          start: op.startLine!,
+          end: op.endLine!,
+        },
+        content: op.content,
+      };
+    }
+    throw new Error(`Invalid operation type: ${op.type}`);
+  });
+
+  await FileEditor.applyEdits({
+    path,
+    repository,
+    branch,
+    operations: editOperations,
+    message,
+  });
+
+  return {
+    success: true,
+    operationsApplied: operations.length,
+    message: `Applied ${operations.length} edit operations to ${path}`,
+  };
 };

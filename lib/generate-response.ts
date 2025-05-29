@@ -54,6 +54,15 @@ import {
   executeSearchLinearIssues,
   executeGetLinearWorkflowStates,
   executeCreateLinearComment,
+  executeInsertAtLine,
+  executeReplaceLines,
+  executeDeleteLines,
+  executeAppendToFile,
+  executePrependToFile,
+  executeFindAndReplace,
+  executeInsertAfterPattern,
+  executeInsertBeforePattern,
+  executeApplyMultipleEdits,
 } from './tool-executors.js';
 import { LinearClient } from '@linear/sdk';
 import { memoryManager } from './memory/memory-manager.js';
@@ -171,6 +180,21 @@ export const generateResponse = async (
     - Learn from past actions and their outcomes to improve future responses.
     - Current context ID: ${contextId}
 
+    ADVANCED FILE EDITING CAPABILITIES:
+    - You have access to precise, targeted file editing tools that allow you to make specific changes without affecting the rest of the file.
+    - ALWAYS prefer these targeted editing tools over createOrUpdateFile to avoid unintentional deletions:
+      * insertAtLine: Insert content at a specific line number
+      * replaceLines: Replace a specific range of lines (much safer than replacing entire files)
+      * deleteLines: Delete a specific range of lines
+      * appendToFile: Add content to the end of a file
+      * prependToFile: Add content to the beginning of a file
+      * findAndReplace: Find and replace text with options for case sensitivity and whole word matching
+      * insertAfterPattern: Insert content after a line matching a pattern
+      * insertBeforePattern: Insert content before a line matching a pattern
+      * applyMultipleEdits: Apply multiple edit operations in a single commit (operations are applied in reverse line order to avoid conflicts)
+    - These tools provide surgical precision for code changes and prevent accidental loss of existing content.
+    - Use createOrUpdateFile only when creating entirely new files or when you need to replace the complete file content intentionally.
+
     SLACK FORMATTING & BLOCK KIT:
     - For simple text messages, use sendSlackMessage, sendChannelMessage, or sendDirectMessage
     - For rich, visually appealing messages, use sendRichSlackMessage, sendRichChannelMessage, or sendRichDirectMessage with Block Kit
@@ -221,6 +245,13 @@ export const generateResponse = async (
 
     GITHUB REPO NOTES:
     - Your repository is https://github.com/otron-io/otron, you can develop and improve yourself via this repository.
+    - When making code changes, always use the most appropriate editing tool for the task:
+      * For small insertions: use insertAtLine or insertAfterPattern/insertBeforePattern
+      * For replacing specific sections: use replaceLines
+      * For simple text replacements: use findAndReplace
+      * For multiple related changes: use applyMultipleEdits to batch them into a single commit
+      * For adding to files: use appendToFile or prependToFile
+    - This approach ensures precise changes and prevents accidental deletion of existing code.
 
     IMPORTANT CONTEXT AWARENESS:
     - When users refer to "my message", "this message", "the message above", or similar contextual references, look at the message history to identify which specific message they're referring to.
@@ -246,7 +277,8 @@ export const generateResponse = async (
     - Make sure to ALWAYS include sources in your final response if you use web search. Put sources inline if possible.
     - Remember: You control all communication - use your tools to respond where and how you see fit.
     - Choose rich Block Kit messages when the content benefits from visual structure, formatting, or interactivity.
-    - Use your memory context to provide more informed and continuous conversations.`;
+    - Use your memory context to provide more informed and continuous conversations.
+    - ALWAYS use targeted file editing tools for precise code changes to avoid unintentional deletions.`;
 
   // Create a wrapper for tool execution that tracks usage in memory
   const createMemoryAwareToolExecutor = (
@@ -1524,6 +1556,236 @@ export const generateResponse = async (
           'respondToSlackInteraction',
           (params: any) =>
             executeRespondToSlackInteraction(params, updateStatus)
+        ),
+      }),
+      // Advanced GitHub file editing tools
+      insertAtLine: tool({
+        description:
+          'Insert content at a specific line number in a file. This is safer than replacing entire files.',
+        parameters: z.object({
+          path: z.string().describe('The file path in the repository'),
+          repository: z
+            .string()
+            .describe('The repository in format "owner/repo"'),
+          branch: z.string().describe('The branch to edit'),
+          line: z
+            .number()
+            .describe('The line number where to insert content (1-based)'),
+          content: z.string().describe('The content to insert'),
+          message: z.string().describe('Commit message for the change'),
+        }),
+        execute: createMemoryAwareToolExecutor('insertAtLine', (params: any) =>
+          executeInsertAtLine(params, updateStatus)
+        ),
+      }),
+      replaceLines: tool({
+        description:
+          'Replace a specific range of lines in a file. Much safer than replacing entire files.',
+        parameters: z.object({
+          path: z.string().describe('The file path in the repository'),
+          repository: z
+            .string()
+            .describe('The repository in format "owner/repo"'),
+          branch: z.string().describe('The branch to edit'),
+          startLine: z
+            .number()
+            .describe(
+              'The starting line number to replace (1-based, inclusive)'
+            ),
+          endLine: z
+            .number()
+            .describe('The ending line number to replace (1-based, inclusive)'),
+          content: z
+            .string()
+            .describe('The new content to replace the lines with'),
+          message: z.string().describe('Commit message for the change'),
+        }),
+        execute: createMemoryAwareToolExecutor('replaceLines', (params: any) =>
+          executeReplaceLines(params, updateStatus)
+        ),
+      }),
+      deleteLines: tool({
+        description: 'Delete a specific range of lines from a file.',
+        parameters: z.object({
+          path: z.string().describe('The file path in the repository'),
+          repository: z
+            .string()
+            .describe('The repository in format "owner/repo"'),
+          branch: z.string().describe('The branch to edit'),
+          startLine: z
+            .number()
+            .describe(
+              'The starting line number to delete (1-based, inclusive)'
+            ),
+          endLine: z
+            .number()
+            .describe('The ending line number to delete (1-based, inclusive)'),
+          message: z.string().describe('Commit message for the change'),
+        }),
+        execute: createMemoryAwareToolExecutor('deleteLines', (params: any) =>
+          executeDeleteLines(params, updateStatus)
+        ),
+      }),
+      appendToFile: tool({
+        description: 'Append content to the end of a file.',
+        parameters: z.object({
+          path: z.string().describe('The file path in the repository'),
+          repository: z
+            .string()
+            .describe('The repository in format "owner/repo"'),
+          branch: z.string().describe('The branch to edit'),
+          content: z.string().describe('The content to append'),
+          message: z.string().describe('Commit message for the change'),
+        }),
+        execute: createMemoryAwareToolExecutor('appendToFile', (params: any) =>
+          executeAppendToFile(params, updateStatus)
+        ),
+      }),
+      prependToFile: tool({
+        description: 'Prepend content to the beginning of a file.',
+        parameters: z.object({
+          path: z.string().describe('The file path in the repository'),
+          repository: z
+            .string()
+            .describe('The repository in format "owner/repo"'),
+          branch: z.string().describe('The branch to edit'),
+          content: z.string().describe('The content to prepend'),
+          message: z.string().describe('Commit message for the change'),
+        }),
+        execute: createMemoryAwareToolExecutor('prependToFile', (params: any) =>
+          executePrependToFile(params, updateStatus)
+        ),
+      }),
+      findAndReplace: tool({
+        description:
+          'Find and replace text in a file with options for case sensitivity and whole word matching.',
+        parameters: z.object({
+          path: z.string().describe('The file path in the repository'),
+          repository: z
+            .string()
+            .describe('The repository in format "owner/repo"'),
+          branch: z.string().describe('The branch to edit'),
+          searchText: z.string().describe('The text to search for'),
+          replaceText: z.string().describe('The text to replace with'),
+          message: z.string().describe('Commit message for the change'),
+          replaceAll: z
+            .boolean()
+            .describe(
+              'Whether to replace all occurrences (true) or just the first one (false). Default: false.'
+            ),
+          caseSensitive: z
+            .boolean()
+            .describe(
+              'Whether the search should be case sensitive. Default: true.'
+            ),
+          wholeWord: z
+            .boolean()
+            .describe('Whether to match whole words only. Default: false.'),
+        }),
+        execute: createMemoryAwareToolExecutor(
+          'findAndReplace',
+          (params: any) => executeFindAndReplace(params, updateStatus)
+        ),
+      }),
+      insertAfterPattern: tool({
+        description:
+          'Insert content after the first line that matches a specific pattern.',
+        parameters: z.object({
+          path: z.string().describe('The file path in the repository'),
+          repository: z
+            .string()
+            .describe('The repository in format "owner/repo"'),
+          branch: z.string().describe('The branch to edit'),
+          pattern: z.string().describe('The pattern to search for'),
+          content: z
+            .string()
+            .describe('The content to insert after the matching line'),
+          message: z.string().describe('Commit message for the change'),
+          caseSensitive: z
+            .boolean()
+            .describe(
+              'Whether the search should be case sensitive. Default: true.'
+            ),
+          wholeWord: z
+            .boolean()
+            .describe('Whether to match whole words only. Default: false.'),
+        }),
+        execute: createMemoryAwareToolExecutor(
+          'insertAfterPattern',
+          (params: any) => executeInsertAfterPattern(params, updateStatus)
+        ),
+      }),
+      insertBeforePattern: tool({
+        description:
+          'Insert content before the first line that matches a specific pattern.',
+        parameters: z.object({
+          path: z.string().describe('The file path in the repository'),
+          repository: z
+            .string()
+            .describe('The repository in format "owner/repo"'),
+          branch: z.string().describe('The branch to edit'),
+          pattern: z.string().describe('The pattern to search for'),
+          content: z
+            .string()
+            .describe('The content to insert before the matching line'),
+          message: z.string().describe('Commit message for the change'),
+          caseSensitive: z
+            .boolean()
+            .describe(
+              'Whether the search should be case sensitive. Default: true.'
+            ),
+          wholeWord: z
+            .boolean()
+            .describe('Whether to match whole words only. Default: false.'),
+        }),
+        execute: createMemoryAwareToolExecutor(
+          'insertBeforePattern',
+          (params: any) => executeInsertBeforePattern(params, updateStatus)
+        ),
+      }),
+      applyMultipleEdits: tool({
+        description:
+          'Apply multiple edit operations to a file in a single commit. Operations are applied in reverse line order to avoid line number conflicts.',
+        parameters: z.object({
+          path: z.string().describe('The file path in the repository'),
+          repository: z
+            .string()
+            .describe('The repository in format "owner/repo"'),
+          branch: z.string().describe('The branch to edit'),
+          operations: z
+            .array(
+              z.object({
+                type: z
+                  .enum(['insert', 'replace', 'delete'])
+                  .describe('The type of operation'),
+                line: z
+                  .number()
+                  .optional()
+                  .describe('Line number for insert operations (1-based)'),
+                startLine: z
+                  .number()
+                  .optional()
+                  .describe(
+                    'Starting line for replace/delete operations (1-based, inclusive)'
+                  ),
+                endLine: z
+                  .number()
+                  .optional()
+                  .describe(
+                    'Ending line for replace/delete operations (1-based, inclusive)'
+                  ),
+                content: z
+                  .string()
+                  .optional()
+                  .describe('Content for insert/replace operations'),
+              })
+            )
+            .describe('Array of edit operations to apply'),
+          message: z.string().describe('Commit message for all the changes'),
+        }),
+        execute: createMemoryAwareToolExecutor(
+          'applyMultipleEdits',
+          (params: any) => executeApplyMultipleEdits(params, updateStatus)
         ),
       }),
     },
