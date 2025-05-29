@@ -311,8 +311,8 @@ export const executeSendRichSlackMessage = async (
   }: {
     channel: string;
     blocks: any[];
-    text?: string;
-    threadTs?: string;
+    text: string;
+    threadTs: string;
   },
   updateStatus?: (status: string) => void
 ) => {
@@ -339,8 +339,8 @@ export const executeSendRichChannelMessage = async (
   }: {
     channelNameOrId: string;
     blocks: any[];
-    text?: string;
-    threadTs?: string;
+    text: string;
+    threadTs: string;
   },
   updateStatus?: (status: string) => void
 ) => {
@@ -377,7 +377,7 @@ export const executeSendRichDirectMessage = async (
   }: {
     userIdOrEmail: string;
     blocks: any[];
-    text?: string;
+    text: string;
   },
   updateStatus?: (status: string) => void
 ) => {
@@ -926,16 +926,16 @@ export const executeCreateLinearComment = async (
 export async function executeCreateFormattedSlackMessage(
   args: {
     channel: string;
-    title?: string;
+    title: string;
     content: string;
-    fields?: Array<{ label: string; value: string }>;
-    context?: string;
-    actions?: Array<{
+    fields: Array<{ label: string; value: string }>;
+    context: string;
+    actions: Array<{
       text: string;
       action_id: string;
-      style?: 'primary' | 'danger';
+      style: 'primary' | 'danger';
     }>;
-    thread_ts?: string;
+    thread_ts: string;
   },
   updateStatus?: (status: string) => void
 ): Promise<string> {
@@ -948,7 +948,7 @@ export async function executeCreateFormattedSlackMessage(
     const blocks: any[] = [];
 
     // Add header if title provided
-    if (title) {
+    if (title && title.trim()) {
       blocks.push({
         type: 'header',
         text: {
@@ -979,12 +979,12 @@ export async function executeCreateFormattedSlackMessage(
     }
 
     // Add divider if we have context or actions
-    if (context || actions) {
+    if ((context && context.trim()) || (actions && actions.length > 0)) {
       blocks.push({ type: 'divider' });
     }
 
     // Add context if provided
-    if (context) {
+    if (context && context.trim()) {
       blocks.push({
         type: 'context',
         elements: [
@@ -1012,7 +1012,12 @@ export async function executeCreateFormattedSlackMessage(
       });
     }
 
-    await slackUtils.sendRichMessage(channel, blocks, undefined, thread_ts);
+    await slackUtils.sendRichMessage(
+      channel,
+      blocks,
+      undefined,
+      thread_ts || undefined
+    );
 
     return `Formatted message sent successfully to ${channel}`;
   } catch (error) {

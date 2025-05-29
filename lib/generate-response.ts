@@ -345,19 +345,19 @@ export const generateResponse = async (
         parameters: z.object({
           channel: z.string().describe('The channel ID to send the message to'),
           blocks: z
-            .array(z.record(z.any()))
+            .array(z.object({}).passthrough())
             .describe(
               'Array of Slack Block Kit blocks for rich formatting. Common blocks: section (text), header, divider, image, actions (buttons), context'
             ),
           text: z
             .string()
             .describe(
-              'Fallback text for notifications (optional but recommended)'
+              'Fallback text for notifications (leave empty string if not needed)'
             ),
           threadTs: z
             .string()
             .describe(
-              'Optional thread timestamp to reply in a thread. Leave empty if not replying to a thread.'
+              'Thread timestamp to reply in a thread (leave empty string if not replying to a thread)'
             ),
         }),
         execute: (params) => executeSendRichSlackMessage(params, updateStatus),
@@ -370,19 +370,19 @@ export const generateResponse = async (
             .string()
             .describe('Channel name (with or without #) or channel ID'),
           blocks: z
-            .array(z.record(z.any()))
+            .array(z.object({}).passthrough())
             .describe(
               'Array of Slack Block Kit blocks for rich formatting. Common blocks: section (text), header, divider, image, actions (buttons), context'
             ),
           text: z
             .string()
             .describe(
-              'Fallback text for notifications (optional but recommended)'
+              'Fallback text for notifications (leave empty string if not needed)'
             ),
           threadTs: z
             .string()
             .describe(
-              'Optional thread timestamp to reply in a thread. Leave empty if not replying to a thread.'
+              'Thread timestamp to reply in a thread (leave empty string if not replying to a thread)'
             ),
         }),
         execute: (params) =>
@@ -396,14 +396,14 @@ export const generateResponse = async (
             .string()
             .describe('User ID or email address of the recipient'),
           blocks: z
-            .array(z.record(z.any()))
+            .array(z.object({}).passthrough())
             .describe(
               'Array of Slack Block Kit blocks for rich formatting. Common blocks: section (text), header, divider, image, actions (buttons), context'
             ),
           text: z
             .string()
             .describe(
-              'Fallback text for notifications (optional but recommended)'
+              'Fallback text for notifications (leave empty string if not needed)'
             ),
         }),
         execute: (params) => executeSendRichDirectMessage(params, updateStatus),
@@ -417,8 +417,9 @@ export const generateResponse = async (
             .describe('The channel ID or name to send the message to'),
           title: z
             .string()
-            .optional()
-            .describe('Optional header title for the message'),
+            .describe(
+              'Header title for the message (leave empty string if not needed)'
+            ),
           content: z.string().describe('Main content text (supports markdown)'),
           fields: z
             .array(
@@ -427,12 +428,14 @@ export const generateResponse = async (
                 value: z.string().describe('Field value'),
               })
             )
-            .optional()
-            .describe('Optional array of key-value fields to display'),
+            .describe(
+              'Array of key-value fields to display (use empty array if not needed)'
+            ),
           context: z
             .string()
-            .optional()
-            .describe('Optional context text (like timestamps, metadata)'),
+            .describe(
+              'Context text like timestamps or metadata (leave empty string if not needed)'
+            ),
           actions: z
             .array(
               z.object({
@@ -440,16 +443,17 @@ export const generateResponse = async (
                 action_id: z.string().describe('Unique action identifier'),
                 style: z
                   .enum(['primary', 'danger'])
-                  .optional()
-                  .describe('Button style'),
+                  .describe('Button style (use "primary" as default)'),
               })
             )
-            .optional()
-            .describe('Optional array of action buttons'),
+            .describe(
+              'Array of action buttons (use empty array if not needed)'
+            ),
           thread_ts: z
             .string()
-            .optional()
-            .describe('Optional thread timestamp to reply in a thread'),
+            .describe(
+              'Thread timestamp to reply in a thread (leave empty string if not replying to a thread)'
+            ),
         }),
         execute: (params) =>
           executeCreateFormattedSlackMessage(params, updateStatus),
