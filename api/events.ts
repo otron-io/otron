@@ -2,10 +2,10 @@ import type { SlackEvent } from '@slack/web-api';
 import {
   assistantThreadMessage,
   handleNewAssistantMessage,
-} from '../lib/handle-messages.js';
+} from '../lib/slack/handle-messages.js';
 import { waitUntil } from '@vercel/functions';
-import { handleNewAppMention } from '../lib/handle-app-mention.js';
-import { verifyRequest, getBotId } from '../lib/slack-utils.js';
+import { handleNewAppMention } from '../lib/slack/handle-app-mention.js';
+import { verifyRequest, getBotId } from '../lib/slack/slack-utils.js';
 
 export async function POST(request: Request) {
   const rawBody = await request.text();

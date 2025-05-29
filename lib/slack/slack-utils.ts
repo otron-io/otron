@@ -1,8 +1,8 @@
 import { WebClient } from '@slack/web-api';
-import { CoreMessage } from 'ai'
-import crypto from 'crypto'
+import { CoreMessage } from 'ai';
+import crypto from 'crypto';
 
-const signingSecret = process.env.SLACK_SIGNING_SECRET!
+const signingSecret = process.env.SLACK_SIGNING_SECRET!;
 
 export const client = new WebClient(process.env.SLACK_BOT_TOKEN);
 
@@ -11,37 +11,37 @@ export async function isValidSlackRequest({
   request,
   rawBody,
 }: {
-  request: Request
-  rawBody: string
+  request: Request;
+  rawBody: string;
 }) {
   // console.log('Validating Slack request')
-  const timestamp = request.headers.get('X-Slack-Request-Timestamp')
-  const slackSignature = request.headers.get('X-Slack-Signature')
+  const timestamp = request.headers.get('X-Slack-Request-Timestamp');
+  const slackSignature = request.headers.get('X-Slack-Signature');
   // console.log(timestamp, slackSignature)
 
   if (!timestamp || !slackSignature) {
-    console.log('Missing timestamp or signature')
-    return false
+    console.log('Missing timestamp or signature');
+    return false;
   }
 
   // Prevent replay attacks on the order of 5 minutes
   if (Math.abs(Date.now() / 1000 - parseInt(timestamp)) > 60 * 5) {
-    console.log('Timestamp out of range')
-    return false
+    console.log('Timestamp out of range');
+    return false;
   }
 
-  const base = `v0:${timestamp}:${rawBody}`
+  const base = `v0:${timestamp}:${rawBody}`;
   const hmac = crypto
     .createHmac('sha256', signingSecret)
     .update(base)
-    .digest('hex')
-  const computedSignature = `v0=${hmac}`
+    .digest('hex');
+  const computedSignature = `v0=${hmac}`;
 
   // Prevent timing attacks
   return crypto.timingSafeEqual(
     Buffer.from(computedSignature),
     Buffer.from(slackSignature)
-  )
+  );
 }
 
 export const verifyRequest = async ({
@@ -54,8 +54,8 @@ export const verifyRequest = async ({
   rawBody: string;
 }) => {
   const validRequest = await isValidSlackRequest({ request, rawBody });
-  if (!validRequest || requestType !== "event_callback") {
-    return new Response("Invalid request", { status: 400 });
+  if (!validRequest || requestType !== 'event_callback') {
+    return new Response('Invalid request', { status: 400 });
   }
 };
 
@@ -72,7 +72,7 @@ export const updateStatusUtil = (channel: string, thread_ts: string) => {
 export async function getThread(
   channel_id: string,
   thread_ts: string,
-  botUserId: string,
+  botUserId: string
 ): Promise<CoreMessage[]> {
   const { messages } = await client.conversations.replies({
     channel: channel_id,
@@ -82,7 +82,7 @@ export async function getThread(
 
   // Ensure we have messages
 
-  if (!messages) throw new Error("No messages found in thread");
+  if (!messages) throw new Error('No messages found in thread');
 
   const result = messages
     .map((message) => {
@@ -93,11 +93,11 @@ export async function getThread(
       // For IM messages, keep the full text
       let content = message.text;
       if (!isBot && content.includes(`<@${botUserId}>`)) {
-        content = content.replace(`<@${botUserId}> `, "");
+        content = content.replace(`<@${botUserId}> `, '');
       }
 
       return {
-        role: isBot ? "assistant" : "user",
+        role: isBot ? 'assistant' : 'user',
         content: content,
       } as CoreMessage;
     })
@@ -110,7 +110,34 @@ export const getBotId = async () => {
   const { user_id: botUserId } = await client.auth.test();
 
   if (!botUserId) {
-    throw new Error("botUserId is undefined");
+    throw new Error('botUserId is undefined');
   }
   return botUserId;
+};
+
+export const sendMessage = async (
+  channel: string,
+  text: string,
+  thread_ts?: string,
+  blocks?: any[]
+) => {
+  // Convert markdown to Slack mrkdwn format
+  text = text.replace(/\[(.*?)\]\((.*?)\)/g, '<$2|$1>').replace(/\*\*/g, '*');
+
+  await client.chat.postMessage({
+    channel: channel,
+    text: text,
+    thread_ts: thread_ts,
+    unfurl_links: false,
+    blocks: [
+      {
+        type: 'section',
+        text: {
+          type: 'mrkdwn',
+          text: text,
+        },
+      },
+      ...(blocks || []),
+    ],
+  });
 };

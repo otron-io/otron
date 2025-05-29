@@ -2,8 +2,13 @@ import type {
   AssistantThreadStartedEvent,
   GenericMessageEvent,
 } from '@slack/web-api';
-import { client, getThread, updateStatusUtil } from './slack-utils.js';
-import { generateResponse } from './generate-response.js';
+import {
+  client,
+  getThread,
+  sendMessage,
+  updateStatusUtil,
+} from './slack-utils.js';
+import { generateResponse } from '../generate-response.js';
 
 export async function assistantThreadMessage(
   event: AssistantThreadStartedEvent
@@ -53,21 +58,7 @@ export async function handleNewAssistantMessage(
   const messages = await getThread(channel, thread_ts, botUserId);
   const result = await generateResponse(messages, updateStatus);
 
-  await client.chat.postMessage({
-    channel: channel,
-    thread_ts: thread_ts,
-    text: result,
-    unfurl_links: false,
-    blocks: [
-      {
-        type: 'section',
-        text: {
-          type: 'mrkdwn',
-          text: result,
-        },
-      },
-    ],
-  });
+  await sendMessage(channel, result, thread_ts);
 
   await updateStatus('');
 }

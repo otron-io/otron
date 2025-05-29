@@ -1,6 +1,6 @@
 import { AppMentionEvent } from '@slack/web-api';
 import { client, getThread } from './slack-utils.js';
-import { generateResponse } from './generate-response.js';
+import { generateResponse } from '../generate-response.js';
 
 const updateStatusUtil = async (
   initialStatus: string,
@@ -41,12 +41,16 @@ export async function handleNewAppMention(
   if (thread_ts) {
     const messages = await getThread(channel, thread_ts, botUserId);
     const result = await generateResponse(messages, updateMessage);
-    await updateMessage(result);
+    await updateMessage(
+      result.replace(/\[(.*?)\]\((.*?)\)/g, '<$2|$1>').replace(/\*\*/g, '*')
+    );
   } else {
     const result = await generateResponse(
       [{ role: 'user', content: event.text }],
       updateMessage
     );
-    await updateMessage(result);
+    await updateMessage(
+      result.replace(/\[(.*?)\]\((.*?)\)/g, '<$2|$1>').replace(/\*\*/g, '*')
+    );
   }
 }

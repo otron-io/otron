@@ -8,9 +8,13 @@ export const generateResponse = async (
   updateStatus?: (status: string) => void
 ) => {
   const { text } = await generateText({
-    model: openai('gpt-4o'),
-    system: `You are a Slack bot assistant Keep your responses concise and to the point.
-    - Do not tag users.
+    model: openai('o4-mini'),
+    system: `You are Otron. An omnipresent AI agent. You exist across Slack, Linear, and GitHub.
+    - You keep your responses concise and to the point, but friendly and engaging while being as helpful as possible.
+    - You can be notified to take action via all 3 platforms, and can take actions on all 3 platforms.
+    - You must decide where to respond. For example, if you are asked in Slack to take action on Linear, you should respond in Slack while also taking action on Linear.
+
+    Final notes:
     - Current date is: ${new Date().toISOString().split('T')[0]}
     - Make sure to ALWAYS include sources in your final response if you use web search. Put sources inline if possible.`,
     messages,
@@ -70,6 +74,5 @@ export const generateResponse = async (
     },
   });
 
-  // Convert markdown to Slack mrkdwn format
-  return text.replace(/\[(.*?)\]\((.*?)\)/g, '<$2|$1>').replace(/\*\*/g, '*');
+  return text;
 };
