@@ -345,7 +345,7 @@ export const generateResponse = async (
         parameters: z.object({
           channel: z.string().describe('The channel ID to send the message to'),
           blocks: z
-            .array(z.object({}).passthrough())
+            .array(z.object({}).strict())
             .describe(
               'Array of Slack Block Kit blocks for rich formatting. Common blocks: section (text), header, divider, image, actions (buttons), context'
             ),
@@ -370,7 +370,7 @@ export const generateResponse = async (
             .string()
             .describe('Channel name (with or without #) or channel ID'),
           blocks: z
-            .array(z.object({}).passthrough())
+            .array(z.object({}).strict())
             .describe(
               'Array of Slack Block Kit blocks for rich formatting. Common blocks: section (text), header, divider, image, actions (buttons), context'
             ),
@@ -396,7 +396,7 @@ export const generateResponse = async (
             .string()
             .describe('User ID or email address of the recipient'),
           blocks: z
-            .array(z.object({}).passthrough())
+            .array(z.object({}).strict())
             .describe(
               'Array of Slack Block Kit blocks for rich formatting. Common blocks: section (text), header, divider, image, actions (buttons), context'
             ),
