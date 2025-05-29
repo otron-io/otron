@@ -311,8 +311,8 @@ export const executeSendRichSlackMessage = async (
   }: {
     channel: string;
     blocks: any[];
-    text: string;
-    threadTs: string;
+    text?: string;
+    threadTs?: string;
   },
   updateStatus?: (status: string) => void
 ) => {
@@ -339,8 +339,8 @@ export const executeSendRichChannelMessage = async (
   }: {
     channelNameOrId: string;
     blocks: any[];
-    text: string;
-    threadTs: string;
+    text?: string;
+    threadTs?: string;
   },
   updateStatus?: (status: string) => void
 ) => {
@@ -377,7 +377,7 @@ export const executeSendRichDirectMessage = async (
   }: {
     userIdOrEmail: string;
     blocks: any[];
-    text: string;
+    text?: string;
   },
   updateStatus?: (status: string) => void
 ) => {
