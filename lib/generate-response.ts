@@ -1814,7 +1814,6 @@ export const generateResponse = async (
           summary: z.string().describe('A summary of what was accomplished'),
           nextSteps: z
             .string()
-            .optional()
             .describe('Optional next steps or recommendations for the user'),
         }),
         execute: createMemoryAwareToolExecutor('endActions', (params: any) =>
@@ -1831,7 +1830,6 @@ export const generateResponse = async (
           branch: z.string().describe('The branch to reset'),
           baseBranch: z
             .string()
-            .optional()
             .describe(
               'The branch to reset to (defaults to the repository default branch)'
             ),
