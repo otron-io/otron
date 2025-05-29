@@ -95,11 +95,12 @@ export const generateResponse = async (
     IMPORTANT: Every Block Kit block MUST have a "type" field as the first property.
     
     Common Block Kit patterns:
-    1. Header + Section: [{"type": "header", "text": {"type": "plain_text", "text": "Title"}}, {"type": "section", "text": {"type": "mrkdwn", "text": "Content"}}]
-    2. Fields for data: [{"type": "section", "fields": [{"type": "mrkdwn", "text": "*Field:*\\nValue"}]}]
-    3. Dividers for separation: [{"type": "divider"}]
-    4. Context for metadata: [{"type": "context", "elements": [{"type": "mrkdwn", "text": "Last updated: 2024-01-01"}]}]
-    5. Actions with buttons: [{"type": "actions", "elements": [{"type": "button", "text": {"type": "plain_text", "text": "Click Me"}, "action_id": "button_click"}]}]
+    1. Header: {"type": "header", "text": {"type": "plain_text", "text": "Title"}}
+    2. Section with text: {"type": "section", "text": {"type": "mrkdwn", "text": "Content"}}
+    3. Section with fields: {"type": "section", "fields": [{"type": "mrkdwn", "text": "*Field:*\\nValue"}]}
+    4. Divider: {"type": "divider"}
+    5. Context: {"type": "context", "elements": [{"type": "mrkdwn", "text": "Last updated: 2024-01-01"}]}
+    6. Actions: {"type": "actions", "elements": [{"type": "button", "text": {"type": "plain_text", "text": "Click Me"}, "action_id": "button_click", "style": "primary"}]}
 
     WHEN TO USE RICH MESSAGES:
     - Linear issue summaries (use header + fields + context)
@@ -348,18 +349,86 @@ export const generateResponse = async (
           channel: z.string().describe('The channel ID to send the message to'),
           blocks: z
             .array(
-              z
-                .object({
-                  type: z
-                    .string()
-                    .describe(
-                      'Block type (e.g., section, header, divider, image, actions, context)'
+              z.union([
+                // Section block with text
+                z
+                  .object({
+                    type: z.literal('section'),
+                    text: z.object({
+                      type: z.enum(['mrkdwn', 'plain_text']),
+                      text: z.string(),
+                    }),
+                  })
+                  .strict(),
+                // Section block with fields
+                z
+                  .object({
+                    type: z.literal('section'),
+                    fields: z.array(
+                      z.object({
+                        type: z.enum(['mrkdwn', 'plain_text']),
+                        text: z.string(),
+                      })
                     ),
-                })
-                .passthrough()
+                  })
+                  .strict(),
+                // Header block
+                z
+                  .object({
+                    type: z.literal('header'),
+                    text: z.object({
+                      type: z.literal('plain_text'),
+                      text: z.string(),
+                    }),
+                  })
+                  .strict(),
+                // Divider block
+                z
+                  .object({
+                    type: z.literal('divider'),
+                  })
+                  .strict(),
+                // Context block
+                z
+                  .object({
+                    type: z.literal('context'),
+                    elements: z.array(
+                      z.object({
+                        type: z.enum(['mrkdwn', 'plain_text']),
+                        text: z.string(),
+                      })
+                    ),
+                  })
+                  .strict(),
+                // Actions block
+                z
+                  .object({
+                    type: z.literal('actions'),
+                    elements: z.array(
+                      z.object({
+                        type: z.literal('button'),
+                        text: z.object({
+                          type: z.literal('plain_text'),
+                          text: z.string(),
+                        }),
+                        action_id: z.string(),
+                        style: z.enum(['primary', 'danger']),
+                      })
+                    ),
+                  })
+                  .strict(),
+                // Image block
+                z
+                  .object({
+                    type: z.literal('image'),
+                    image_url: z.string(),
+                    alt_text: z.string(),
+                  })
+                  .strict(),
+              ])
             )
             .describe(
-              'Array of Slack Block Kit blocks for rich formatting. Each block must have a "type" field. Common blocks: section (text), header, divider, image, actions (buttons), context'
+              'Array of Slack Block Kit blocks for rich formatting. Supported types: section, header, divider, context, actions, image'
             ),
           text: z
             .string()
@@ -383,18 +452,86 @@ export const generateResponse = async (
             .describe('Channel name (with or without #) or channel ID'),
           blocks: z
             .array(
-              z
-                .object({
-                  type: z
-                    .string()
-                    .describe(
-                      'Block type (e.g., section, header, divider, image, actions, context)'
+              z.union([
+                // Section block with text
+                z
+                  .object({
+                    type: z.literal('section'),
+                    text: z.object({
+                      type: z.enum(['mrkdwn', 'plain_text']),
+                      text: z.string(),
+                    }),
+                  })
+                  .strict(),
+                // Section block with fields
+                z
+                  .object({
+                    type: z.literal('section'),
+                    fields: z.array(
+                      z.object({
+                        type: z.enum(['mrkdwn', 'plain_text']),
+                        text: z.string(),
+                      })
                     ),
-                })
-                .passthrough()
+                  })
+                  .strict(),
+                // Header block
+                z
+                  .object({
+                    type: z.literal('header'),
+                    text: z.object({
+                      type: z.literal('plain_text'),
+                      text: z.string(),
+                    }),
+                  })
+                  .strict(),
+                // Divider block
+                z
+                  .object({
+                    type: z.literal('divider'),
+                  })
+                  .strict(),
+                // Context block
+                z
+                  .object({
+                    type: z.literal('context'),
+                    elements: z.array(
+                      z.object({
+                        type: z.enum(['mrkdwn', 'plain_text']),
+                        text: z.string(),
+                      })
+                    ),
+                  })
+                  .strict(),
+                // Actions block
+                z
+                  .object({
+                    type: z.literal('actions'),
+                    elements: z.array(
+                      z.object({
+                        type: z.literal('button'),
+                        text: z.object({
+                          type: z.literal('plain_text'),
+                          text: z.string(),
+                        }),
+                        action_id: z.string(),
+                        style: z.enum(['primary', 'danger']),
+                      })
+                    ),
+                  })
+                  .strict(),
+                // Image block
+                z
+                  .object({
+                    type: z.literal('image'),
+                    image_url: z.string(),
+                    alt_text: z.string(),
+                  })
+                  .strict(),
+              ])
             )
             .describe(
-              'Array of Slack Block Kit blocks for rich formatting. Each block must have a "type" field. Common blocks: section (text), header, divider, image, actions (buttons), context'
+              'Array of Slack Block Kit blocks for rich formatting. Supported types: section, header, divider, context, actions, image'
             ),
           text: z
             .string()
@@ -419,18 +556,86 @@ export const generateResponse = async (
             .describe('User ID or email address of the recipient'),
           blocks: z
             .array(
-              z
-                .object({
-                  type: z
-                    .string()
-                    .describe(
-                      'Block type (e.g., section, header, divider, image, actions, context)'
+              z.union([
+                // Section block with text
+                z
+                  .object({
+                    type: z.literal('section'),
+                    text: z.object({
+                      type: z.enum(['mrkdwn', 'plain_text']),
+                      text: z.string(),
+                    }),
+                  })
+                  .strict(),
+                // Section block with fields
+                z
+                  .object({
+                    type: z.literal('section'),
+                    fields: z.array(
+                      z.object({
+                        type: z.enum(['mrkdwn', 'plain_text']),
+                        text: z.string(),
+                      })
                     ),
-                })
-                .passthrough()
+                  })
+                  .strict(),
+                // Header block
+                z
+                  .object({
+                    type: z.literal('header'),
+                    text: z.object({
+                      type: z.literal('plain_text'),
+                      text: z.string(),
+                    }),
+                  })
+                  .strict(),
+                // Divider block
+                z
+                  .object({
+                    type: z.literal('divider'),
+                  })
+                  .strict(),
+                // Context block
+                z
+                  .object({
+                    type: z.literal('context'),
+                    elements: z.array(
+                      z.object({
+                        type: z.enum(['mrkdwn', 'plain_text']),
+                        text: z.string(),
+                      })
+                    ),
+                  })
+                  .strict(),
+                // Actions block
+                z
+                  .object({
+                    type: z.literal('actions'),
+                    elements: z.array(
+                      z.object({
+                        type: z.literal('button'),
+                        text: z.object({
+                          type: z.literal('plain_text'),
+                          text: z.string(),
+                        }),
+                        action_id: z.string(),
+                        style: z.enum(['primary', 'danger']),
+                      })
+                    ),
+                  })
+                  .strict(),
+                // Image block
+                z
+                  .object({
+                    type: z.literal('image'),
+                    image_url: z.string(),
+                    alt_text: z.string(),
+                  })
+                  .strict(),
+              ])
             )
             .describe(
-              'Array of Slack Block Kit blocks for rich formatting. Each block must have a "type" field. Common blocks: section (text), header, divider, image, actions (buttons), context'
+              'Array of Slack Block Kit blocks for rich formatting. Supported types: section, header, divider, context, actions, image'
             ),
           text: z
             .string()
@@ -473,9 +678,7 @@ export const generateResponse = async (
               z.object({
                 text: z.string().describe('Button text'),
                 action_id: z.string().describe('Unique action identifier'),
-                style: z
-                  .enum(['primary', 'danger'])
-                  .describe('Button style (use "primary" as default)'),
+                style: z.enum(['primary', 'danger']),
               })
             )
             .describe(
