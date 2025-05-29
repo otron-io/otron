@@ -167,18 +167,39 @@ export const resetBranchToHead = async (
       ref: `heads/${baseRef}`,
     });
 
-    // Update the branch to point to the base branch's HEAD
-    await octokit.git.updateRef({
-      owner,
-      repo,
-      ref: `heads/${branch}`,
-      sha: refData.object.sha,
-      force: true, // Force update to reset the branch
-    });
+    try {
+      // Try to update the existing branch
+      await octokit.git.updateRef({
+        owner,
+        repo,
+        ref: `heads/${branch}`,
+        sha: refData.object.sha,
+        force: true, // Force update to reset the branch
+      });
 
-    console.log(
-      `Reset branch ${branch} to head of ${baseRef} in ${repository}`
-    );
+      console.log(
+        `Reset branch ${branch} to head of ${baseRef} in ${repository}`
+      );
+    } catch (updateError: any) {
+      // If the branch doesn't exist (422 error), create it instead
+      if (updateError.status === 422) {
+        console.log(`Branch ${branch} doesn't exist, creating it instead...`);
+
+        await octokit.git.createRef({
+          owner,
+          repo,
+          ref: `refs/heads/${branch}`,
+          sha: refData.object.sha,
+        });
+
+        console.log(
+          `Created branch ${branch} from head of ${baseRef} in ${repository}`
+        );
+      } else {
+        // Re-throw other errors
+        throw updateError;
+      }
+    }
   } catch (error) {
     console.error(`Error resetting branch ${branch} in ${repository}:`, error);
     throw error;
