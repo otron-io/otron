@@ -1,13 +1,19 @@
 import { Octokit } from '@octokit/rest';
+import { GitHubAppService } from '../../src/utils/github-app.js';
 
-// Initialize GitHub client with token
-export const octokit = new Octokit({
-  auth: process.env.GITHUB_TOKEN,
-});
+// Get GitHub App service instance
+const githubAppService = GitHubAppService.getInstance();
 
 // Simple in-memory cache for file content
 const fileCache = new Map<string, { content: string; timestamp: number }>();
 const CACHE_TTL = 5 * 60 * 1000; // 5 minutes
+
+/**
+ * Get an authenticated Octokit client for a repository
+ */
+const getOctokitForRepo = async (repository: string): Promise<Octokit> => {
+  return await githubAppService.getOctokitForRepo(repository);
+};
 
 /**
  * Get the content of a file from GitHub, optionally limited to a range of lines
@@ -44,6 +50,7 @@ export const getFileContent = async (
       }`
     );
     const [owner, repo] = repository.split('/');
+    const octokit = await getOctokitForRepo(repository);
 
     const { data } = await octokit.repos.getContent({
       owner,
@@ -92,6 +99,7 @@ export const getFileContent = async (
 export const getDefaultBranch = async (repository: string): Promise<string> => {
   const [owner, repo] = repository.split('/');
   try {
+    const octokit = await getOctokitForRepo(repository);
     const { data } = await octokit.repos.get({ owner, repo });
     return data.default_branch;
   } catch (error) {
@@ -113,6 +121,7 @@ export const createBranch = async (
   try {
     // Get base branch if not provided
     const baseRef = baseBranch || (await getDefaultBranch(repository));
+    const octokit = await getOctokitForRepo(repository);
 
     // Get SHA of latest commit on base branch
     const { data: refData } = await octokit.git.getRef({
@@ -149,6 +158,8 @@ export const createOrUpdateFile = async (
   const [owner, repo] = repository.split('/');
 
   try {
+    const octokit = await getOctokitForRepo(repository);
+
     // Check if file exists to get SHA
     let sha: string | undefined;
     try {
@@ -206,6 +217,8 @@ export const createPullRequest = async (
   const [owner, repo] = repository.split('/');
 
   try {
+    const octokit = await getOctokitForRepo(repository);
+
     // Check if head branch exists first
     try {
       await octokit.git.getRef({
@@ -256,6 +269,7 @@ export const updatePullRequest = async (
 ): Promise<void> => {
   try {
     const [owner, repo] = repository.split('/');
+    const octokit = await getOctokitForRepo(repository);
 
     await octokit.pulls.update({
       owner,
@@ -284,6 +298,7 @@ export const addPullRequestComment = async (
 ): Promise<{ id: number; url: string }> => {
   try {
     const [owner, repo] = repository.split('/');
+    const octokit = await getOctokitForRepo(repository);
 
     const { data } = await octokit.issues.createComment({
       owner,
@@ -318,6 +333,7 @@ export const addPullRequestReviewComment = async (
 ): Promise<{ id: number; url: string }> => {
   try {
     const [owner, repo] = repository.split('/');
+    const octokit = await getOctokitForRepo(repository);
 
     const { data } = await octokit.pulls.createReviewComment({
       owner,
@@ -352,6 +368,7 @@ export const replyToComment = async (
 ): Promise<{ id: number; url: string }> => {
   try {
     const [owner, repo] = repository.split('/');
+    const octokit = await getOctokitForRepo(repository);
 
     // Get the original comment to find the issue/PR number
     const { data: originalComment } = await octokit.issues.getComment({
@@ -401,6 +418,7 @@ export const getPullRequestFiles = async (
 > => {
   try {
     const [owner, repo] = repository.split('/');
+    const octokit = await getOctokitForRepo(repository);
 
     const { data } = await octokit.pulls.listFiles({
       owner,
@@ -408,7 +426,7 @@ export const getPullRequestFiles = async (
       pull_number: pullNumber,
     });
 
-    return data.map((file) => ({
+    return data.map((file: any) => ({
       filename: file.filename,
       status: file.status,
       additions: file.additions,
@@ -441,6 +459,7 @@ export const getPullRequestCommits = async (
 > => {
   try {
     const [owner, repo] = repository.split('/');
+    const octokit = await getOctokitForRepo(repository);
 
     const { data } = await octokit.pulls.listCommits({
       owner,
@@ -448,7 +467,7 @@ export const getPullRequestCommits = async (
       pull_number: pullNumber,
     });
 
-    return data.map((commit) => ({
+    return data.map((commit: any) => ({
       sha: commit.sha,
       message: commit.commit.message,
       author: commit.commit.author?.name || 'Unknown',
@@ -477,6 +496,7 @@ export const mergePullRequest = async (
 ): Promise<{ merged: boolean; sha: string }> => {
   try {
     const [owner, repo] = repository.split('/');
+    const octokit = await getOctokitForRepo(repository);
 
     const { data } = await octokit.pulls.merge({
       owner,
@@ -509,6 +529,7 @@ export const requestPullRequestReviewers = async (
 ): Promise<void> => {
   try {
     const [owner, repo] = repository.split('/');
+    const octokit = await getOctokitForRepo(repository);
 
     await octokit.pulls.requestReviewers({
       owner,
@@ -546,6 +567,7 @@ export const submitPullRequestReview = async (
 ): Promise<{ id: number }> => {
   try {
     const [owner, repo] = repository.split('/');
+    const octokit = await getOctokitForRepo(repository);
 
     const { data } = await octokit.pulls.createReview({
       owner,
@@ -553,7 +575,7 @@ export const submitPullRequestReview = async (
       pull_number: pullNumber,
       event,
       body,
-      comments: comments.map((comment) => ({
+      comments: comments.map((comment: any) => ({
         path: comment.path,
         line: comment.line,
         body: comment.body,
@@ -588,6 +610,7 @@ export const getDirectoryStructure = async (
     );
 
     const [owner, repo] = repository.split('/');
+    const octokit = await getOctokitForRepo(repository);
 
     // Set a timeout for the API request
     const contentPromise = octokit.repos.getContent({
@@ -615,7 +638,7 @@ export const getDirectoryStructure = async (
 
     if (Array.isArray(data)) {
       // It's a directory
-      result = data.map((item) => ({
+      result = data.map((item: any) => ({
         name: item.name,
         path: item.path,
         type: item.type as 'file' | 'dir',
@@ -693,6 +716,7 @@ export const getPullRequest = async (
 }> => {
   try {
     const [owner, repo] = repository.split('/');
+    const octokit = await getOctokitForRepo(repository);
 
     // Get the PR details
     const { data: pullRequest } = await octokit.pulls.get({
@@ -720,12 +744,12 @@ export const getPullRequest = async (
       body: pullRequest.body || '',
       state: pullRequest.state,
       user: pullRequest.user?.login || 'Unknown',
-      comments: issueComments.map((comment) => ({
+      comments: issueComments.map((comment: any) => ({
         user: comment.user?.login || 'Unknown',
         body: comment.body || '',
         createdAt: comment.created_at,
       })),
-      reviewComments: reviewComments.map((comment) => ({
+      reviewComments: reviewComments.map((comment: any) => ({
         user: comment.user?.login || 'Unknown',
         body: comment.body || '',
         path: comment.path || '',
@@ -763,13 +787,14 @@ export const searchCode = async (
     }
 
     console.log(`Searching for "${searchQuery}"`);
+    const octokit = await getOctokitForRepo(repository);
 
     const { data } = await octokit.search.code({
       q: searchQuery,
       per_page: Math.min(options.maxResults || 10, 30), // GitHub API limit is 30
     });
 
-    return data.items.map((item) => ({
+    return data.items.map((item: any) => ({
       path: item.path,
       line: 1, // GitHub search doesn't provide line numbers directly
       content: item.text_matches?.[0]?.fragment || 'No preview available',
