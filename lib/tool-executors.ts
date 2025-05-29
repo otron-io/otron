@@ -28,14 +28,13 @@ export const executeGetWeather = async (
 };
 
 export const executeSearchWeb = async (
-  { query, specificDomain }: { query: string; specificDomain: string | null },
+  { query }: { query: string },
   updateStatus?: (status: string) => void
 ) => {
   updateStatus?.(`is searching the web for ${query}...`);
   const { results } = await exa.searchAndContents(query, {
     livecrawl: 'always',
     numResults: 3,
-    includeDomains: specificDomain ? [specificDomain] : undefined,
   });
 
   return {
