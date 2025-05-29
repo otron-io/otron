@@ -119,7 +119,6 @@ export async function getThread(
   });
 
   // Ensure we have messages
-
   if (!messages) throw new Error('No messages found in thread');
 
   const result = messages
@@ -134,9 +133,22 @@ export async function getThread(
         content = content.replace(`<@${botUserId}> `, '');
       }
 
+      // Include metadata about the message for better context
+      const messageContext = {
+        timestamp: message.ts,
+        user: message.user,
+        channel: channel_id,
+        isBot,
+      };
+
+      // Format content with metadata for AI context
+      const contextualContent = isBot
+        ? content
+        : `[Message from user ${message.user} at ${message.ts}]: ${content}`;
+
       return {
         role: isBot ? 'assistant' : 'user',
-        content: content,
+        content: contextualContent,
       } as CoreMessage;
     })
     .filter((msg): msg is CoreMessage => msg !== null);
@@ -412,9 +424,14 @@ export const getBriefChannelHistory = async (
           content = content.replace(`<@${botUserId}> `, '');
         }
 
+        // Format content with metadata for AI context
+        const contextualContent = isBot
+          ? content
+          : `[Message from user ${message.user} at ${message.ts}]: ${content}`;
+
         return {
           role: isBot ? 'assistant' : 'user',
-          content: content,
+          content: contextualContent,
         } as CoreMessage;
       })
       .filter((msg): msg is CoreMessage => msg !== null);

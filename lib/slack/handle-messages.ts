@@ -57,11 +57,22 @@ export async function handleNewAssistantMessage(
   // Get LinearClient for this Slack context
   const linearClient = await getLinearClientForSlack();
 
+  // Prepare Slack context for the AI
+  const slackContext = {
+    channelId: channel,
+    threadTs: thread_ts,
+  };
+
   const updateStatus = updateStatusUtil(channel, thread_ts);
   await updateStatus('is thinking...');
 
   const messages = await getThread(channel, thread_ts, botUserId);
-  const result = await generateResponse(messages, updateStatus, linearClient);
+  const result = await generateResponse(
+    messages,
+    updateStatus,
+    linearClient,
+    slackContext
+  );
 
   await sendMessage(channel, result, thread_ts);
 

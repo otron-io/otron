@@ -73,7 +73,8 @@ export async function handleLinearNotification(
     const response = await generateResponse(
       [{ role: 'user', content: contextMessage }],
       updateStatus,
-      linearClient
+      linearClient,
+      undefined // No Slack context for Linear notifications
     );
 
     // Add the response as a comment to the issue

@@ -40,6 +40,12 @@ export async function handleNewAppMention(
   // Get LinearClient for this Slack context
   const linearClient = await getLinearClientForSlack();
 
+  // Prepare Slack context for the AI
+  const slackContext = {
+    channelId: channel,
+    threadTs: thread_ts || event.ts,
+  };
+
   const updateMessage = async (status: string) => {
     await client.assistant.threads.setStatus({
       channel_id: channel,
@@ -53,16 +59,23 @@ export async function handleNewAppMention(
     const result = await generateResponse(
       messages,
       updateMessage,
-      linearClient
+      linearClient,
+      slackContext
     );
     await updateMessage(
       result.replace(/\[(.*?)\]\((.*?)\)/g, '<$2|$1>').replace(/\*\*/g, '*')
     );
   } else {
+    // For non-threaded messages, include current message context
+    const currentMessageContext = `[Message from user ${event.user} at ${
+      event.ts
+    }]: ${event.text.replace(`<@${botUserId}> `, '')}`;
+
     const result = await generateResponse(
-      [{ role: 'user', content: event.text }],
+      [{ role: 'user', content: currentMessageContext }],
       updateMessage,
-      linearClient
+      linearClient,
+      slackContext
     );
     await updateMessage(
       result.replace(/\[(.*?)\]\((.*?)\)/g, '<$2|$1>').replace(/\*\*/g, '*')

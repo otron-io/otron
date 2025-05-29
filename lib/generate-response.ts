@@ -45,7 +45,11 @@ import { LinearClient } from '@linear/sdk';
 export const generateResponse = async (
   messages: CoreMessage[],
   updateStatus?: (status: string) => void,
-  linearClient?: LinearClient
+  linearClient?: LinearClient,
+  slackContext?: {
+    channelId: string;
+    threadTs?: string;
+  }
 ) => {
   const { text } = await generateText({
     model: openai('o4-mini'),
@@ -53,6 +57,23 @@ export const generateResponse = async (
     - You keep your responses concise and to the point, but friendly and engaging while being as helpful as possible.
     - You can be notified to take action via all 3 platforms, and can take actions on all 3 platforms.
     - You must decide where to respond. For example, if you are asked in Slack to take action on Linear, you should respond in Slack while also taking action on Linear.
+
+    IMPORTANT CONTEXT AWARENESS:
+    - When users refer to "my message", "this message", "the message above", or similar contextual references, look at the message history to identify which specific message they're referring to.
+    - User messages include metadata in the format: [Message from user {userId} at {timestamp}]: {content}
+    - Use the timestamp and channel information to identify specific messages when users ask you to react, reply, or take action on them.
+    - When a user asks you to react to a message, use the addSlackReaction tool with the appropriate channel and timestamp.
+    - Pay attention to the chronological order of messages to understand context like "the message above" or "my previous message".
+    ${
+      slackContext
+        ? `- Current Slack context: Channel ID: ${slackContext.channelId}${
+            slackContext.threadTs ? `, Thread: ${slackContext.threadTs}` : ''
+          }
+    - When reacting to messages in the current conversation, use channel ID: ${
+      slackContext.channelId
+    }`
+        : ''
+    }
 
     Final notes:
     - Current date is: ${new Date().toISOString().split('T')[0]}
