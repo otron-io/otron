@@ -39,6 +39,13 @@ import {
   executeSetSlackStatus,
   executePinSlackMessage,
   executeUnpinSlackMessage,
+  executeGetLinearTeams,
+  executeGetLinearProjects,
+  executeGetLinearInitiatives,
+  executeGetLinearUsers,
+  executeGetLinearRecentIssues,
+  executeSearchLinearIssues,
+  executeGetLinearWorkflowStates,
 } from './tool-executors.js';
 import { LinearClient } from '@linear/sdk';
 
@@ -428,6 +435,103 @@ export const generateResponse = async (
             updateStatus,
             linearClient
           ),
+      }),
+      // Linear context gathering tools
+      getLinearTeams: tool({
+        description:
+          'Get all teams in the Linear workspace with details about members and active issues',
+        parameters: z.object({}),
+        execute: async () => {
+          return await executeGetLinearTeams(updateStatus, linearClient);
+        },
+      }),
+      getLinearProjects: tool({
+        description:
+          'Get all projects in the Linear workspace with status, progress, and team information',
+        parameters: z.object({}),
+        execute: async () => {
+          return await executeGetLinearProjects(updateStatus, linearClient);
+        },
+      }),
+      getLinearInitiatives: tool({
+        description:
+          'Get all initiatives in the Linear workspace with associated projects and progress',
+        parameters: z.object({}),
+        execute: async () => {
+          return await executeGetLinearInitiatives(updateStatus, linearClient);
+        },
+      }),
+      getLinearUsers: tool({
+        description:
+          'Get all users in the Linear workspace with their details and status',
+        parameters: z.object({}),
+        execute: async () => {
+          return await executeGetLinearUsers(updateStatus, linearClient);
+        },
+      }),
+      getLinearRecentIssues: tool({
+        description:
+          'Get recent issues from the Linear workspace, optionally filtered by team',
+        parameters: z.object({
+          limit: z
+            .number()
+            .describe(
+              'Number of issues to retrieve (default: 20). Use 20 if not specified.'
+            ),
+          teamId: z
+            .string()
+            .describe(
+              'Optional team ID to filter issues. Leave empty to get issues from all teams.'
+            ),
+        }),
+        execute: async (params) => {
+          return await executeGetLinearRecentIssues(
+            params,
+            updateStatus,
+            linearClient
+          );
+        },
+      }),
+      searchLinearIssues: tool({
+        description:
+          'Search for Linear issues by text query in title and description',
+        parameters: z.object({
+          query: z
+            .string()
+            .describe(
+              'The search query to find in issue titles and descriptions'
+            ),
+          limit: z
+            .number()
+            .describe(
+              'Number of results to return (default: 10). Use 10 if not specified.'
+            ),
+        }),
+        execute: async (params) => {
+          return await executeSearchLinearIssues(
+            params,
+            updateStatus,
+            linearClient
+          );
+        },
+      }),
+      getLinearWorkflowStates: tool({
+        description:
+          'Get workflow states (statuses) for teams in the Linear workspace',
+        parameters: z.object({
+          teamId: z
+            .string()
+            .describe(
+              'Optional team ID to filter workflow states. Leave empty to get states for all teams.'
+            ),
+        }),
+        execute: async (params) => {
+          return await executeGetLinearWorkflowStates(
+            params,
+            updateStatus,
+            linearClient
+          );
+        },
       }),
       // GitHub tools
       getFileContent: tool({

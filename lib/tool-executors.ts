@@ -676,7 +676,124 @@ export const executeGetDirectoryStructure = async (
 
   const structure = await githubUtils.getDirectoryStructure(
     repository,
-    directoryPath || undefined
+    directoryPath || ''
   );
   return { structure };
+};
+
+// Linear context gathering tool execution functions
+export const executeGetLinearTeams = async (
+  updateStatus?: (status: string) => void,
+  linearClient?: LinearClient
+) => {
+  updateStatus?.('is getting Linear teams...');
+
+  if (!linearClient) {
+    return { error: 'Linear client not available' };
+  }
+
+  const teams = await linearUtils.getTeams(linearClient);
+  return { teams };
+};
+
+export const executeGetLinearProjects = async (
+  updateStatus?: (status: string) => void,
+  linearClient?: LinearClient
+) => {
+  updateStatus?.('is getting Linear projects...');
+
+  if (!linearClient) {
+    return { error: 'Linear client not available' };
+  }
+
+  const projects = await linearUtils.getProjects(linearClient);
+  return { projects };
+};
+
+export const executeGetLinearInitiatives = async (
+  updateStatus?: (status: string) => void,
+  linearClient?: LinearClient
+) => {
+  updateStatus?.('is getting Linear initiatives...');
+
+  if (!linearClient) {
+    return { error: 'Linear client not available' };
+  }
+
+  const initiatives = await linearUtils.getInitiatives(linearClient);
+  return { initiatives };
+};
+
+export const executeGetLinearUsers = async (
+  updateStatus?: (status: string) => void,
+  linearClient?: LinearClient
+) => {
+  updateStatus?.('is getting Linear users...');
+
+  if (!linearClient) {
+    return { error: 'Linear client not available' };
+  }
+
+  const users = await linearUtils.getUsers(linearClient);
+  return { users };
+};
+
+export const executeGetLinearRecentIssues = async (
+  { limit, teamId }: { limit: number; teamId: string },
+  updateStatus?: (status: string) => void,
+  linearClient?: LinearClient
+) => {
+  updateStatus?.(
+    `is getting recent Linear issues${teamId ? ` for team ${teamId}` : ''}...`
+  );
+
+  if (!linearClient) {
+    return { error: 'Linear client not available' };
+  }
+
+  const issues = await linearUtils.getRecentIssues(
+    linearClient,
+    limit || 20,
+    teamId || undefined
+  );
+  return { issues };
+};
+
+export const executeSearchLinearIssues = async (
+  { query, limit }: { query: string; limit: number },
+  updateStatus?: (status: string) => void,
+  linearClient?: LinearClient
+) => {
+  updateStatus?.(`is searching Linear issues for "${query}"...`);
+
+  if (!linearClient) {
+    return { error: 'Linear client not available' };
+  }
+
+  const issues = await linearUtils.searchIssues(
+    linearClient,
+    query,
+    limit || 10
+  );
+  return { issues };
+};
+
+export const executeGetLinearWorkflowStates = async (
+  { teamId }: { teamId: string },
+  updateStatus?: (status: string) => void,
+  linearClient?: LinearClient
+) => {
+  updateStatus?.(
+    `is getting Linear workflow states${teamId ? ` for team ${teamId}` : ''}...`
+  );
+
+  if (!linearClient) {
+    return { error: 'Linear client not available' };
+  }
+
+  const workflowStates = await linearUtils.getWorkflowStates(
+    linearClient,
+    teamId || undefined
+  );
+  return { workflowStates };
 };
