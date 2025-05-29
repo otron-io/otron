@@ -3,7 +3,7 @@ import { CoreMessage } from 'ai';
 import { createHmac, timingSafeEqual } from 'crypto';
 import { LinearClient } from '@linear/sdk';
 import { Redis } from '@upstash/redis';
-import { env } from '../../src/env.js';
+import { env } from '../env.js';
 
 const signingSecret = process.env.SLACK_SIGNING_SECRET!;
 

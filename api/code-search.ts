@@ -1,7 +1,7 @@
 import { Redis } from '@upstash/redis';
 import { VercelRequest, VercelResponse } from '@vercel/node';
-import { env } from '../src/env.js';
-import { withInternalAccess } from '../src/utils/auth.js';
+import { env } from '../lib/env.js';
+import { withInternalAccess } from '../lib/auth.js';
 
 // Initialize Redis
 const redis = new Redis({

@@ -1,6 +1,6 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
-import { env } from '../src/env.js';
-import { withPasswordProtection } from '../src/utils/auth.js';
+import { env } from '../lib/env.js';
+import { withPasswordProtection } from '../lib/auth.js';
 
 /**
  * Dashboard with links to all available UIs

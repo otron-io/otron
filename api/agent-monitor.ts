@@ -1,10 +1,9 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
 import { Redis } from '@upstash/redis';
-import { env } from '../src/env.js';
-import { withPasswordProtection } from '../src/utils/auth.js';
+import { env } from '../lib/env.js';
+import { withPasswordProtection } from '../lib/auth.js';
 import { LinearClient } from '@linear/sdk';
-import { RepositoryUtils } from '../src/utils/repo-utils.js';
-import { LinearManager } from '../src/tools/linear-manager.js';
+import { RepositoryManager } from '../lib/github/repository-manager.js';
 
 // Initialize Redis client
 const redis = new Redis({
@@ -12,8 +11,8 @@ const redis = new Redis({
   token: env.KV_REST_API_TOKEN,
 });
 
-// Initialize repository utilities
-const repoUtils = new RepositoryUtils(
+// Initialize repository manager
+const repoManager = new RepositoryManager(
   env.ALLOWED_REPOSITORIES?.split(',').map((r) => r.trim()) || []
 );
 
@@ -60,12 +59,6 @@ async function handler(req: VercelRequest, res: VercelResponse) {
       console.warn('Linear client initialization or connection failed:', error);
       linearClient = null;
       linearConnected = false;
-    }
-
-    // Create a LinearManager instance if we have a valid client
-    let linearManager = null;
-    if (linearClient && linearConnected) {
-      linearManager = new LinearManager(linearClient);
     }
 
     // Fetch active issues (issues with memory entries in the last 24 hours)

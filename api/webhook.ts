@@ -2,8 +2,8 @@ import { createHash, timingSafeEqual } from 'node:crypto';
 import { LinearClient } from '@linear/sdk';
 import { Redis } from '@upstash/redis';
 import type { VercelRequest, VercelResponse } from '@vercel/node';
-import { env } from '../src/env.js';
-import { verifyLinearWebhook } from '../src/utils/auth.js';
+import { env } from '../lib/env.js';
+import { verifyLinearWebhook } from '../lib/auth.js';
 import { waitUntil } from '@vercel/functions';
 import { handleLinearNotification } from '../lib/linear/handle-notifications.js';
 

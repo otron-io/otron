@@ -1,5 +1,5 @@
 import { Octokit } from '@octokit/rest';
-import { GitHubAppService } from '../../src/utils/github-app.js';
+import { GitHubAppService } from './github-app.js';
 
 // Get GitHub App service instance
 const githubAppService = GitHubAppService.getInstance();

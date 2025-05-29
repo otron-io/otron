@@ -9,5 +9,12 @@
     "skipLibCheck": true,
     "outDir": "dist"
   },
-  "include": ["src/**/*", "api/**/*"]
+  "include": [
+    "src/**/*",
+    "api/**/*",
+    "lib/github/github-app.ts",
+    "lib/memory/memory-manager.ts",
+    "lib/auth.ts",
+    "lib/env.ts"
+  ]
 }

@@ -1,5 +1,5 @@
 import { VercelRequest, VercelResponse } from '@vercel/node';
-import { env } from '../env.js';
+import { env } from './env.js';
 import { Redis } from '@upstash/redis';
 import { createHmac, timingSafeEqual } from 'crypto';
 

@@ -22,6 +22,8 @@ import {
   executeGetPullRequestFiles,
   executeSearchCode,
   executeGetDirectoryStructure,
+  executeSearchEmbeddedCode,
+  executeGetRepositoryStructure,
   executeSendSlackMessage,
   executeSendDirectMessage,
   executeSendChannelMessage,
@@ -53,6 +55,40 @@ import {
   executeCreateLinearComment,
 } from './tool-executors.js';
 import { LinearClient } from '@linear/sdk';
+import { memoryManager } from './memory/memory-manager.js';
+
+// Helper function to extract issue ID from context
+function extractIssueIdFromContext(
+  messages: CoreMessage[],
+  slackContext?: { channelId: string; threadTs?: string }
+): string {
+  // Try to extract issue ID from message content
+  for (const message of messages) {
+    if (typeof message.content === 'string') {
+      // Look for Linear issue patterns like OTR-123, ABC-456, etc.
+      const issueMatch = message.content.match(/\b([A-Z]{2,}-\d+)\b/);
+      if (issueMatch) {
+        return issueMatch[1];
+      }
+
+      // Look for issue ID in Linear notification context
+      const issueIdMatch = message.content.match(/issue\s+([a-f0-9-]{36})/i);
+      if (issueIdMatch) {
+        return issueIdMatch[1];
+      }
+    }
+  }
+
+  // If no issue ID found in messages, use Slack context as fallback
+  if (slackContext?.channelId) {
+    return `slack:${slackContext.channelId}${
+      slackContext.threadTs ? `:${slackContext.threadTs}` : ''
+    }`;
+  }
+
+  // Default fallback
+  return 'general';
+}
 
 export const generateResponse = async (
   messages: CoreMessage[],
@@ -63,11 +99,61 @@ export const generateResponse = async (
     threadTs?: string;
   }
 ) => {
-  const { text } = await generateText({
-    model: openai('o4-mini'),
-    system: `You are Otron. An omnipresent AI agent. You exist across Slack, Linear, and GitHub.
+  // Extract context ID for memory operations
+  const contextId = extractIssueIdFromContext(messages, slackContext);
+
+  // Store the incoming message in memory
+  try {
+    const lastMessage = messages[messages.length - 1];
+    const messageContent =
+      typeof lastMessage?.content === 'string'
+        ? lastMessage.content
+        : Array.isArray(lastMessage?.content)
+        ? lastMessage.content
+            .map((part) => ('text' in part ? part.text : JSON.stringify(part)))
+            .join(' ')
+        : 'No content';
+
+    await memoryManager.storeMemory(contextId, 'conversation', {
+      role: 'user',
+      content: messageContent,
+      timestamp: Date.now(),
+      platform: slackContext ? 'slack' : 'linear',
+      metadata: slackContext || {},
+    });
+  } catch (error) {
+    console.error('Error storing user message in memory:', error);
+  }
+
+  // Retrieve memory context with smart relevance filtering
+  let memoryContext = '';
+  try {
+    const lastMessage = messages[messages.length - 1];
+    const currentMessageContent =
+      typeof lastMessage?.content === 'string'
+        ? lastMessage.content
+        : Array.isArray(lastMessage?.content)
+        ? lastMessage.content
+            .map((part) => ('text' in part ? part.text : ''))
+            .join(' ')
+        : '';
+
+    const previousConversations = await memoryManager.getPreviousConversations(
+      contextId,
+      currentMessageContent
+    );
+    const issueHistory = await memoryManager.getIssueHistory(contextId);
+
+    memoryContext = previousConversations + issueHistory;
+  } catch (error) {
+    console.error('Error retrieving memory context:', error);
+  }
+
+  // Create enhanced system prompt with memory context
+  const systemPrompt = `You are Otron. An omnipresent AI agent. You exist across Slack, Linear, and GitHub.
     - You keep your responses concise and to the point, but friendly and engaging while being as helpful as possible.
     - You can be notified to take action via all 3 platforms, and can take actions on all 3 platforms.
+    - You have persistent memory across conversations and can remember previous interactions, actions, and context.
     
     CRITICAL: You must EXPLICITLY decide where and how to respond using your available tools.
     - When you receive a message from Slack, you are NOT automatically responding to Slack - you must use Slack tools to send messages if you want to respond there.
@@ -75,6 +161,13 @@ export const generateResponse = async (
     - You have full control over whether to respond, where to respond, and what actions to take.
     - You can choose to respond on the same platform, a different platform, multiple platforms, or not respond at all.
     - Use the appropriate tools (sendSlackMessage, createIssue, addPullRequestComment, etc.) to take any actions you deem necessary.
+
+    MEMORY & CONTEXT AWARENESS:
+    - You have access to previous conversations, actions, and related context through your persistent memory system.
+    - Use this context to provide more informed and relevant responses.
+    - Reference previous conversations when relevant to show continuity and understanding.
+    - Learn from past actions and their outcomes to improve future responses.
+    - Current context ID: ${contextId}
 
     SLACK FORMATTING & BLOCK KIT:
     - For simple text messages, use sendSlackMessage, sendChannelMessage, or sendDirectMessage
@@ -141,11 +234,57 @@ export const generateResponse = async (
         : ''
     }
 
+    ${memoryContext ? `MEMORY CONTEXT:\n${memoryContext}` : ''}
+
     Final notes:
     - Current date is: ${new Date().toISOString().split('T')[0]}
     - Make sure to ALWAYS include sources in your final response if you use web search. Put sources inline if possible.
     - Remember: You control all communication - use your tools to respond where and how you see fit.
-    - Choose rich Block Kit messages when the content benefits from visual structure, formatting, or interactivity.`,
+    - Choose rich Block Kit messages when the content benefits from visual structure, formatting, or interactivity.
+    - Use your memory context to provide more informed and continuous conversations.`;
+
+  // Create a wrapper for tool execution that tracks usage in memory
+  const createMemoryAwareToolExecutor = (
+    toolName: string,
+    originalExecutor: Function
+  ) => {
+    return async (...args: any[]) => {
+      const startTime = Date.now();
+      let success = false;
+      let response = '';
+
+      try {
+        const result = await originalExecutor(...args);
+        success = true;
+        response = typeof result === 'string' ? result : JSON.stringify(result);
+
+        // Track tool usage in memory
+        await memoryManager.trackToolUsage(toolName, success, {
+          issueId: contextId,
+          input: args,
+          response: response.substring(0, 500), // Limit response length for storage
+        });
+
+        return result;
+      } catch (error) {
+        success = false;
+        response = error instanceof Error ? error.message : String(error);
+
+        // Track failed tool usage
+        await memoryManager.trackToolUsage(toolName, success, {
+          issueId: contextId,
+          input: args,
+          response,
+        });
+
+        throw error;
+      }
+    };
+  };
+
+  const { text } = await generateText({
+    model: openai('o4-mini'),
+    system: systemPrompt,
     messages,
     maxSteps: 10,
     tools: {
@@ -156,14 +295,18 @@ export const generateResponse = async (
           longitude: z.number(),
           city: z.string(),
         }),
-        execute: (params) => executeGetWeather(params, updateStatus),
+        execute: createMemoryAwareToolExecutor('getWeather', (params: any) =>
+          executeGetWeather(params, updateStatus)
+        ),
       }),
       searchWeb: tool({
         description: 'Use this to search the web for information',
         parameters: z.object({
           query: z.string().describe('The search query'),
         }),
-        execute: (params) => executeSearchWeb(params, updateStatus),
+        execute: createMemoryAwareToolExecutor('searchWeb', (params: any) =>
+          executeSearchWeb(params, updateStatus)
+        ),
       }),
       // Slack tools
       sendSlackMessage: tool({
@@ -177,7 +320,10 @@ export const generateResponse = async (
               'Optional thread timestamp to reply in a thread. Leave empty if not replying to a thread.'
             ),
         }),
-        execute: (params) => executeSendSlackMessage(params, updateStatus),
+        execute: createMemoryAwareToolExecutor(
+          'sendSlackMessage',
+          (params: any) => executeSendSlackMessage(params, updateStatus)
+        ),
       }),
       sendDirectMessage: tool({
         description: 'Send a direct message to a Slack user',
@@ -187,7 +333,10 @@ export const generateResponse = async (
             .describe('User ID or email address of the recipient'),
           text: z.string().describe('The message text to send'),
         }),
-        execute: (params) => executeSendDirectMessage(params, updateStatus),
+        execute: createMemoryAwareToolExecutor(
+          'sendDirectMessage',
+          (params: any) => executeSendDirectMessage(params, updateStatus)
+        ),
       }),
       sendChannelMessage: tool({
         description: 'Send a message to a Slack channel by name or ID',
@@ -202,7 +351,10 @@ export const generateResponse = async (
               'Optional thread timestamp to reply in a thread. Leave empty if not replying to a thread.'
             ),
         }),
-        execute: (params) => executeSendChannelMessage(params, updateStatus),
+        execute: createMemoryAwareToolExecutor(
+          'sendChannelMessage',
+          (params: any) => executeSendChannelMessage(params, updateStatus)
+        ),
       }),
       addSlackReaction: tool({
         description: 'Add a reaction emoji to a Slack message',
@@ -213,7 +365,10 @@ export const generateResponse = async (
             .string()
             .describe('The emoji name (without colons, e.g., "thumbsup")'),
         }),
-        execute: (params) => executeAddSlackReaction(params, updateStatus),
+        execute: createMemoryAwareToolExecutor(
+          'addSlackReaction',
+          (params: any) => executeAddSlackReaction(params, updateStatus)
+        ),
       }),
       removeSlackReaction: tool({
         description: 'Remove a reaction emoji from a Slack message',
@@ -224,7 +379,10 @@ export const generateResponse = async (
             .string()
             .describe('The emoji name (without colons, e.g., "thumbsup")'),
         }),
-        execute: (params) => executeRemoveSlackReaction(params, updateStatus),
+        execute: createMemoryAwareToolExecutor(
+          'removeSlackReaction',
+          (params: any) => executeRemoveSlackReaction(params, updateStatus)
+        ),
       }),
       getSlackChannelHistory: tool({
         description: 'Get recent message history from a Slack channel',
@@ -236,8 +394,10 @@ export const generateResponse = async (
               'Number of messages to retrieve (default: 10). Use 10 if not specified.'
             ),
         }),
-        execute: (params) =>
-          executeGetSlackChannelHistory(params, updateStatus),
+        execute: createMemoryAwareToolExecutor(
+          'getSlackChannelHistory',
+          (params: any) => executeGetSlackChannelHistory(params, updateStatus)
+        ),
       }),
       getSlackThread: tool({
         description: 'Get all messages in a Slack thread',
@@ -245,7 +405,10 @@ export const generateResponse = async (
           channel: z.string().describe('The channel ID'),
           threadTs: z.string().describe('The thread timestamp'),
         }),
-        execute: (params) => executeGetSlackThread(params, updateStatus),
+        execute: createMemoryAwareToolExecutor(
+          'getSlackThread',
+          (params: any) => executeGetSlackThread(params, updateStatus)
+        ),
       }),
       updateSlackMessage: tool({
         description: 'Update an existing Slack message',
@@ -254,7 +417,10 @@ export const generateResponse = async (
           timestamp: z.string().describe('The message timestamp'),
           text: z.string().describe('The new message text'),
         }),
-        execute: (params) => executeUpdateSlackMessage(params, updateStatus),
+        execute: createMemoryAwareToolExecutor(
+          'updateSlackMessage',
+          (params: any) => executeUpdateSlackMessage(params, updateStatus)
+        ),
       }),
       deleteSlackMessage: tool({
         description: 'Delete a Slack message',
@@ -262,7 +428,10 @@ export const generateResponse = async (
           channel: z.string().describe('The channel ID'),
           timestamp: z.string().describe('The message timestamp'),
         }),
-        execute: (params) => executeDeleteSlackMessage(params, updateStatus),
+        execute: createMemoryAwareToolExecutor(
+          'deleteSlackMessage',
+          (params: any) => executeDeleteSlackMessage(params, updateStatus)
+        ),
       }),
       getSlackUserInfo: tool({
         description: 'Get information about a Slack user',
@@ -271,7 +440,10 @@ export const generateResponse = async (
             .string()
             .describe('User ID or email address to look up'),
         }),
-        execute: (params) => executeGetSlackUserInfo(params, updateStatus),
+        execute: createMemoryAwareToolExecutor(
+          'getSlackUserInfo',
+          (params: any) => executeGetSlackUserInfo(params, updateStatus)
+        ),
       }),
       getSlackChannelInfo: tool({
         description: 'Get information about a Slack channel',
@@ -280,14 +452,20 @@ export const generateResponse = async (
             .string()
             .describe('Channel name (with or without #) or channel ID'),
         }),
-        execute: (params) => executeGetSlackChannelInfo(params, updateStatus),
+        execute: createMemoryAwareToolExecutor(
+          'getSlackChannelInfo',
+          (params: any) => executeGetSlackChannelInfo(params, updateStatus)
+        ),
       }),
       joinSlackChannel: tool({
         description: 'Join a Slack channel',
         parameters: z.object({
           channelId: z.string().describe('The channel ID to join'),
         }),
-        execute: (params) => executeJoinSlackChannel(params, updateStatus),
+        execute: createMemoryAwareToolExecutor(
+          'joinSlackChannel',
+          (params: any) => executeJoinSlackChannel(params, updateStatus)
+        ),
       }),
       searchSlackMessages: tool({
         description: 'Search for messages in the Slack workspace',
@@ -299,7 +477,10 @@ export const generateResponse = async (
               'Number of results to return (default: 20). Use 20 if not specified.'
             ),
         }),
-        execute: (params) => executeSearchSlackMessages(params, updateStatus),
+        execute: createMemoryAwareToolExecutor(
+          'searchSlackMessages',
+          (params: any) => executeSearchSlackMessages(params, updateStatus)
+        ),
       }),
       getSlackPermalink: tool({
         description: 'Get a permalink for a Slack message',
@@ -307,7 +488,10 @@ export const generateResponse = async (
           channel: z.string().describe('The channel ID'),
           messageTs: z.string().describe('The message timestamp'),
         }),
-        execute: (params) => executeGetSlackPermalink(params, updateStatus),
+        execute: createMemoryAwareToolExecutor(
+          'getSlackPermalink',
+          (params: any) => executeGetSlackPermalink(params, updateStatus)
+        ),
       }),
       setSlackStatus: tool({
         description: 'Set the bot user status in Slack',
@@ -324,7 +508,10 @@ export const generateResponse = async (
               'Optional expiration timestamp (Unix timestamp). Use 0 if no expiration.'
             ),
         }),
-        execute: (params) => executeSetSlackStatus(params, updateStatus),
+        execute: createMemoryAwareToolExecutor(
+          'setSlackStatus',
+          (params: any) => executeSetSlackStatus(params, updateStatus)
+        ),
       }),
       pinSlackMessage: tool({
         description: 'Pin a message to a Slack channel',
@@ -332,7 +519,10 @@ export const generateResponse = async (
           channel: z.string().describe('The channel ID'),
           timestamp: z.string().describe('The message timestamp'),
         }),
-        execute: (params) => executePinSlackMessage(params, updateStatus),
+        execute: createMemoryAwareToolExecutor(
+          'pinSlackMessage',
+          (params: any) => executePinSlackMessage(params, updateStatus)
+        ),
       }),
       unpinSlackMessage: tool({
         description: 'Unpin a message from a Slack channel',
@@ -340,7 +530,10 @@ export const generateResponse = async (
           channel: z.string().describe('The channel ID'),
           timestamp: z.string().describe('The message timestamp'),
         }),
-        execute: (params) => executeUnpinSlackMessage(params, updateStatus),
+        execute: createMemoryAwareToolExecutor(
+          'unpinSlackMessage',
+          (params: any) => executeUnpinSlackMessage(params, updateStatus)
+        ),
       }),
       sendRichSlackMessage: tool({
         description:
@@ -441,7 +634,10 @@ export const generateResponse = async (
               'Thread timestamp to reply in a thread (leave empty string if not replying to a thread)'
             ),
         }),
-        execute: (params) => executeSendRichSlackMessage(params, updateStatus),
+        execute: createMemoryAwareToolExecutor(
+          'sendRichSlackMessage',
+          (params: any) => executeSendRichSlackMessage(params, updateStatus)
+        ),
       }),
       sendRichChannelMessage: tool({
         description:
@@ -544,8 +740,10 @@ export const generateResponse = async (
               'Thread timestamp to reply in a thread (leave empty string if not replying to a thread)'
             ),
         }),
-        execute: (params) =>
-          executeSendRichChannelMessage(params, updateStatus),
+        execute: createMemoryAwareToolExecutor(
+          'sendRichChannelMessage',
+          (params: any) => executeSendRichChannelMessage(params, updateStatus)
+        ),
       }),
       sendRichDirectMessage: tool({
         description:
@@ -643,7 +841,10 @@ export const generateResponse = async (
               'Fallback text for notifications (leave empty string if not needed)'
             ),
         }),
-        execute: (params) => executeSendRichDirectMessage(params, updateStatus),
+        execute: createMemoryAwareToolExecutor(
+          'sendRichDirectMessage',
+          (params: any) => executeSendRichDirectMessage(params, updateStatus)
+        ),
       }),
       createFormattedSlackMessage: tool({
         description:
@@ -690,8 +891,11 @@ export const generateResponse = async (
               'Thread timestamp to reply in a thread (leave empty string if not replying to a thread)'
             ),
         }),
-        execute: (params) =>
-          executeCreateFormattedSlackMessage(params, updateStatus),
+        execute: createMemoryAwareToolExecutor(
+          'createFormattedSlackMessage',
+          (params: any) =>
+            executeCreateFormattedSlackMessage(params, updateStatus)
+        ),
       }),
       // Linear tools
       getIssueContext: tool({
@@ -705,12 +909,15 @@ export const generateResponse = async (
               'Optional comment ID to highlight. Leave empty if not highlighting a specific comment.'
             ),
         }),
-        execute: (params) =>
-          executeGetIssueContext(
-            params as { issueId: string; commentId: string },
-            updateStatus,
-            linearClient
-          ),
+        execute: createMemoryAwareToolExecutor(
+          'getIssueContext',
+          (params: any) =>
+            executeGetIssueContext(
+              params as { issueId: string; commentId: string },
+              updateStatus,
+              linearClient
+            )
+        ),
       }),
       updateIssueStatus: tool({
         description: 'Update the status of a Linear issue',
@@ -722,12 +929,15 @@ export const generateResponse = async (
               'The name of the status to set (e.g., "In Progress", "Done")'
             ),
         }),
-        execute: (params) =>
-          executeUpdateIssueStatus(
-            params as { issueId: string; statusName: string },
-            updateStatus,
-            linearClient
-          ),
+        execute: createMemoryAwareToolExecutor(
+          'updateIssueStatus',
+          (params: any) =>
+            executeUpdateIssueStatus(
+              params as { issueId: string; statusName: string },
+              updateStatus,
+              linearClient
+            )
+        ),
       }),
       addLabel: tool({
         description: 'Add a label to a Linear issue',
@@ -735,12 +945,13 @@ export const generateResponse = async (
           issueId: z.string().describe('The Linear issue ID'),
           labelName: z.string().describe('The name of the label to add'),
         }),
-        execute: (params) =>
+        execute: createMemoryAwareToolExecutor('addLabel', (params: any) =>
           executeAddLabel(
             params as { issueId: string; labelName: string },
             updateStatus,
             linearClient
-          ),
+          )
+        ),
       }),
       removeLabel: tool({
         description: 'Remove a label from a Linear issue',
@@ -748,12 +959,13 @@ export const generateResponse = async (
           issueId: z.string().describe('The Linear issue ID'),
           labelName: z.string().describe('The name of the label to remove'),
         }),
-        execute: (params) =>
+        execute: createMemoryAwareToolExecutor('removeLabel', (params: any) =>
           executeRemoveLabel(
             params as { issueId: string; labelName: string },
             updateStatus,
             linearClient
-          ),
+          )
+        ),
       }),
       assignIssue: tool({
         description: 'Assign a Linear issue to a team member',
@@ -763,12 +975,13 @@ export const generateResponse = async (
             .string()
             .describe('The email address of the person to assign the issue to'),
         }),
-        execute: (params) =>
+        execute: createMemoryAwareToolExecutor('assignIssue', (params: any) =>
           executeAssignIssue(
             params as { issueId: string; assigneeEmail: string },
             updateStatus,
             linearClient
-          ),
+          )
+        ),
       }),
       createIssue: tool({
         description: 'Create a new Linear issue',
@@ -792,7 +1005,7 @@ export const generateResponse = async (
               'Optional parent issue ID to create this as a subtask. Leave empty if not a subtask.'
             ),
         }),
-        execute: (params) =>
+        execute: createMemoryAwareToolExecutor('createIssue', (params: any) =>
           executeCreateIssue(
             params as {
               teamId: string;
@@ -804,7 +1017,8 @@ export const generateResponse = async (
             },
             updateStatus,
             linearClient
-          ),
+          )
+        ),
       }),
       addIssueAttachment: tool({
         description: 'Add a URL attachment to a Linear issue',
@@ -813,12 +1027,15 @@ export const generateResponse = async (
           url: z.string().describe('The URL to attach'),
           title: z.string().describe('The title for the attachment'),
         }),
-        execute: (params) =>
-          executeAddIssueAttachment(
-            params as { issueId: string; url: string; title: string },
-            updateStatus,
-            linearClient
-          ),
+        execute: createMemoryAwareToolExecutor(
+          'addIssueAttachment',
+          (params: any) =>
+            executeAddIssueAttachment(
+              params as { issueId: string; url: string; title: string },
+              updateStatus,
+              linearClient
+            )
+        ),
       }),
       updateIssuePriority: tool({
         description: 'Update the priority of a Linear issue',
@@ -828,12 +1045,15 @@ export const generateResponse = async (
             .number()
             .describe('The priority level (1-4, where 1 is highest)'),
         }),
-        execute: (params) =>
-          executeUpdateIssuePriority(
-            params as { issueId: string; priority: number },
-            updateStatus,
-            linearClient
-          ),
+        execute: createMemoryAwareToolExecutor(
+          'updateIssuePriority',
+          (params: any) =>
+            executeUpdateIssuePriority(
+              params as { issueId: string; priority: number },
+              updateStatus,
+              linearClient
+            )
+        ),
       }),
       setPointEstimate: tool({
         description: 'Set the point estimate for a Linear issue',
@@ -841,45 +1061,57 @@ export const generateResponse = async (
           issueId: z.string().describe('The Linear issue ID or identifier'),
           pointEstimate: z.number().describe('The point estimate value'),
         }),
-        execute: (params) =>
-          executeSetPointEstimate(
-            params as { issueId: string; pointEstimate: number },
-            updateStatus,
-            linearClient
-          ),
+        execute: createMemoryAwareToolExecutor(
+          'setPointEstimate',
+          (params: any) =>
+            executeSetPointEstimate(
+              params as { issueId: string; pointEstimate: number },
+              updateStatus,
+              linearClient
+            )
+        ),
       }),
       // Linear context gathering tools
       getLinearTeams: tool({
         description:
           'Get all teams in the Linear workspace with details about members and active issues',
         parameters: z.object({}),
-        execute: async () => {
+        execute: createMemoryAwareToolExecutor('getLinearTeams', async () => {
           return await executeGetLinearTeams(updateStatus, linearClient);
-        },
+        }),
       }),
       getLinearProjects: tool({
         description:
           'Get all projects in the Linear workspace with status, progress, and team information',
         parameters: z.object({}),
-        execute: async () => {
-          return await executeGetLinearProjects(updateStatus, linearClient);
-        },
+        execute: createMemoryAwareToolExecutor(
+          'getLinearProjects',
+          async () => {
+            return await executeGetLinearProjects(updateStatus, linearClient);
+          }
+        ),
       }),
       getLinearInitiatives: tool({
         description:
           'Get all initiatives in the Linear workspace with associated projects and progress',
         parameters: z.object({}),
-        execute: async () => {
-          return await executeGetLinearInitiatives(updateStatus, linearClient);
-        },
+        execute: createMemoryAwareToolExecutor(
+          'getLinearInitiatives',
+          async () => {
+            return await executeGetLinearInitiatives(
+              updateStatus,
+              linearClient
+            );
+          }
+        ),
       }),
       getLinearUsers: tool({
         description:
           'Get all users in the Linear workspace with their details and status',
         parameters: z.object({}),
-        execute: async () => {
+        execute: createMemoryAwareToolExecutor('getLinearUsers', async () => {
           return await executeGetLinearUsers(updateStatus, linearClient);
-        },
+        }),
       }),
       getLinearRecentIssues: tool({
         description:
@@ -896,13 +1128,16 @@ export const generateResponse = async (
               'Optional team ID to filter issues. Leave empty to get issues from all teams.'
             ),
         }),
-        execute: async (params) => {
-          return await executeGetLinearRecentIssues(
-            params,
-            updateStatus,
-            linearClient
-          );
-        },
+        execute: createMemoryAwareToolExecutor(
+          'getLinearRecentIssues',
+          async (params: any) => {
+            return await executeGetLinearRecentIssues(
+              params,
+              updateStatus,
+              linearClient
+            );
+          }
+        ),
       }),
       searchLinearIssues: tool({
         description:
@@ -919,13 +1154,16 @@ export const generateResponse = async (
               'Number of results to return (default: 10). Use 10 if not specified.'
             ),
         }),
-        execute: async (params) => {
-          return await executeSearchLinearIssues(
-            params,
-            updateStatus,
-            linearClient
-          );
-        },
+        execute: createMemoryAwareToolExecutor(
+          'searchLinearIssues',
+          async (params: any) => {
+            return await executeSearchLinearIssues(
+              params,
+              updateStatus,
+              linearClient
+            );
+          }
+        ),
       }),
       getLinearWorkflowStates: tool({
         description:
@@ -937,13 +1175,16 @@ export const generateResponse = async (
               'Optional team ID to filter workflow states. Leave empty to get states for all teams.'
             ),
         }),
-        execute: async (params) => {
-          return await executeGetLinearWorkflowStates(
-            params,
-            updateStatus,
-            linearClient
-          );
-        },
+        execute: createMemoryAwareToolExecutor(
+          'getLinearWorkflowStates',
+          async (params: any) => {
+            return await executeGetLinearWorkflowStates(
+              params,
+              updateStatus,
+              linearClient
+            );
+          }
+        ),
       }),
       createLinearComment: tool({
         description: 'Create a comment on a Linear issue',
@@ -951,13 +1192,16 @@ export const generateResponse = async (
           issueId: z.string().describe('The Linear issue ID or identifier'),
           body: z.string().describe('The comment text to add'),
         }),
-        execute: async (params) => {
-          return await executeCreateLinearComment(
-            params,
-            updateStatus,
-            linearClient
-          );
-        },
+        execute: createMemoryAwareToolExecutor(
+          'createLinearComment',
+          async (params: any) => {
+            return await executeCreateLinearComment(
+              params,
+              updateStatus,
+              linearClient
+            );
+          }
+        ),
       }),
       // GitHub tools
       getFileContent: tool({
@@ -983,7 +1227,10 @@ export const generateResponse = async (
               'Branch name (default: repository default branch). Leave empty to use default branch.'
             ),
         }),
-        execute: (params) => executeGetFileContent(params, updateStatus),
+        execute: createMemoryAwareToolExecutor(
+          'getFileContent',
+          (params: any) => executeGetFileContent(params, updateStatus)
+        ),
       }),
       createBranch: tool({
         description: 'Create a new branch in a GitHub repository',
@@ -998,7 +1245,9 @@ export const generateResponse = async (
               'Base branch to create from (default: repository default branch). Leave empty to use default branch.'
             ),
         }),
-        execute: (params) => executeCreateBranch(params, updateStatus),
+        execute: createMemoryAwareToolExecutor('createBranch', (params: any) =>
+          executeCreateBranch(params, updateStatus)
+        ),
       }),
       createOrUpdateFile: tool({
         description: 'Create or update a file in a GitHub repository',
@@ -1011,7 +1260,10 @@ export const generateResponse = async (
             .describe('The repository in format "owner/repo"'),
           branch: z.string().describe('The branch to commit to'),
         }),
-        execute: (params) => executeCreateOrUpdateFile(params, updateStatus),
+        execute: createMemoryAwareToolExecutor(
+          'createOrUpdateFile',
+          (params: any) => executeCreateOrUpdateFile(params, updateStatus)
+        ),
       }),
       createPullRequest: tool({
         description: 'Create a pull request in a GitHub repository',
@@ -1024,7 +1276,10 @@ export const generateResponse = async (
             .string()
             .describe('The repository in format "owner/repo"'),
         }),
-        execute: (params) => executeCreatePullRequest(params, updateStatus),
+        execute: createMemoryAwareToolExecutor(
+          'createPullRequest',
+          (params: any) => executeCreatePullRequest(params, updateStatus)
+        ),
       }),
       getPullRequest: tool({
         description: 'Get details of a pull request including comments',
@@ -1034,7 +1289,10 @@ export const generateResponse = async (
             .describe('The repository in format "owner/repo"'),
           pullNumber: z.number().describe('The pull request number'),
         }),
-        execute: (params) => executeGetPullRequest(params, updateStatus),
+        execute: createMemoryAwareToolExecutor(
+          'getPullRequest',
+          (params: any) => executeGetPullRequest(params, updateStatus)
+        ),
       }),
       addPullRequestComment: tool({
         description: 'Add a comment to a pull request',
@@ -1045,7 +1303,10 @@ export const generateResponse = async (
           pullNumber: z.number().describe('The pull request number'),
           body: z.string().describe('The comment text'),
         }),
-        execute: (params) => executeAddPullRequestComment(params, updateStatus),
+        execute: createMemoryAwareToolExecutor(
+          'addPullRequestComment',
+          (params: any) => executeAddPullRequestComment(params, updateStatus)
+        ),
       }),
       getPullRequestFiles: tool({
         description: 'Get the files changed in a pull request',
@@ -1055,7 +1316,10 @@ export const generateResponse = async (
             .describe('The repository in format "owner/repo"'),
           pullNumber: z.number().describe('The pull request number'),
         }),
-        execute: (params) => executeGetPullRequestFiles(params, updateStatus),
+        execute: createMemoryAwareToolExecutor(
+          'getPullRequestFiles',
+          (params: any) => executeGetPullRequestFiles(params, updateStatus)
+        ),
       }),
       searchCode: tool({
         description: 'Search for code in a GitHub repository',
@@ -1075,7 +1339,9 @@ export const generateResponse = async (
               'Maximum number of results (default: 10). Use 10 if not specified.'
             ),
         }),
-        execute: (params) => executeSearchCode(params, updateStatus),
+        execute: createMemoryAwareToolExecutor('searchCode', (params: any) =>
+          executeSearchCode(params, updateStatus)
+        ),
       }),
       getDirectoryStructure: tool({
         description: 'Get the directory structure of a GitHub repository',
@@ -1089,10 +1355,65 @@ export const generateResponse = async (
               'Optional directory path (default: root directory). Leave empty for root directory.'
             ),
         }),
-        execute: (params) => executeGetDirectoryStructure(params, updateStatus),
+        execute: createMemoryAwareToolExecutor(
+          'getDirectoryStructure',
+          (params: any) => executeGetDirectoryStructure(params, updateStatus)
+        ),
+      }),
+      searchEmbeddedCode: tool({
+        description:
+          'Search for embedded code in a repository. Only works for embedded repositories',
+        parameters: z.object({
+          query: z.string().describe('The search query'),
+          repository: z
+            .string()
+            .describe('The repository in format "owner/repo"'),
+          fileFilter: z
+            .string()
+            .describe(
+              'Optional file filter (e.g., "*.ts" for TypeScript files). Leave empty if not filtering by file type.'
+            ),
+          maxResults: z
+            .number()
+            .describe(
+              'Maximum number of results (default: 10). Use 10 if not specified.'
+            ),
+        }),
+        execute: createMemoryAwareToolExecutor(
+          'searchEmbeddedCode',
+          (params: any) => executeSearchEmbeddedCode(params, updateStatus)
+        ),
+      }),
+      getRepositoryStructure: tool({
+        description:
+          'Get the enhanced repository structure using the repository manager (supports caching and embedding-aware features, only works for embedded repositories)',
+        parameters: z.object({
+          repository: z
+            .string()
+            .describe('The repository in format "owner/repo"'),
+          path: z
+            .string()
+            .describe(
+              'Optional directory path to explore (default: root directory). Leave empty for root directory.'
+            ),
+        }),
+        execute: createMemoryAwareToolExecutor(
+          'getRepositoryStructure',
+          (params: any) => executeGetRepositoryStructure(params, updateStatus)
+        ),
       }),
     },
   });
+
+  // Store the assistant's response in memory
+  try {
+    await memoryManager.storeMemory(contextId, 'conversation', {
+      role: 'assistant',
+      content: [{ type: 'text', text }],
+    });
+  } catch (error) {
+    console.error('Error storing assistant response in memory:', error);
+  }
 
   return text;
 };

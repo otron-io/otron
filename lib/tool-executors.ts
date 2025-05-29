@@ -1027,3 +1027,78 @@ export async function executeCreateFormattedSlackMessage(
     }`;
   }
 }
+
+export const executeSearchEmbeddedCode = async (
+  {
+    repository,
+    query,
+    fileFilter,
+    maxResults,
+  }: {
+    repository: string;
+    query: string;
+    fileFilter?: string;
+    maxResults: number;
+  },
+  updateStatus?: (status: string) => void
+) => {
+  try {
+    updateStatus?.('Searching embedded code...');
+
+    // Use the RepositoryManager to search embedded code
+    const { RepositoryManager } = await import(
+      './github/repository-manager.js'
+    );
+    const allowedRepos = process.env.ALLOWED_REPOSITORIES?.split(',') || [];
+    const repoManager = new RepositoryManager(allowedRepos);
+
+    const results = await repoManager.searchCode(query, repository, {
+      fileFilter,
+      maxResults,
+    });
+
+    return {
+      success: true,
+      results: results,
+      message: `Found ${results.length} code matches for "${query}" in ${repository}`,
+    };
+  } catch (error) {
+    console.error('Error searching embedded code:', error);
+    return {
+      success: false,
+      error: error instanceof Error ? error.message : 'Unknown error occurred',
+    };
+  }
+};
+
+export const executeGetRepositoryStructure = async (
+  { repository, path }: { repository: string; path?: string },
+  updateStatus?: (status: string) => void
+) => {
+  try {
+    updateStatus?.('Getting repository structure...');
+
+    // Use the RepositoryManager to get repository structure
+    const { RepositoryManager } = await import(
+      './github/repository-manager.js'
+    );
+    const allowedRepos = process.env.ALLOWED_REPOSITORIES?.split(',') || [];
+    const repoManager = new RepositoryManager(allowedRepos);
+
+    const structure = await repoManager.getDirectoryStructure(repository, path);
+
+    return {
+      success: true,
+      structure: structure,
+      message: `Retrieved structure for ${repository}${
+        path ? ` at path ${path}` : ''
+      }`,
+    };
+  } catch (error) {
+    console.error('Error getting repository structure:', error);
+    return {
+      success: false,
+      error: error instanceof Error ? error.message : 'Unknown error occurred',
+    };
+  }
+};
