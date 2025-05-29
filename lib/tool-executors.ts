@@ -1562,3 +1562,71 @@ export const executeApplyMultipleEdits = async (
     message: `Applied ${operations.length} edit operations to ${path}`,
   };
 };
+
+// Action control tools
+export const executeEndActions = async (
+  {
+    reason,
+    summary,
+    nextSteps,
+  }: {
+    reason: string;
+    summary: string;
+    nextSteps?: string;
+  },
+  updateStatus?: (status: string) => void
+) => {
+  updateStatus?.(`is ending actions: ${reason}`);
+
+  const endMessage = `🛑 **Actions Complete**
+
+**Reason:** ${reason}
+
+**Summary:** ${summary}
+
+${nextSteps ? `**Next Steps:** ${nextSteps}` : ''}
+
+*No further actions will be taken at this time.*`;
+
+  return {
+    success: true,
+    message: endMessage,
+    shouldStop: true, // Signal to stop processing
+  };
+};
+
+export const executeResetBranchToHead = async (
+  {
+    repository,
+    branch,
+    baseBranch,
+  }: {
+    repository: string;
+    branch: string;
+    baseBranch?: string;
+  },
+  updateStatus?: (status: string) => void
+) => {
+  updateStatus?.(`is resetting branch ${branch} to head...`);
+
+  try {
+    const { resetBranchToHead } = await import('./github/github-utils.js');
+
+    await resetBranchToHead(repository, branch, baseBranch);
+
+    return {
+      success: true,
+      message: `Successfully reset branch ${branch} to head of ${
+        baseBranch || 'default branch'
+      }`,
+    };
+  } catch (error) {
+    console.error(`Error resetting branch ${branch}:`, error);
+    return {
+      success: false,
+      message: `Failed to reset branch ${branch}: ${
+        error instanceof Error ? error.message : String(error)
+      }`,
+    };
+  }
+};

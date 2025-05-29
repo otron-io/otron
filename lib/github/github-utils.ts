@@ -146,6 +146,46 @@ export const createBranch = async (
 };
 
 /**
+ * Reset a branch to the head of another branch (or default branch)
+ */
+export const resetBranchToHead = async (
+  repository: string,
+  branch: string,
+  baseBranch?: string
+): Promise<void> => {
+  const [owner, repo] = repository.split('/');
+
+  try {
+    // Get base branch if not provided
+    const baseRef = baseBranch || (await getDefaultBranch(repository));
+    const octokit = await getOctokitForRepo(repository);
+
+    // Get SHA of latest commit on base branch
+    const { data: refData } = await octokit.git.getRef({
+      owner,
+      repo,
+      ref: `heads/${baseRef}`,
+    });
+
+    // Update the branch to point to the base branch's HEAD
+    await octokit.git.updateRef({
+      owner,
+      repo,
+      ref: `heads/${branch}`,
+      sha: refData.object.sha,
+      force: true, // Force update to reset the branch
+    });
+
+    console.log(
+      `Reset branch ${branch} to head of ${baseRef} in ${repository}`
+    );
+  } catch (error) {
+    console.error(`Error resetting branch ${branch} in ${repository}:`, error);
+    throw error;
+  }
+};
+
+/**
  * Create or update a file in a repository
  */
 export const createOrUpdateFile = async (

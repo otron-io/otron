@@ -63,6 +63,8 @@ import {
   executeInsertAfterPattern,
   executeInsertBeforePattern,
   executeApplyMultipleEdits,
+  executeEndActions,
+  executeResetBranchToHead,
 } from './tool-executors.js';
 import { LinearClient } from '@linear/sdk';
 import { memoryManager } from './memory/memory-manager.js';
@@ -1797,6 +1799,46 @@ export const generateResponse = async (
         execute: createMemoryAwareToolExecutor(
           'applyMultipleEdits',
           (params: any) => executeApplyMultipleEdits(params, updateStatus)
+        ),
+      }),
+      // Action control tools
+      endActions: tool({
+        description:
+          'Explicitly end all actions and stop processing. Use this when you have completed your task or need to stop for any reason.',
+        parameters: z.object({
+          reason: z
+            .string()
+            .describe(
+              'The reason for ending actions (e.g., "Task completed", "Waiting for user input", etc.)'
+            ),
+          summary: z.string().describe('A summary of what was accomplished'),
+          nextSteps: z
+            .string()
+            .optional()
+            .describe('Optional next steps or recommendations for the user'),
+        }),
+        execute: createMemoryAwareToolExecutor('endActions', (params: any) =>
+          executeEndActions(params, updateStatus)
+        ),
+      }),
+      resetBranchToHead: tool({
+        description:
+          'Reset a branch to the head of another branch (or the default branch). This will force update the branch to match the target branch exactly.',
+        parameters: z.object({
+          repository: z
+            .string()
+            .describe('The repository in format "owner/repo"'),
+          branch: z.string().describe('The branch to reset'),
+          baseBranch: z
+            .string()
+            .optional()
+            .describe(
+              'The branch to reset to (defaults to the repository default branch)'
+            ),
+        }),
+        execute: createMemoryAwareToolExecutor(
+          'resetBranchToHead',
+          (params: any) => executeResetBranchToHead(params, updateStatus)
         ),
       }),
     },
