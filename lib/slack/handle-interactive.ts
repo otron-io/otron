@@ -119,6 +119,7 @@ async function handleBlockActions(
   contextMessage += `\n- Use respondToSlackInteraction to send an ephemeral response only visible to the user`;
   contextMessage += `\n- Use regular Slack messaging tools to send new messages`;
   contextMessage += `\n- Take any other relevant action using your available tools if thats what the interaction indicates`;
+  contextMessage += `\n- Avoid using replacing or deleting the original message unless your original message is just a button. It damages the user history as they lose the original message context.`;
 
   // Simple status update function for logging
   const updateStatus = (status: string) => {

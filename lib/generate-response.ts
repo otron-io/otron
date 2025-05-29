@@ -183,7 +183,7 @@ export const generateResponse = async (
     Use rich messages for:
     - Status updates with visual hierarchy
     - Data presentations (Linear issues, GitHub PRs)
-    - Interactive content with buttons
+    - Interactive content with buttons - you will be notified if a user clicks a button so you can respond to it
     - Multi-section content with dividers
     - Lists with proper formatting
     
