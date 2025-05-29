@@ -14,13 +14,21 @@ import {
 export async function POST(request: Request) {
   const contentType = request.headers.get('content-type') || '';
 
-  // First, let's determine what type of request this is by examining the payload structure
-  // rather than relying solely on content type
+  // Get the raw body first to avoid consuming the request stream multiple times
+  const rawBody = await request.text();
 
+  // Add debugging to understand what we're receiving
+  console.log('Received request:', {
+    contentType,
+    bodyLength: rawBody.length,
+    bodyPreview: rawBody.substring(0, 100),
+  });
+
+  // Handle form-urlencoded requests (interactive components)
   if (contentType.includes('application/x-www-form-urlencoded')) {
-    // This could be an interactive payload, but let's verify it properly
-    const formData = await request.formData();
-    const payloadString = formData.get('payload') as string;
+    // Parse the form data manually from the raw body
+    const params = new URLSearchParams(rawBody);
+    const payloadString = params.get('payload');
 
     if (payloadString) {
       try {
@@ -36,7 +44,7 @@ export async function POST(request: Request) {
             'view_closed',
           ].includes(payload.type)
         ) {
-          return handleInteractivePayload(request, payloadString, payload);
+          return handleInteractivePayload(request, rawBody, payload);
         }
       } catch (error) {
         console.error('Invalid JSON in payload parameter:', error);
@@ -50,7 +58,7 @@ export async function POST(request: Request) {
 
   // Handle regular Slack events (should be application/json)
   if (contentType.includes('application/json')) {
-    return handleSlackEvents(request);
+    return handleSlackEvents(request, rawBody);
   }
 
   // Reject requests with unexpected content types
@@ -59,7 +67,7 @@ export async function POST(request: Request) {
 
 async function handleInteractivePayload(
   request: Request,
-  payloadString: string,
+  rawBody: string,
   payload: SlackInteractivePayload
 ) {
   try {
@@ -67,7 +75,7 @@ async function handleInteractivePayload(
     await verifyRequest({
       requestType: 'interactive',
       request,
-      rawBody: `payload=${encodeURIComponent(payloadString)}`,
+      rawBody,
     });
 
     const botUserId = await getBotId();
@@ -83,9 +91,7 @@ async function handleInteractivePayload(
   }
 }
 
-async function handleSlackEvents(request: Request) {
-  const rawBody = await request.text();
-
+async function handleSlackEvents(request: Request, rawBody: string) {
   let payload;
   try {
     payload = JSON.parse(rawBody);
