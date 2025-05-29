@@ -7,6 +7,7 @@ import {
   getThread,
   sendMessage,
   updateStatusUtil,
+  getLinearClientForSlack,
 } from './slack-utils.js';
 import { generateResponse } from '../generate-response.js';
 
@@ -51,12 +52,16 @@ export async function handleNewAssistantMessage(
   )
     return;
 
-  const { thread_ts, channel } = event;
+  const { channel, thread_ts } = event;
+
+  // Get LinearClient for this Slack context
+  const linearClient = await getLinearClientForSlack();
+
   const updateStatus = updateStatusUtil(channel, thread_ts);
   await updateStatus('is thinking...');
 
   const messages = await getThread(channel, thread_ts, botUserId);
-  const result = await generateResponse(messages, updateStatus);
+  const result = await generateResponse(messages, updateStatus, linearClient);
 
   await sendMessage(channel, result, thread_ts);
 

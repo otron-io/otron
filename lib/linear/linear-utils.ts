@@ -1,14 +1,10 @@
 import { LinearClient } from '@linear/sdk';
 
-// Initialize Linear client
-export const linearClient = new LinearClient({
-  apiKey: process.env.LINEAR_API_KEY!,
-});
-
 /**
  * Get the context for an issue including comments, child issues, and parent issue
  */
 export const getIssueContext = async (
+  linearClient: LinearClient,
   issueIdOrIdentifier: string,
   commentId?: string
 ): Promise<string> => {
@@ -117,6 +113,7 @@ export const getIssueContext = async (
  * Update the status of a Linear issue
  */
 export const updateIssueStatus = async (
+  linearClient: LinearClient,
   issueIdOrIdentifier: string,
   statusName: string
 ): Promise<void> => {
@@ -144,14 +141,14 @@ export const updateIssueStatus = async (
 
     // Find the state with the matching name
     const state = states.nodes.find(
-      (s) => s.name.toLowerCase() === statusName.toLowerCase()
+      (s: any) => s.name.toLowerCase() === statusName.toLowerCase()
     );
 
     if (!state) {
       console.error(
         `Status "${statusName}" not found for team ${
           team.name
-        }. Available states: ${states.nodes.map((s) => s.name).join(', ')}`
+        }. Available states: ${states.nodes.map((s: any) => s.name).join(', ')}`
       );
       return;
     }
@@ -172,6 +169,7 @@ export const updateIssueStatus = async (
  * Add a label to a Linear issue
  */
 export const addLabel = async (
+  linearClient: LinearClient,
   issueId: string,
   labelName: string
 ): Promise<void> => {
@@ -200,45 +198,28 @@ export const addLabel = async (
  * Remove a label from a Linear issue
  */
 export const removeLabel = async (
+  linearClient: LinearClient,
   issueId: string,
   labelName: string
 ): Promise<void> => {
   try {
-    // Fetch the issue
-    const issue = await linearClient.issue(issueId);
-
-    // Get current labels for the issue
-    const issueLabelsResponse = await issue.labels();
-
-    // Find the label that matches the requested label name
-    const label = issueLabelsResponse.nodes.find(
-      (label) => label.name.toLowerCase() === labelName.toLowerCase()
-    );
+    // Find the label by name
+    const labelsResponse = await linearClient.issueLabels();
+    const label = labelsResponse.nodes.find((l: any) => l.name === labelName);
 
     if (!label) {
-      console.log(
-        `Label "${labelName}" not found on issue ${issue.identifier}`
-      );
+      console.error(`Label "${labelName}" not found`);
       return;
     }
 
     // Remove the label from the issue
-    const currentLabels = issue.labelIds || [];
-    const updatedLabels = currentLabels.filter((id) => id !== label.id);
-    await issue.update({
-      labelIds: updatedLabels,
-    });
-
-    console.log(`Removed label "${labelName}" from issue ${issue.identifier}`);
-
-    // Notify in the issue comments
-    await linearClient.createComment({
-      issueId: issue.id,
-      body: `I've removed the label **${labelName}**.`,
-    });
-  } catch (error) {
-    console.error(`Error removing label:`, error);
-    throw error;
+    await linearClient.issueRemoveLabel(issueId, label.id);
+    console.log(`Removed label "${labelName}" from issue ${issueId}`);
+  } catch (error: unknown) {
+    console.error(
+      `Error removing label "${labelName}" from issue ${issueId}:`,
+      error instanceof Error ? error.message : String(error)
+    );
   }
 };
 
@@ -246,62 +227,31 @@ export const removeLabel = async (
  * Assign a Linear issue to a team member
  */
 export const assignIssue = async (
+  linearClient: LinearClient,
   issueId: string,
   assigneeEmail: string
 ): Promise<void> => {
   try {
-    // Fetch the issue
-    const issue = await linearClient.issue(issueId);
-
-    // Get the issue's team
-    const team = await issue.team;
-    if (!team) {
-      throw new Error('Could not determine the team for this issue');
-    }
-
-    // Get team members
-    const teamMembersResponse = await team.members();
-
-    // Find the team member that matches the requested email
-    let foundMember: any = null;
-    let foundUserName = assigneeEmail;
-
-    // Get all users in the organization
-    const usersResponse = await linearClient.users();
-    const users = usersResponse.nodes;
-
     // Find the user by email
-    const targetUser = users.find((user) => user.email === assigneeEmail);
+    const usersResponse = await linearClient.users();
+    const user = usersResponse.nodes.find(
+      (user: any) => user.email === assigneeEmail
+    );
 
-    if (targetUser) {
-      // Find the team membership for this user
-      foundMember = teamMembersResponse.nodes.find(
-        (member: any) => member.id === targetUser.id
-      );
-      foundUserName = targetUser.name || assigneeEmail;
+    if (!user) {
+      console.error(`User with email "${assigneeEmail}" not found`);
+      return;
     }
 
-    if (!foundMember) {
-      throw new Error(
-        `Could not find team member with email "${assigneeEmail}"`
-      );
-    }
-
-    // Update the issue with the new assignee
-    await issue.update({
-      assigneeId: foundMember.id,
-    });
-
-    console.log(`Assigned issue ${issue.identifier} to ${foundUserName}`);
-
-    // Notify in the issue comments
-    await linearClient.createComment({
-      issueId: issue.id,
-      body: `I've assigned this issue to **${foundUserName}**.`,
-    });
-  } catch (error) {
-    console.error(`Error assigning issue:`, error);
-    throw error;
+    // Assign the issue to the user
+    const issue = await linearClient.issue(issueId);
+    await issue.update({ assigneeId: user.id });
+    console.log(`Assigned issue ${issueId} to ${assigneeEmail}`);
+  } catch (error: unknown) {
+    console.error(
+      `Error assigning issue ${issueId} to ${assigneeEmail}:`,
+      error instanceof Error ? error.message : String(error)
+    );
   }
 };
 
@@ -309,6 +259,7 @@ export const assignIssue = async (
  * Create a new Linear issue
  */
 export const createIssue = async (
+  linearClient: LinearClient,
   teamId: string,
   title: string,
   description: string,
@@ -317,83 +268,56 @@ export const createIssue = async (
   parentIssueId?: string
 ): Promise<void> => {
   try {
-    // Get the team
-    const team = await linearClient.team(teamId);
+    let stateId: string | undefined;
 
-    // Prepare creation parameters
-    const createParams: {
-      title: string;
-      description: string;
-      priority?: number;
-      parentId?: string;
-    } = {
+    // If status is provided, find the corresponding state
+    if (status) {
+      const states = await linearClient.workflowStates({
+        filter: {
+          team: {
+            id: { eq: teamId },
+          },
+        },
+      });
+
+      const state = states.nodes.find(
+        (state: any) => state.name.toLowerCase() === status.toLowerCase()
+      );
+
+      if (state) {
+        stateId = state.id;
+      } else {
+        console.warn(`Status "${status}" not found, using default`);
+      }
+    }
+
+    // Create the issue
+    const issuePayload: any = {
+      teamId,
       title,
       description,
     };
 
-    // Add priority if specified
-    if (priority !== undefined) {
-      createParams.priority = priority;
+    if (stateId) {
+      issuePayload.stateId = stateId;
     }
 
-    // Add parent issue if specified
+    if (priority) {
+      issuePayload.priority = priority;
+    }
+
     if (parentIssueId) {
-      createParams.parentId = parentIssueId;
+      issuePayload.parentId = parentIssueId;
     }
 
-    // Create the issue
-    const issueCreateInput = {
-      ...createParams,
-      teamId: team.id,
-    };
-
-    // Use the Linear SDK to create the issue
-    const issueResponse = await linearClient.createIssue(issueCreateInput);
-
-    // Check if issue was created successfully
-    if (issueResponse && issueResponse.issue) {
-      // Get the actual issue object
-      const newIssueObj = await issueResponse.issue;
-      console.log(`Created new issue ${newIssueObj.identifier}: ${title}`);
-
-      // Update state if specified
-      if (status) {
-        // Find all workflow states for the team
-        const statesResponse = await linearClient.workflowStates({
-          filter: { team: { id: { eq: team.id } } },
-        });
-
-        // Find the state that matches the requested status name
-        const state = statesResponse.nodes.find(
-          (state) => state.name.toLowerCase() === status.toLowerCase()
-        );
-
-        if (state) {
-          await newIssueObj.update({
-            stateId: state.id,
-          });
-
-          console.log(
-            `Set new issue ${newIssueObj.identifier} status to "${status}"`
-          );
-        }
-      }
-
-      // If this was created from another issue, add a comment linking back
-      if (parentIssueId) {
-        const parentIssue = await linearClient.issue(parentIssueId);
-
-        await linearClient.createComment({
-          issueId: parentIssue.id,
-          body: `I've created a subtask: ${newIssueObj.identifier} - ${title}`,
-        });
-      }
-    } else {
-      console.log(`Failed to create issue "${title}"`);
-    }
-  } catch (error) {
-    console.error(`Error creating issue:`, error);
-    throw error;
+    const newIssue = await linearClient.createIssue(issuePayload);
+    const createdIssue = await newIssue.issue;
+    console.log(`Created issue: ${createdIssue?.identifier}`);
+  } catch (error: unknown) {
+    console.error(
+      'Error creating issue:',
+      error instanceof Error ? error.message : String(error)
+    );
   }
 };
 
@@ -401,31 +325,23 @@ export const createIssue = async (
  * Add a URL attachment to a Linear issue
  */
 export const addIssueAttachment = async (
+  linearClient: LinearClient,
   issueId: string,
   url: string,
   title: string
 ): Promise<void> => {
   try {
-    // Fetch the issue to ensure it exists
-    const issue = await linearClient.issue(issueId);
-
-    // Create the attachment
-    const response = await linearClient.createAttachment({
-      issueId: issue.id,
+    await linearClient.createAttachment({
+      issueId,
       url,
       title,
     });
-
-    console.log(`Added attachment "${title}" to issue ${issue.identifier}`);
-
-    // Notify in the issue comments
-    await linearClient.createComment({
-      issueId: issue.id,
-      body: `I've attached [${title}](${url}).`,
-    });
-  } catch (error) {
-    console.error(`Error adding attachment:`, error);
-    throw error;
+    console.log(`Added attachment "${title}" to issue ${issueId}`);
+  } catch (error: unknown) {
+    console.error(
+      `Error adding attachment to issue ${issueId}:`,
+      error instanceof Error ? error.message : String(error)
+    );
   }
 };
 
@@ -433,20 +349,18 @@ export const addIssueAttachment = async (
  * Update the priority of a Linear issue
  */
 export const updateIssuePriority = async (
+  linearClient: LinearClient,
   issueIdOrIdentifier: string,
   priority: number
 ): Promise<void> => {
   try {
-    // Get the issue
     const issue = await linearClient.issue(issueIdOrIdentifier);
     if (!issue) {
       console.error(`Issue ${issueIdOrIdentifier} not found`);
       return;
     }
 
-    // Update the issue with the new priority
     await issue.update({ priority });
-
     console.log(`Updated issue ${issueIdOrIdentifier} priority to ${priority}`);
   } catch (error: unknown) {
     console.error(
@@ -460,34 +374,25 @@ export const updateIssuePriority = async (
  * Set the point estimate for a Linear issue
  */
 export const setPointEstimate = async (
+  linearClient: LinearClient,
   issueIdOrIdentifier: string,
   pointEstimate: number
 ): Promise<void> => {
   try {
-    // Get the issue
     const issue = await linearClient.issue(issueIdOrIdentifier);
     if (!issue) {
       console.error(`Issue ${issueIdOrIdentifier} not found`);
       return;
     }
 
-    // Update the issue with the new estimate
     await issue.update({ estimate: pointEstimate });
-
     console.log(
-      `Updated issue ${issueIdOrIdentifier} point estimate to ${pointEstimate}`
+      `Set point estimate for issue ${issueIdOrIdentifier} to ${pointEstimate}`
     );
-
-    // Add a comment to indicate the change
-    await linearClient.createComment({
-      issueId: issue.id,
-      body: `I've updated the point estimate to ${pointEstimate} points.`,
-    });
   } catch (error: unknown) {
     console.error(
       `Error setting point estimate for issue ${issueIdOrIdentifier}:`,
       error instanceof Error ? error.message : String(error)
     );
-    throw error;
   }
 };

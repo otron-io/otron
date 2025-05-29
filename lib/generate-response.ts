@@ -40,10 +40,12 @@ import {
   executePinSlackMessage,
   executeUnpinSlackMessage,
 } from './tool-executors.js';
+import { LinearClient } from '@linear/sdk';
 
 export const generateResponse = async (
   messages: CoreMessage[],
-  updateStatus?: (status: string) => void
+  updateStatus?: (status: string) => void,
+  linearClient?: LinearClient
 ) => {
   const { text } = await generateText({
     model: openai('o4-mini'),
@@ -256,7 +258,12 @@ export const generateResponse = async (
             .optional()
             .describe('Optional comment ID to highlight'),
         }),
-        execute: (params) => executeGetIssueContext(params, updateStatus),
+        execute: (params) =>
+          executeGetIssueContext(
+            params as { issueId: string; commentId?: string },
+            updateStatus,
+            linearClient
+          ),
       }),
       updateIssueStatus: tool({
         description: 'Update the status of a Linear issue',
@@ -268,7 +275,12 @@ export const generateResponse = async (
               'The name of the status to set (e.g., "In Progress", "Done")'
             ),
         }),
-        execute: (params) => executeUpdateIssueStatus(params, updateStatus),
+        execute: (params) =>
+          executeUpdateIssueStatus(
+            params as { issueId: string; statusName: string },
+            updateStatus,
+            linearClient
+          ),
       }),
       addLabel: tool({
         description: 'Add a label to a Linear issue',
@@ -276,7 +288,12 @@ export const generateResponse = async (
           issueId: z.string().describe('The Linear issue ID'),
           labelName: z.string().describe('The name of the label to add'),
         }),
-        execute: (params) => executeAddLabel(params, updateStatus),
+        execute: (params) =>
+          executeAddLabel(
+            params as { issueId: string; labelName: string },
+            updateStatus,
+            linearClient
+          ),
       }),
       removeLabel: tool({
         description: 'Remove a label from a Linear issue',
@@ -284,7 +301,12 @@ export const generateResponse = async (
           issueId: z.string().describe('The Linear issue ID'),
           labelName: z.string().describe('The name of the label to remove'),
         }),
-        execute: (params) => executeRemoveLabel(params, updateStatus),
+        execute: (params) =>
+          executeRemoveLabel(
+            params as { issueId: string; labelName: string },
+            updateStatus,
+            linearClient
+          ),
       }),
       assignIssue: tool({
         description: 'Assign a Linear issue to a team member',
@@ -294,7 +316,12 @@ export const generateResponse = async (
             .string()
             .describe('The email address of the person to assign the issue to'),
         }),
-        execute: (params) => executeAssignIssue(params, updateStatus),
+        execute: (params) =>
+          executeAssignIssue(
+            params as { issueId: string; assigneeEmail: string },
+            updateStatus,
+            linearClient
+          ),
       }),
       createIssue: tool({
         description: 'Create a new Linear issue',
@@ -315,7 +342,19 @@ export const generateResponse = async (
             .optional()
             .describe('Optional parent issue ID to create this as a subtask'),
         }),
-        execute: (params) => executeCreateIssue(params, updateStatus),
+        execute: (params) =>
+          executeCreateIssue(
+            params as {
+              teamId: string;
+              title: string;
+              description: string;
+              status?: string;
+              priority?: number;
+              parentIssueId?: string;
+            },
+            updateStatus,
+            linearClient
+          ),
       }),
       addIssueAttachment: tool({
         description: 'Add a URL attachment to a Linear issue',
@@ -324,7 +363,12 @@ export const generateResponse = async (
           url: z.string().describe('The URL to attach'),
           title: z.string().describe('The title for the attachment'),
         }),
-        execute: (params) => executeAddIssueAttachment(params, updateStatus),
+        execute: (params) =>
+          executeAddIssueAttachment(
+            params as { issueId: string; url: string; title: string },
+            updateStatus,
+            linearClient
+          ),
       }),
       updateIssuePriority: tool({
         description: 'Update the priority of a Linear issue',
@@ -334,7 +378,12 @@ export const generateResponse = async (
             .number()
             .describe('The priority level (1-4, where 1 is highest)'),
         }),
-        execute: (params) => executeUpdateIssuePriority(params, updateStatus),
+        execute: (params) =>
+          executeUpdateIssuePriority(
+            params as { issueId: string; priority: number },
+            updateStatus,
+            linearClient
+          ),
       }),
       setPointEstimate: tool({
         description: 'Set the point estimate for a Linear issue',
@@ -342,7 +391,12 @@ export const generateResponse = async (
           issueId: z.string().describe('The Linear issue ID or identifier'),
           pointEstimate: z.number().describe('The point estimate value'),
         }),
-        execute: (params) => executeSetPointEstimate(params, updateStatus),
+        execute: (params) =>
+          executeSetPointEstimate(
+            params as { issueId: string; pointEstimate: number },
+            updateStatus,
+            linearClient
+          ),
       }),
       // GitHub tools
       getFileContent: tool({

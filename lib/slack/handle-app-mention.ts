@@ -1,5 +1,5 @@
-import { AppMentionEvent } from '@slack/web-api';
-import { client, getThread } from './slack-utils.js';
+import type { AppMentionEvent } from '@slack/web-api';
+import { client, getThread, getLinearClientForSlack } from './slack-utils.js';
 import { generateResponse } from '../generate-response.js';
 
 const updateStatusUtil = async (
@@ -35,19 +35,34 @@ export async function handleNewAppMention(
     return;
   }
 
-  const { thread_ts, channel } = event;
-  const updateMessage = await updateStatusUtil('is thinking...', event);
+  const { channel, thread_ts } = event;
+
+  // Get LinearClient for this Slack context
+  const linearClient = await getLinearClientForSlack();
+
+  const updateMessage = async (status: string) => {
+    await client.assistant.threads.setStatus({
+      channel_id: channel,
+      thread_ts: thread_ts || event.ts,
+      status: status,
+    });
+  };
 
   if (thread_ts) {
     const messages = await getThread(channel, thread_ts, botUserId);
-    const result = await generateResponse(messages, updateMessage);
+    const result = await generateResponse(
+      messages,
+      updateMessage,
+      linearClient
+    );
     await updateMessage(
       result.replace(/\[(.*?)\]\((.*?)\)/g, '<$2|$1>').replace(/\*\*/g, '*')
     );
   } else {
     const result = await generateResponse(
       [{ role: 'user', content: event.text }],
-      updateMessage
+      updateMessage,
+      linearClient
     );
     await updateMessage(
       result.replace(/\[(.*?)\]\((.*?)\)/g, '<$2|$1>').replace(/\*\*/g, '*')

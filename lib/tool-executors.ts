@@ -2,6 +2,14 @@ import { exa } from './utils.js';
 import * as linearUtils from './linear/linear-utils.js';
 import * as githubUtils from './github/github-utils.js';
 import * as slackUtils from './slack/slack-utils.js';
+import { LinearClient } from '@linear/sdk';
+
+// Initialize Linear client - this will be used as fallback when no specific client is provided
+const getLinearClient = () => {
+  return new LinearClient({
+    apiKey: process.env.LINEAR_API_KEY!,
+  });
+};
 
 // General tool execution functions
 export const executeGetWeather = async (
@@ -291,21 +299,35 @@ export const executeUnpinSlackMessage = async (
 // Linear tool execution functions
 export const executeGetIssueContext = async (
   { issueId, commentId }: { issueId: string; commentId?: string },
-  updateStatus?: (status: string) => void
+  updateStatus?: (status: string) => void,
+  linearClient?: LinearClient
 ) => {
+  if (!linearClient) {
+    throw new Error('LinearClient is required for Linear operations');
+  }
+
   updateStatus?.(`is getting context for issue ${issueId}...`);
 
-  const context = await linearUtils.getIssueContext(issueId, commentId);
+  const context = await linearUtils.getIssueContext(
+    linearClient,
+    issueId,
+    commentId
+  );
   return { context };
 };
 
 export const executeUpdateIssueStatus = async (
   { issueId, statusName }: { issueId: string; statusName: string },
-  updateStatus?: (status: string) => void
+  updateStatus?: (status: string) => void,
+  linearClient?: LinearClient
 ) => {
-  updateStatus?.(`is updating status of issue ${issueId} to ${statusName}...`);
+  if (!linearClient) {
+    throw new Error('LinearClient is required for Linear operations');
+  }
 
-  await linearUtils.updateIssueStatus(issueId, statusName);
+  updateStatus?.(`is updating issue ${issueId} status to ${statusName}...`);
+
+  await linearUtils.updateIssueStatus(linearClient, issueId, statusName);
   return {
     success: true,
     message: `Updated issue ${issueId} status to ${statusName}`,
@@ -314,11 +336,16 @@ export const executeUpdateIssueStatus = async (
 
 export const executeAddLabel = async (
   { issueId, labelName }: { issueId: string; labelName: string },
-  updateStatus?: (status: string) => void
+  updateStatus?: (status: string) => void,
+  linearClient?: LinearClient
 ) => {
+  if (!linearClient) {
+    throw new Error('LinearClient is required for Linear operations');
+  }
+
   updateStatus?.(`is adding label ${labelName} to issue ${issueId}...`);
 
-  await linearUtils.addLabel(issueId, labelName);
+  await linearUtils.addLabel(linearClient, issueId, labelName);
   return {
     success: true,
     message: `Added label ${labelName} to issue ${issueId}`,
@@ -327,11 +354,16 @@ export const executeAddLabel = async (
 
 export const executeRemoveLabel = async (
   { issueId, labelName }: { issueId: string; labelName: string },
-  updateStatus?: (status: string) => void
+  updateStatus?: (status: string) => void,
+  linearClient?: LinearClient
 ) => {
+  if (!linearClient) {
+    throw new Error('LinearClient is required for Linear operations');
+  }
+
   updateStatus?.(`is removing label ${labelName} from issue ${issueId}...`);
 
-  await linearUtils.removeLabel(issueId, labelName);
+  await linearUtils.removeLabel(linearClient, issueId, labelName);
   return {
     success: true,
     message: `Removed label ${labelName} from issue ${issueId}`,
@@ -340,11 +372,16 @@ export const executeRemoveLabel = async (
 
 export const executeAssignIssue = async (
   { issueId, assigneeEmail }: { issueId: string; assigneeEmail: string },
-  updateStatus?: (status: string) => void
+  updateStatus?: (status: string) => void,
+  linearClient?: LinearClient
 ) => {
+  if (!linearClient) {
+    throw new Error('LinearClient is required for Linear operations');
+  }
+
   updateStatus?.(`is assigning issue ${issueId} to ${assigneeEmail}...`);
 
-  await linearUtils.assignIssue(issueId, assigneeEmail);
+  await linearUtils.assignIssue(linearClient, issueId, assigneeEmail);
   return {
     success: true,
     message: `Assigned issue ${issueId} to ${assigneeEmail}`,
@@ -367,11 +404,17 @@ export const executeCreateIssue = async (
     priority?: number;
     parentIssueId?: string;
   },
-  updateStatus?: (status: string) => void
+  updateStatus?: (status: string) => void,
+  linearClient?: LinearClient
 ) => {
+  if (!linearClient) {
+    throw new Error('LinearClient is required for Linear operations');
+  }
+
   updateStatus?.(`is creating new issue "${title}"...`);
 
   await linearUtils.createIssue(
+    linearClient,
     teamId,
     title,
     description,
@@ -379,16 +422,24 @@ export const executeCreateIssue = async (
     priority,
     parentIssueId
   );
-  return { success: true, message: `Created new issue: ${title}` };
+  return {
+    success: true,
+    message: `Created new issue "${title}"`,
+  };
 };
 
 export const executeAddIssueAttachment = async (
   { issueId, url, title }: { issueId: string; url: string; title: string },
-  updateStatus?: (status: string) => void
+  updateStatus?: (status: string) => void,
+  linearClient?: LinearClient
 ) => {
+  if (!linearClient) {
+    throw new Error('LinearClient is required for Linear operations');
+  }
+
   updateStatus?.(`is adding attachment "${title}" to issue ${issueId}...`);
 
-  await linearUtils.addIssueAttachment(issueId, url, title);
+  await linearUtils.addIssueAttachment(linearClient, issueId, url, title);
   return {
     success: true,
     message: `Added attachment "${title}" to issue ${issueId}`,
@@ -397,11 +448,16 @@ export const executeAddIssueAttachment = async (
 
 export const executeUpdateIssuePriority = async (
   { issueId, priority }: { issueId: string; priority: number },
-  updateStatus?: (status: string) => void
+  updateStatus?: (status: string) => void,
+  linearClient?: LinearClient
 ) => {
-  updateStatus?.(`is updating priority of issue ${issueId} to ${priority}...`);
+  if (!linearClient) {
+    throw new Error('LinearClient is required for Linear operations');
+  }
 
-  await linearUtils.updateIssuePriority(issueId, priority);
+  updateStatus?.(`is updating issue ${issueId} priority to ${priority}...`);
+
+  await linearUtils.updateIssuePriority(linearClient, issueId, priority);
   return {
     success: true,
     message: `Updated issue ${issueId} priority to ${priority}`,
@@ -410,13 +466,18 @@ export const executeUpdateIssuePriority = async (
 
 export const executeSetPointEstimate = async (
   { issueId, pointEstimate }: { issueId: string; pointEstimate: number },
-  updateStatus?: (status: string) => void
+  updateStatus?: (status: string) => void,
+  linearClient?: LinearClient
 ) => {
+  if (!linearClient) {
+    throw new Error('LinearClient is required for Linear operations');
+  }
+
   updateStatus?.(
-    `is setting point estimate of issue ${issueId} to ${pointEstimate}...`
+    `is setting point estimate for issue ${issueId} to ${pointEstimate}...`
   );
 
-  await linearUtils.setPointEstimate(issueId, pointEstimate);
+  await linearUtils.setPointEstimate(linearClient, issueId, pointEstimate);
   return {
     success: true,
     message: `Set point estimate for issue ${issueId} to ${pointEstimate}`,

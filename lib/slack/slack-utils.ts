@@ -1,10 +1,51 @@
 import { WebClient } from '@slack/web-api';
 import { CoreMessage } from 'ai';
 import { createHmac, timingSafeEqual } from 'crypto';
+import { LinearClient } from '@linear/sdk';
+import { Redis } from '@upstash/redis';
+import { env } from '../../src/env.js';
 
 const signingSecret = process.env.SLACK_SIGNING_SECRET!;
 
 export const client = new WebClient(process.env.SLACK_BOT_TOKEN);
+
+// Initialize Redis client for Linear token lookup
+const redis = new Redis({
+  url: env.KV_REST_API_URL,
+  token: env.KV_REST_API_TOKEN,
+});
+
+/**
+ * Get a LinearClient for Slack contexts by checking available tokens in Redis
+ */
+export const getLinearClientForSlack = async (): Promise<
+  LinearClient | undefined
+> => {
+  try {
+    // First try to get the global Linear access token
+    const globalToken = (await redis.get('linearAccessToken')) as string;
+    if (globalToken) {
+      return new LinearClient({ accessToken: globalToken });
+    }
+
+    // If no global token, try to find any organization-specific token
+    // Get all keys that match the pattern linear:*:accessToken
+    const keys = await redis.keys('linear:*:accessToken');
+    if (keys && keys.length > 0) {
+      // Use the first available organization token
+      const firstOrgToken = (await redis.get(keys[0])) as string;
+      if (firstOrgToken) {
+        return new LinearClient({ accessToken: firstOrgToken });
+      }
+    }
+
+    console.warn('No Linear access tokens found in Redis for Slack context');
+    return undefined;
+  } catch (error) {
+    console.error('Error getting Linear client for Slack:', error);
+    return undefined;
+  }
+};
 
 // See https://api.slack.com/authentication/verifying-requests-from-slack
 export async function isValidSlackRequest({
