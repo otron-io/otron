@@ -45,6 +45,7 @@ import {
   executeSendRichChannelMessage,
   executeSendRichDirectMessage,
   executeCreateFormattedSlackMessage,
+  executeRespondToSlackInteraction,
   executeGetLinearTeams,
   executeGetLinearProjects,
   executeGetLinearInitiatives,
@@ -1408,6 +1409,43 @@ export const generateResponse = async (
         execute: createMemoryAwareToolExecutor(
           'getRepositoryStructure',
           (params: any) => executeGetRepositoryStructure(params, updateStatus)
+        ),
+      }),
+      respondToSlackInteraction: tool({
+        description:
+          'Respond to a Slack interactive component (button click, etc.) using the response URL. Use this when responding to button clicks or other interactive elements.',
+        parameters: z.object({
+          responseUrl: z
+            .string()
+            .describe('The response URL provided by Slack for the interaction'),
+          text: z
+            .string()
+            .describe(
+              'Optional response text (leave empty string if not needed)'
+            ),
+          blocks: z
+            .array(z.any())
+            .describe(
+              'Optional Block Kit blocks for rich formatting (use empty array if not needed)'
+            ),
+          replaceOriginal: z
+            .boolean()
+            .describe(
+              'Whether to replace the original message (true) or send a new message (false)'
+            ),
+          deleteOriginal: z
+            .boolean()
+            .describe('Whether to delete the original message'),
+          responseType: z
+            .enum(['ephemeral', 'in_channel'])
+            .describe(
+              'Whether the response should be ephemeral (only visible to the user) or in_channel (visible to everyone). Use "ephemeral" if not specified.'
+            ),
+        }),
+        execute: createMemoryAwareToolExecutor(
+          'respondToSlackInteraction',
+          (params: any) =>
+            executeRespondToSlackInteraction(params, updateStatus)
         ),
       }),
     },

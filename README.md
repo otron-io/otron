@@ -76,3 +76,70 @@ npm run dev
 ```
 
 Built with Vercel AI SDK, Linear API, Upstash Redis, Claude/gpt-4.1, and GitHub API integration.
+
+## Slack Interactive Components
+
+Otron now supports Slack interactive components like buttons, select menus, and other Block Kit elements. When users click buttons or interact with components in messages sent by Otron, the agent can respond intelligently.
+
+### How it works
+
+1. **Button Clicks**: When a user clicks a button in a Slack message, Otron receives the interaction payload
+2. **Context Awareness**: The agent understands what button was clicked, who clicked it, and the context of the original message
+3. **Smart Responses**: Otron can:
+   - Update the original message
+   - Send ephemeral responses (only visible to the user who clicked)
+   - Send new messages to the channel
+   - Take actions on Linear, GitHub, or other platforms based on the button click
+
+### Example Usage
+
+When Otron sends a message with buttons:
+
+```javascript
+// Otron can create messages like this:
+await sendRichSlackMessage({
+  channel: 'C1234567890',
+  blocks: [
+    {
+      type: 'section',
+      text: {
+        type: 'mrkdwn',
+        text: 'Would you like me to create a Linear issue for this bug?',
+      },
+    },
+    {
+      type: 'actions',
+      elements: [
+        {
+          type: 'button',
+          text: { type: 'plain_text', text: 'Yes, create issue' },
+          action_id: 'create_issue',
+          style: 'primary',
+        },
+        {
+          type: 'button',
+          text: { type: 'plain_text', text: 'No, thanks' },
+          action_id: 'dismiss',
+        },
+      ],
+    },
+  ],
+});
+```
+
+When a user clicks the button, Otron automatically:
+
+- Receives the interaction
+- Understands the context and user intent
+- Can respond by creating the Linear issue
+- Updates the message to show the result
+
+### Configuration
+
+Make sure your Slack app is configured with:
+
+- **Interactive Components** enabled in your Slack app settings
+- **Request URL** pointing to your `/api/events` endpoint
+- The same URL handles both events and interactive components
+
+The endpoint automatically detects the payload type and routes accordingly.

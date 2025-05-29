@@ -91,10 +91,27 @@ export const verifyRequest = async ({
   request: Request;
   rawBody: string;
 }) => {
+  // Always verify the request signature for security
   const validRequest = await isValidSlackRequest({ request, rawBody });
-  if (!validRequest || requestType !== 'event_callback') {
-    return new Response('Invalid request', { status: 400 });
+
+  if (!validRequest) {
+    throw new Error('Invalid Slack request signature');
   }
+
+  // All request types should pass signature verification
+  // url_verification, event_callback, and interactive payloads are all valid
+  const validRequestTypes = [
+    'url_verification',
+    'event_callback',
+    'interactive',
+  ];
+
+  if (!validRequestTypes.includes(requestType)) {
+    throw new Error(`Invalid request type: ${requestType}`);
+  }
+
+  // Request is valid
+  return true;
 };
 
 export const updateStatusUtil = (channel: string, thread_ts: string) => {

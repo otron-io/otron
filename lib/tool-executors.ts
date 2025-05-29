@@ -1140,3 +1140,61 @@ export const executeGetRepositoryStructure = async (
     };
   }
 };
+
+export const executeRespondToSlackInteraction = async (
+  {
+    responseUrl,
+    text,
+    blocks,
+    replaceOriginal,
+    deleteOriginal,
+    responseType,
+  }: {
+    responseUrl: string;
+    text?: string;
+    blocks?: any[];
+    replaceOriginal?: boolean;
+    deleteOriginal?: boolean;
+    responseType?: 'ephemeral' | 'in_channel';
+  },
+  updateStatus?: (status: string) => void
+) => {
+  try {
+    updateStatus?.('Responding to Slack interaction...');
+
+    const payload: any = {};
+
+    if (deleteOriginal) {
+      payload.delete_original = true;
+    } else {
+      if (text) payload.text = text;
+      if (blocks) payload.blocks = blocks;
+      if (replaceOriginal) payload.replace_original = true;
+      if (responseType) payload.response_type = responseType;
+    }
+
+    const response = await fetch(responseUrl, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(payload),
+    });
+
+    if (!response.ok) {
+      throw new Error(`HTTP error! status: ${response.status}`);
+    }
+
+    return {
+      success: true,
+      message: 'Successfully responded to Slack interaction',
+    };
+  } catch (error) {
+    console.error('Error responding to Slack interaction:', error);
+    return {
+      success: false,
+      error: error instanceof Error ? error.message : 'Unknown error',
+      message: 'Failed to respond to Slack interaction',
+    };
+  }
+};
