@@ -46,20 +46,13 @@ export const generateResponse = async (
       searchWeb: tool({
         description: 'Use this to search the web for information',
         parameters: z.object({
-          query: z.string(),
-          specificDomain: z
-            .string()
-            .optional()
-            .describe(
-              'a domain to search if the user specifies e.g. bbc.com. Should be only the domain name without the protocol'
-            ),
+          query: z.string().describe('The search query'),
         }),
-        execute: async ({ query, specificDomain }) => {
+        execute: async ({ query }) => {
           updateStatus?.(`is searching the web for ${query}...`);
           const { results } = await exa.searchAndContents(query, {
             livecrawl: 'always',
             numResults: 3,
-            includeDomains: specificDomain ? [specificDomain] : undefined,
           });
 
           return {
