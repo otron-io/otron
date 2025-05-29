@@ -322,7 +322,7 @@ export const generateResponse = async (
   };
 
   const { text } = await generateText({
-    model: openai('o4-mini'),
+    model: openai('o3'),
     system: systemPrompt,
     messages,
     maxSteps: 10,
