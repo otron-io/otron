@@ -1,7 +1,7 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
 import { Redis } from '@upstash/redis';
 import { env } from '../lib/env.js';
-import { withPasswordProtection } from '../lib/auth.js';
+import { withInternalAccess } from '../lib/auth.js';
 import { LinearClient } from '@linear/sdk';
 import { RepositoryManager } from '../lib/github/repository-manager.js';
 
@@ -61,19 +61,20 @@ async function handler(req: VercelRequest, res: VercelResponse) {
       linearConnected = false;
     }
 
-    // Fetch active issues (issues with memory entries in the last 24 hours)
+    // Fetch active contexts (both Linear issues and Slack conversations)
     const issueKeys = await redis.keys('memory:issue:*:action');
-    const activeIssues = new Map<string, any>();
+    const activeContexts = new Map<string, any>();
+    const completedContexts = new Map<string, any>();
 
-    // Process each issue to get its activity data
+    // Process each context to get its activity data
     for (const key of issueKeys) {
-      // Extract issue ID from the key pattern "memory:issue:{issueId}:action"
-      const issueId = key.split(':')[2];
+      // Extract context ID from the key pattern "memory:issue:{contextId}:action"
+      const contextId = key.split(':')[2];
 
-      if (!issueId) continue;
+      if (!contextId) continue;
 
-      // Get the most recent action for this issue
-      const recentActions = await redis.lrange(key, 0, 9); // Get the 10 most recent actions
+      // Get the most recent action for this context
+      const recentActions = await redis.lrange(key, 0, 19); // Get the 20 most recent actions
 
       if (recentActions.length === 0) continue;
 
@@ -83,7 +84,7 @@ async function handler(req: VercelRequest, res: VercelResponse) {
           try {
             return typeof action === 'object' ? action : JSON.parse(action);
           } catch (e) {
-            console.error(`Error parsing action for issue ${issueId}:`, e);
+            console.error(`Error parsing action for context ${contextId}:`, e);
             return null;
           }
         })
@@ -97,11 +98,58 @@ async function handler(req: VercelRequest, res: VercelResponse) {
       );
       const isActive = Date.now() - mostRecentTimestamp < 24 * 60 * 60 * 1000;
 
-      if (!isActive) continue;
+      // Get conversation history for this context
+      const conversationHistory = await redis.lrange(
+        `memory:issue:${contextId}:conversation`,
+        0,
+        9 // Get last 10 conversation entries
+      );
 
-      // Get the repository most used with this issue
+      const parsedConversations = conversationHistory
+        .map((conv) => {
+          try {
+            return typeof conv === 'object' ? conv : JSON.parse(conv);
+          } catch (e) {
+            console.error(
+              `Error parsing conversation for context ${contextId}:`,
+              e
+            );
+            return null;
+          }
+        })
+        .filter((c) => c !== null);
+
+      // Determine context type and platform
+      const isSlackContext = contextId.startsWith('slack:');
+      const isLinearIssue =
+        !isSlackContext && /^[A-Z]{2,}-\d+$/.test(contextId);
+      const isLinearUUID = !isSlackContext && /^[a-f0-9-]{36}$/.test(contextId);
+
+      let contextType = 'general';
+      let platform = 'unknown';
+      let displayName = contextId;
+
+      if (isSlackContext) {
+        contextType = 'slack_conversation';
+        platform = 'slack';
+        // Extract channel info from slack:channelId or slack:channelId:threadTs
+        const slackParts = contextId.split(':');
+        if (slackParts.length >= 2) {
+          const channelId = slackParts[1];
+          const isThread = slackParts.length > 2;
+          displayName = `#${channelId}${isThread ? ' (thread)' : ''}`;
+        }
+      } else if (isLinearIssue || isLinearUUID) {
+        contextType = 'linear_issue';
+        platform = 'linear';
+        displayName = isLinearIssue
+          ? contextId
+          : `Issue ${contextId.substring(0, 8)}...`;
+      }
+
+      // Get the repository most used with this context
       const repoUsage = await redis.zrange(
-        `memory:issue:${issueId}:repositories`,
+        `memory:issue:${contextId}:repositories`,
         0,
         0,
         {
@@ -109,32 +157,63 @@ async function handler(req: VercelRequest, res: VercelResponse) {
         }
       );
 
-      // Store basic issue data
-      const issueData = {
-        issueId,
+      // Get Slack channel info if available
+      let slackDetails = null;
+      if (isSlackContext) {
+        const slackParts = contextId.split(':');
+        if (slackParts.length >= 2) {
+          slackDetails = {
+            channelId: slackParts[1],
+            threadTs: slackParts.length > 2 ? slackParts[2] : null,
+            isThread: slackParts.length > 2,
+          };
+        }
+      }
+
+      // Store basic context data
+      const contextData = {
+        contextId,
+        displayName,
+        contextType,
+        platform,
         lastActivity: mostRecentTimestamp,
         actionsCount: parsedActions.length,
         recentActions: parsedActions.slice(0, 5),
+        allActions: parsedActions, // Include all actions for detailed view
+        conversationHistory: parsedConversations.slice(0, 5),
+        allConversations: parsedConversations, // Include all conversations
+        conversationCount: parsedConversations.length,
         repository: repoUsage && repoUsage.length > 0 ? repoUsage[0] : null,
-        issueDetails: null,
+        issueDetails: null, // Will be populated for Linear issues
+        slackDetails, // Will be populated for Slack contexts
         branchDetails: null,
+        status: isActive ? 'active' : 'completed',
       };
 
-      // Add to the map
-      activeIssues.set(issueId, issueData);
+      // Categorize as active or completed
+      if (isActive) {
+        activeContexts.set(contextId, contextData);
+      } else {
+        completedContexts.set(contextId, contextData);
+      }
     }
 
     // Fetch Linear issue details in parallel if connection is available
     if (linearConnected && linearClient) {
-      const issuePromises = Array.from(activeIssues.entries()).map(
-        async ([issueId, issueData]) => {
+      const allContexts = new Map([...activeContexts, ...completedContexts]);
+      const linearContexts = Array.from(allContexts.entries()).filter(
+        ([contextId, contextData]) => contextData.contextType === 'linear_issue'
+      );
+
+      const issuePromises = linearContexts.map(
+        async ([contextId, contextData]) => {
           try {
             // Fetch issue details from Linear
-            const issue = await linearClient!.issue(issueId);
+            const issue = await linearClient!.issue(contextId);
 
-            // Update issue data with details from Linear
+            // Update context data with details from Linear
             if (issue) {
-              issueData.issueDetails = {
+              contextData.issueDetails = {
                 id: issue.id,
                 identifier: issue.identifier,
                 title: issue.title,
@@ -143,18 +222,41 @@ async function handler(req: VercelRequest, res: VercelResponse) {
                 assignee: issue.assignee ? (await issue.assignee).name : null,
                 priority: issue.priority,
                 url: issue.url,
+                createdAt: issue.createdAt,
+                updatedAt: issue.updatedAt,
               };
+
+              // Update display name with Linear identifier
+              contextData.displayName =
+                issue.identifier || contextData.displayName;
+
+              // Update status based on Linear state if available
+              const state = await issue.state;
+              if (state) {
+                const completedStates = [
+                  'Done',
+                  'Completed',
+                  'Closed',
+                  'Canceled',
+                ];
+                const isLinearCompleted = completedStates.some((s) =>
+                  state.name.toLowerCase().includes(s.toLowerCase())
+                );
+                if (isLinearCompleted) {
+                  contextData.status = 'completed';
+                }
+              }
             }
 
             // Look for branch information in memory
             const branches = await redis.smembers(
-              `memory:issue:branch:${issueId}`
+              `memory:issue:branch:${contextId}`
             );
             if (branches && branches.length > 0) {
               const branchInfo = branches[0].split(':');
               if (branchInfo.length >= 2) {
                 const [repo, branch] = branchInfo;
-                issueData.branchDetails = {
+                contextData.branchDetails = {
                   repository: repo,
                   branch: branch,
                 };
@@ -163,10 +265,10 @@ async function handler(req: VercelRequest, res: VercelResponse) {
 
             // Look for pull requests
             const pullRequests = await redis.smembers(
-              `memory:issue:pr:${issueId}`
+              `memory:issue:pr:${contextId}`
             );
             if (pullRequests && pullRequests.length > 0) {
-              issueData.pullRequests = pullRequests.map((pr) => {
+              contextData.pullRequests = pullRequests.map((pr) => {
                 // For PR URLs like https://github.com/owner/repo/pull/123
                 const match = pr.match(
                   /github\.com\/([^\/]+)\/([^\/]+)\/pull\/(\d+)/
@@ -183,26 +285,31 @@ async function handler(req: VercelRequest, res: VercelResponse) {
               });
             }
 
-            return [issueId, issueData] as [string, any];
+            return [contextId, contextData] as [string, any];
           } catch (error) {
             console.error(
-              `Error fetching details for issue ${issueId}:`,
+              `Error fetching details for Linear issue ${contextId}:`,
               error
             );
-            return [issueId, issueData] as [string, any];
+            return [contextId, contextData] as [string, any];
           }
         }
       );
 
-      // Wait for all issue details to be fetched
-      const updatedIssuesEntries = await Promise.all(issuePromises);
-      activeIssues.clear();
-      for (const [id, data] of updatedIssuesEntries) {
-        activeIssues.set(id, data);
+      // Wait for all Linear issue details to be fetched
+      const updatedLinearEntries = await Promise.all(issuePromises);
+
+      // Update the contexts with Linear data
+      for (const [id, data] of updatedLinearEntries) {
+        if (data.status === 'active') {
+          activeContexts.set(id, data);
+        } else {
+          completedContexts.set(id, data);
+        }
       }
     } else {
       console.log(
-        'Linear client not available - skipping issue detail fetching'
+        'Linear client not available - skipping Linear issue detail fetching'
       );
     }
 
@@ -225,12 +332,67 @@ async function handler(req: VercelRequest, res: VercelResponse) {
         : { attempts: 0, successes: 0 };
     }
 
-    // Return the data
+    // Get recent system activity (last 50 actions across all issues)
+    const allActionKeys = await redis.keys('memory:issue:*:action');
+    const recentSystemActivity = [];
+
+    for (const key of allActionKeys.slice(0, 10)) {
+      // Limit to prevent performance issues
+      const issueId = key.split(':')[2];
+      const recentActions = await redis.lrange(key, 0, 4); // Get 5 most recent per issue
+
+      for (const action of recentActions) {
+        try {
+          const parsedAction =
+            typeof action === 'object' ? action : JSON.parse(action);
+          recentSystemActivity.push({
+            ...parsedAction,
+            issueId,
+          });
+        } catch (e) {
+          // Skip malformed entries
+        }
+      }
+    }
+
+    // Sort by timestamp and take the most recent 20
+    recentSystemActivity.sort(
+      (a, b) => (b.timestamp || 0) - (a.timestamp || 0)
+    );
+    const systemActivity = recentSystemActivity.slice(0, 20);
+
+    // Return the enhanced data with platform-aware naming
     return res.status(200).json({
-      activeIssues: Array.from(activeIssues.values()),
+      activeContexts: Array.from(activeContexts.values()),
+      completedContexts: Array.from(completedContexts.values()),
+      // Keep legacy naming for backward compatibility
+      activeIssues: Array.from(activeContexts.values()),
+      completedIssues: Array.from(completedContexts.values()),
       toolStats,
+      systemActivity,
       timestamp: Date.now(),
       linearConnected,
+      summary: {
+        totalActiveContexts: activeContexts.size,
+        totalCompletedContexts: completedContexts.size,
+        totalSlackContexts: Array.from(activeContexts.values())
+          .concat(Array.from(completedContexts.values()))
+          .filter((c) => c.platform === 'slack').length,
+        totalLinearIssues: Array.from(activeContexts.values())
+          .concat(Array.from(completedContexts.values()))
+          .filter((c) => c.platform === 'linear').length,
+        // Legacy naming for backward compatibility
+        totalActiveIssues: activeContexts.size,
+        totalCompletedIssues: completedContexts.size,
+        totalToolOperations: Object.values(toolStats).reduce(
+          (sum, stat) => sum + stat.attempts,
+          0
+        ),
+        totalSuccessfulOperations: Object.values(toolStats).reduce(
+          (sum, stat) => sum + stat.successes,
+          0
+        ),
+      },
     });
   } catch (error) {
     console.error('Error retrieving agent status:', error);
@@ -238,5 +400,5 @@ async function handler(req: VercelRequest, res: VercelResponse) {
   }
 }
 
-// Export the handler with password protection
-export default withPasswordProtection(handler);
+// Export the handler with internal access protection
+export default withInternalAccess(handler);

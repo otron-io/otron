@@ -1,7 +1,7 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
 import { Redis } from '@upstash/redis';
 import { env } from '../lib/env.js';
-import { withPasswordProtection } from '../lib/auth.js';
+import { withInternalAccess } from '../lib/auth.js';
 
 // Initialize Redis client
 const redis = new Redis({
@@ -15,37 +15,24 @@ async function handler(req: VercelRequest, res: VercelResponse) {
     return res.status(405).json({ error: 'Method not allowed' });
   }
 
+  const { issueId, skip = '0', limit = '20' } = req.query;
+
+  if (!issueId || typeof issueId !== 'string') {
+    return res.status(400).json({ error: 'Issue ID is required' });
+  }
+
   try {
-    const { issueId, skip = '0', limit = '20' } = req.query;
-
-    // Validate parameters
-    if (!issueId || typeof issueId !== 'string') {
-      return res
-        .status(400)
-        .json({ error: 'Missing or invalid issueId parameter' });
-    }
-
-    // Parse skip and limit to integers with defaults
-    const skipInt = parseInt(skip as string, 10) || 0;
-    const limitInt = parseInt(limit as string, 10) || 20;
+    const skipNum = parseInt(skip as string) || 0;
+    const limitNum = parseInt(limit as string) || 20;
 
     // Fetch actions for the issue
-    const actionsKey = `memory:issue:${issueId}:action`;
-    const actionCount = await redis.llen(actionsKey);
-
-    if (actionCount === 0) {
-      return res.status(200).json({ actions: [], total: 0 });
-    }
-
-    // Get actions with pagination
-    const actionData = await redis.lrange(
-      actionsKey,
-      skipInt,
-      skipInt + limitInt - 1
+    const actions = await redis.lrange(
+      `memory:issue:${issueId}:action`,
+      skipNum,
+      skipNum + limitNum - 1
     );
 
-    // Parse the actions
-    const parsedActions = actionData
+    const parsedActions = actions
       .map((action) => {
         try {
           return typeof action === 'object' ? action : JSON.parse(action);
@@ -56,16 +43,23 @@ async function handler(req: VercelRequest, res: VercelResponse) {
       })
       .filter((a) => a !== null);
 
+    // Get total count for pagination info
+    const totalActions = await redis.llen(`memory:issue:${issueId}:action`);
+
     return res.status(200).json({
       actions: parsedActions,
-      total: actionCount,
-      remaining: Math.max(0, actionCount - (skipInt + parsedActions.length)),
+      totalActions,
+      skip: skipNum,
+      limit: limitNum,
+      hasMore: skipNum + limitNum < totalActions,
+      issueId,
+      timestamp: Date.now(),
     });
   } catch (error) {
-    console.error('Error fetching issue actions:', error);
-    return res.status(500).json({ error: 'Failed to fetch issue actions' });
+    console.error(`Error retrieving actions for issue ${issueId}:`, error);
+    return res.status(500).json({ error: 'Failed to retrieve issue actions' });
   }
 }
 
-// Export the handler with password protection
-export default withPasswordProtection(handler);
+// Export the handler with internal access protection
+export default withInternalAccess(handler);
