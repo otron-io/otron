@@ -163,8 +163,8 @@ export const generateResponse = async (
         attemptNumber
       );
 
-      // If goal is complete or confidence is high enough, return the response
-      if (evaluation.isComplete || evaluation.confidence >= 0.8) {
+      // If goal is complete and confidence is high enough, return the response
+      if (evaluation.isComplete && evaluation.confidence >= 0.7) {
         console.log(
           `Goal evaluation passed on attempt ${attemptNumber}:`,
           evaluation.reasoning
