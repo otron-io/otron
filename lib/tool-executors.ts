@@ -4,13 +4,6 @@ import * as githubUtils from './github/github-utils.js';
 import * as slackUtils from './slack/slack-utils.js';
 import { LinearClient } from '@linear/sdk';
 
-// Initialize Linear client - this will be used as fallback when no specific client is provided
-const getLinearClient = () => {
-  return new LinearClient({
-    apiKey: process.env.LINEAR_API_KEY!,
-  });
-};
-
 // General tool execution functions
 export const executeGetWeather = async (
   {
@@ -60,12 +53,12 @@ export const executeSendSlackMessage = async (
     channel,
     text,
     threadTs,
-  }: { channel: string; text: string; threadTs?: string },
+  }: { channel: string; text: string; threadTs: string },
   updateStatus?: (status: string) => void
 ) => {
   updateStatus?.(`is sending message to ${channel}...`);
 
-  await slackUtils.sendMessage(channel, text, threadTs);
+  await slackUtils.sendMessage(channel, text, threadTs || undefined);
   return {
     success: true,
     message: `Sent message to ${channel}`,
@@ -90,12 +83,16 @@ export const executeSendChannelMessage = async (
     channelNameOrId,
     text,
     threadTs,
-  }: { channelNameOrId: string; text: string; threadTs?: string },
+  }: { channelNameOrId: string; text: string; threadTs: string },
   updateStatus?: (status: string) => void
 ) => {
   updateStatus?.(`is sending message to channel ${channelNameOrId}...`);
 
-  await slackUtils.sendChannelMessage(channelNameOrId, text, threadTs);
+  await slackUtils.sendChannelMessage(
+    channelNameOrId,
+    text,
+    threadTs || undefined
+  );
   return {
     success: true,
     message: `Sent message to channel ${channelNameOrId}`,
@@ -137,12 +134,15 @@ export const executeRemoveSlackReaction = async (
 };
 
 export const executeGetSlackChannelHistory = async (
-  { channel, limit }: { channel: string; limit?: number },
+  { channel, limit }: { channel: string; limit: number },
   updateStatus?: (status: string) => void
 ) => {
   updateStatus?.(`is getting channel history for ${channel}...`);
 
-  const history = await slackUtils.getBriefChannelHistory(channel, limit);
+  const history = await slackUtils.getBriefChannelHistory(
+    channel,
+    limit === 0 ? undefined : limit
+  );
   return { history };
 };
 
@@ -234,12 +234,14 @@ export const executeJoinSlackChannel = async (
 };
 
 export const executeSearchSlackMessages = async (
-  { query, count }: { query: string; count?: number },
+  { query, count }: { query: string; count: number },
   updateStatus?: (status: string) => void
 ) => {
   updateStatus?.(`is searching for messages: "${query}"...`);
 
-  const results = await slackUtils.searchMessages(query, { count });
+  const results = await slackUtils.searchMessages(query, {
+    count: count === 0 ? undefined : count,
+  });
   return { results };
 };
 
@@ -258,12 +260,16 @@ export const executeSetSlackStatus = async (
     statusText,
     statusEmoji,
     statusExpiration,
-  }: { statusText: string; statusEmoji?: string; statusExpiration?: number },
+  }: { statusText: string; statusEmoji: string; statusExpiration: number },
   updateStatus?: (status: string) => void
 ) => {
   updateStatus?.(`is setting status to "${statusText}"...`);
 
-  await slackUtils.setStatus(statusText, statusEmoji, statusExpiration);
+  await slackUtils.setStatus(
+    statusText,
+    statusEmoji || undefined,
+    statusExpiration === 0 ? undefined : statusExpiration
+  );
   return {
     success: true,
     message: `Set status to "${statusText}"`,
@@ -298,7 +304,7 @@ export const executeUnpinSlackMessage = async (
 
 // Linear tool execution functions
 export const executeGetIssueContext = async (
-  { issueId, commentId }: { issueId: string; commentId?: string },
+  { issueId, commentId }: { issueId: string; commentId: string },
   updateStatus?: (status: string) => void,
   linearClient?: LinearClient
 ) => {
@@ -311,7 +317,7 @@ export const executeGetIssueContext = async (
   const context = await linearUtils.getIssueContext(
     linearClient,
     issueId,
-    commentId
+    commentId || undefined
   );
   return { context };
 };
@@ -400,9 +406,9 @@ export const executeCreateIssue = async (
     teamId: string;
     title: string;
     description: string;
-    status?: string;
-    priority?: number;
-    parentIssueId?: string;
+    status: string;
+    priority: number;
+    parentIssueId: string;
   },
   updateStatus?: (status: string) => void,
   linearClient?: LinearClient
@@ -418,9 +424,9 @@ export const executeCreateIssue = async (
     teamId,
     title,
     description,
-    status,
-    priority,
-    parentIssueId
+    status || undefined,
+    priority === 0 ? undefined : priority,
+    parentIssueId || undefined
   );
   return {
     success: true,
@@ -495,20 +501,20 @@ export const executeGetFileContent = async (
   }: {
     path: string;
     repository: string;
-    startLine?: number;
-    maxLines?: number;
-    branch?: string;
+    startLine: number;
+    maxLines: number;
+    branch: string;
   },
   updateStatus?: (status: string) => void
 ) => {
-  updateStatus?.(`is getting content of ${path} from ${repository}...`);
+  updateStatus?.(`is getting content for ${path}...`);
 
   const content = await githubUtils.getFileContent(
     path,
     repository,
-    startLine,
-    maxLines,
-    branch
+    startLine === 0 ? undefined : startLine,
+    maxLines === 0 ? undefined : maxLines,
+    branch || undefined
   );
   return { content };
 };
@@ -518,15 +524,15 @@ export const executeCreateBranch = async (
     branch,
     repository,
     baseBranch,
-  }: { branch: string; repository: string; baseBranch?: string },
+  }: { branch: string; repository: string; baseBranch: string },
   updateStatus?: (status: string) => void
 ) => {
-  updateStatus?.(`is creating branch ${branch} in ${repository}...`);
+  updateStatus?.(`is creating branch ${branch}...`);
 
-  await githubUtils.createBranch(branch, repository, baseBranch);
+  await githubUtils.createBranch(branch, repository, baseBranch || undefined);
   return {
     success: true,
-    message: `Created branch ${branch} in ${repository}`,
+    message: `Created branch ${branch}`,
   };
 };
 
@@ -648,29 +654,29 @@ export const executeSearchCode = async (
   }: {
     query: string;
     repository: string;
-    fileFilter?: string;
-    maxResults?: number;
+    fileFilter: string;
+    maxResults: number;
   },
   updateStatus?: (status: string) => void
 ) => {
-  updateStatus?.(`is searching for "${query}" in ${repository}...`);
+  updateStatus?.(`is searching for code: "${query}"...`);
 
   const results = await githubUtils.searchCode(query, repository, {
-    fileFilter,
-    maxResults,
+    fileFilter: fileFilter || undefined,
+    maxResults: maxResults === 0 ? undefined : maxResults,
   });
   return { results };
 };
 
 export const executeGetDirectoryStructure = async (
-  { repository, directoryPath }: { repository: string; directoryPath?: string },
+  { repository, directoryPath }: { repository: string; directoryPath: string },
   updateStatus?: (status: string) => void
 ) => {
   updateStatus?.(`is getting directory structure for ${repository}...`);
 
   const structure = await githubUtils.getDirectoryStructure(
     repository,
-    directoryPath
+    directoryPath || undefined
   );
   return { structure };
 };

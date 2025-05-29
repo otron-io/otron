@@ -84,8 +84,9 @@ export const generateResponse = async (
           text: z.string().describe('The message text to send'),
           threadTs: z
             .string()
-            .optional()
-            .describe('Optional thread timestamp to reply in a thread'),
+            .describe(
+              'Optional thread timestamp to reply in a thread. Leave empty if not replying to a thread.'
+            ),
         }),
         execute: (params) => executeSendSlackMessage(params, updateStatus),
       }),
@@ -108,8 +109,9 @@ export const generateResponse = async (
           text: z.string().describe('The message text to send'),
           threadTs: z
             .string()
-            .optional()
-            .describe('Optional thread timestamp to reply in a thread'),
+            .describe(
+              'Optional thread timestamp to reply in a thread. Leave empty if not replying to a thread.'
+            ),
         }),
         execute: (params) => executeSendChannelMessage(params, updateStatus),
       }),
@@ -141,8 +143,9 @@ export const generateResponse = async (
           channel: z.string().describe('The channel ID'),
           limit: z
             .number()
-            .optional()
-            .describe('Number of messages to retrieve (default: 10)'),
+            .describe(
+              'Number of messages to retrieve (default: 10). Use 10 if not specified.'
+            ),
         }),
         execute: (params) =>
           executeGetSlackChannelHistory(params, updateStatus),
@@ -203,8 +206,9 @@ export const generateResponse = async (
           query: z.string().describe('The search query'),
           count: z
             .number()
-            .optional()
-            .describe('Number of results to return (default: 20)'),
+            .describe(
+              'Number of results to return (default: 20). Use 20 if not specified.'
+            ),
         }),
         execute: (params) => executeSearchSlackMessages(params, updateStatus),
       }),
@@ -222,12 +226,14 @@ export const generateResponse = async (
           statusText: z.string().describe('The status text to set'),
           statusEmoji: z
             .string()
-            .optional()
-            .describe('Optional status emoji (e.g., ":robot_face:")'),
+            .describe(
+              'Optional status emoji (e.g., ":robot_face:"). Leave empty if not setting an emoji.'
+            ),
           statusExpiration: z
             .number()
-            .optional()
-            .describe('Optional expiration timestamp (Unix timestamp)'),
+            .describe(
+              'Optional expiration timestamp (Unix timestamp). Use 0 if no expiration.'
+            ),
         }),
         execute: (params) => executeSetSlackStatus(params, updateStatus),
       }),
@@ -255,12 +261,13 @@ export const generateResponse = async (
           issueId: z.string().describe('The Linear issue ID or identifier'),
           commentId: z
             .string()
-            .optional()
-            .describe('Optional comment ID to highlight'),
+            .describe(
+              'Optional comment ID to highlight. Leave empty if not highlighting a specific comment.'
+            ),
         }),
         execute: (params) =>
           executeGetIssueContext(
-            params as { issueId: string; commentId?: string },
+            params as { issueId: string; commentId: string },
             updateStatus,
             linearClient
           ),
@@ -331,16 +338,19 @@ export const generateResponse = async (
           description: z.string().describe('The description of the new issue'),
           status: z
             .string()
-            .optional()
-            .describe('Optional status name for the new issue'),
+            .describe(
+              'Optional status name for the new issue. Leave empty to use default status.'
+            ),
           priority: z
             .number()
-            .optional()
-            .describe('Optional priority level (1-4, where 1 is highest)'),
+            .describe(
+              'Optional priority level (1-4, where 1 is highest). Use 0 if not setting priority.'
+            ),
           parentIssueId: z
             .string()
-            .optional()
-            .describe('Optional parent issue ID to create this as a subtask'),
+            .describe(
+              'Optional parent issue ID to create this as a subtask. Leave empty if not a subtask.'
+            ),
         }),
         execute: (params) =>
           executeCreateIssue(
@@ -348,9 +358,9 @@ export const generateResponse = async (
               teamId: string;
               title: string;
               description: string;
-              status?: string;
-              priority?: number;
-              parentIssueId?: string;
+              status: string;
+              priority: number;
+              parentIssueId: string;
             },
             updateStatus,
             linearClient
@@ -408,16 +418,19 @@ export const generateResponse = async (
             .describe('The repository in format "owner/repo"'),
           startLine: z
             .number()
-            .optional()
-            .describe('Starting line number (default: 1)'),
+            .describe(
+              'Starting line number (default: 1). Use 1 if not specified.'
+            ),
           maxLines: z
             .number()
-            .optional()
-            .describe('Maximum number of lines to return (default: 200)'),
+            .describe(
+              'Maximum number of lines to return (default: 200). Use 200 if not specified.'
+            ),
           branch: z
             .string()
-            .optional()
-            .describe('Branch name (default: repository default branch)'),
+            .describe(
+              'Branch name (default: repository default branch). Leave empty to use default branch.'
+            ),
         }),
         execute: (params) => executeGetFileContent(params, updateStatus),
       }),
@@ -430,9 +443,8 @@ export const generateResponse = async (
             .describe('The repository in format "owner/repo"'),
           baseBranch: z
             .string()
-            .optional()
             .describe(
-              'Base branch to create from (default: repository default branch)'
+              'Base branch to create from (default: repository default branch). Leave empty to use default branch.'
             ),
         }),
         execute: (params) => executeCreateBranch(params, updateStatus),
@@ -503,14 +515,14 @@ export const generateResponse = async (
             .describe('The repository in format "owner/repo"'),
           fileFilter: z
             .string()
-            .optional()
             .describe(
-              'Optional file filter (e.g., "*.ts" for TypeScript files)'
+              'Optional file filter (e.g., "*.ts" for TypeScript files). Leave empty if not filtering by file type.'
             ),
           maxResults: z
             .number()
-            .optional()
-            .describe('Maximum number of results (default: 10)'),
+            .describe(
+              'Maximum number of results (default: 10). Use 10 if not specified.'
+            ),
         }),
         execute: (params) => executeSearchCode(params, updateStatus),
       }),
@@ -522,8 +534,9 @@ export const generateResponse = async (
             .describe('The repository in format "owner/repo"'),
           directoryPath: z
             .string()
-            .optional()
-            .describe('Optional directory path (default: root directory)'),
+            .describe(
+              'Optional directory path (default: root directory). Leave empty for root directory.'
+            ),
         }),
         execute: (params) => executeGetDirectoryStructure(params, updateStatus),
       }),
