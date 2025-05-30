@@ -1153,7 +1153,7 @@ export const executeSearchEmbeddedCode = async (
       repository,
       query,
       method: 'vector',
-      limit: (maxResults || 10).toString(),
+      limit: ((maxResults <= 10 ? maxResults : 10) || 10).toString(),
     });
 
     if (fileFilter) {

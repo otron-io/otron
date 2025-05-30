@@ -4,9 +4,8 @@ import { z } from 'zod';
 import {
   // General tools
   executeSearchWeb,
-  // Memory tools
-  executeGetIssueContext,
   // Linear tools
+  executeGetIssueContext,
   executeUpdateIssueStatus,
   executeAddLabel,
   executeRemoveLabel,
@@ -378,6 +377,8 @@ const generateResponseInternal = async (
     - Regardless of the outcome of your work, you must leave a comment on the linear issue with the outcome of your work, even if you could not complete the issue.
     - If someone is speaking to you in Slack and you start working on something, you must get back to them when you are done so they know what happened. 
     - If code search is resulting in no results, try other methods of finding the information you need and if you can't then inform the user either via Slack or Linear.
+    - If you need help, you are more than encouraged to ask a user for help. Either via Slack or Linear. You must do this as soon as you realize you need help.
+    - You do not need to excessively research the codebase when working on an issue. Understand what you need to and then use the editing tools to make the changes.
 
     GITHUB REPO NOTES:
     - Your repository is https://github.com/otron-io/otron, you can develop and improve yourself via this repository.
