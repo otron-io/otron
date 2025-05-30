@@ -1098,19 +1098,61 @@ export const executeSearchEmbeddedCode = async (
       searchParams.append('fileFilter', fileFilter);
     }
 
-    // Make internal API call to code-search endpoint
-    const baseUrl = env.VERCEL_URL || 'http://localhost:3000';
+    // Add detailed logging
+    console.log('🔍 Code Search Debug Info:');
+    console.log('  Repository:', repository);
+    console.log('  Query:', query);
+    console.log('  FileFilter:', fileFilter);
+    console.log('  MaxResults:', maxResults);
+    console.log('  SearchParams:', searchParams.toString());
+    console.log('  INTERNAL_API_TOKEN exists:', !!env.INTERNAL_API_TOKEN);
 
-    const response = await fetch(`${baseUrl}/api/code-search?${searchParams}`, {
-      method: 'GET',
-      headers: {
-        'X-Internal-Token': env.INTERNAL_API_TOKEN,
-        'Content-Type': 'application/json',
-      },
-    });
+    // Try relative URL first (like embed-ui), then fallback to absolute URL
+    const relativeUrl = `/api/code-search?${searchParams}`;
+    const baseUrl = env.VERCEL_URL || 'http://localhost:3000';
+    const absoluteUrl = baseUrl.startsWith('http')
+      ? `${baseUrl}/api/code-search?${searchParams}`
+      : `https://${baseUrl}/api/code-search?${searchParams}`;
+
+    console.log('  Trying relative URL first:', relativeUrl);
+
+    let response: Response;
+    let urlUsed: string;
+
+    try {
+      // Try relative URL first (same as embed-ui)
+      response = await fetch(relativeUrl, {
+        method: 'GET',
+        headers: {
+          'X-Internal-Token': env.INTERNAL_API_TOKEN,
+          'Content-Type': 'application/json',
+        },
+      });
+      urlUsed = relativeUrl;
+      console.log('  Relative URL worked, status:', response.status);
+    } catch (relativeError) {
+      console.log('  Relative URL failed, trying absolute URL:', absoluteUrl);
+      console.log('  Relative error:', relativeError);
+
+      // Fallback to absolute URL
+      response = await fetch(absoluteUrl, {
+        method: 'GET',
+        headers: {
+          'X-Internal-Token': env.INTERNAL_API_TOKEN,
+          'Content-Type': 'application/json',
+        },
+      });
+      urlUsed = absoluteUrl;
+      console.log('  Absolute URL status:', response.status);
+    }
+
+    console.log('  Final URL used:', urlUsed);
+    console.log('  Response status:', response.status);
+    console.log('  Response ok:', response.ok);
 
     if (!response.ok) {
       const errorData = await response.json().catch(() => ({}));
+      console.log('  Error data:', errorData);
       throw new Error(
         `Code search API error: ${response.status} - ${
           errorData.error || response.statusText
@@ -1119,6 +1161,7 @@ export const executeSearchEmbeddedCode = async (
     }
 
     const data = await response.json();
+    console.log('  Response data:', JSON.stringify(data, null, 2));
 
     return {
       success: true,
