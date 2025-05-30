@@ -1083,6 +1083,15 @@ export const executeSearchEmbeddedCode = async (
   },
   updateStatus?: (status: string) => void
 ) => {
+  // Add very visible logging to confirm function is called
+  console.log('🚨🚨🚨 executeSearchEmbeddedCode CALLED 🚨🚨🚨');
+  console.log('Parameters received:', {
+    repository,
+    query,
+    fileFilter,
+    maxResults,
+  });
+
   try {
     updateStatus?.('Searching embedded code...');
 
@@ -1118,6 +1127,7 @@ export const executeSearchEmbeddedCode = async (
 
     let response: Response;
     let urlUsed: string;
+    let debugInfo = '';
 
     try {
       // Try relative URL first (same as embed-ui)
@@ -1129,8 +1139,11 @@ export const executeSearchEmbeddedCode = async (
         },
       });
       urlUsed = relativeUrl;
+      debugInfo += `Relative URL worked, status: ${response.status}\n`;
       console.log('  Relative URL worked, status:', response.status);
     } catch (relativeError) {
+      debugInfo += `Relative URL failed: ${relativeError}\n`;
+      debugInfo += `Trying absolute URL: ${absoluteUrl}\n`;
       console.log('  Relative URL failed, trying absolute URL:', absoluteUrl);
       console.log('  Relative error:', relativeError);
 
@@ -1143,8 +1156,13 @@ export const executeSearchEmbeddedCode = async (
         },
       });
       urlUsed = absoluteUrl;
+      debugInfo += `Absolute URL status: ${response.status}\n`;
       console.log('  Absolute URL status:', response.status);
     }
+
+    debugInfo += `Final URL used: ${urlUsed}\n`;
+    debugInfo += `Response status: ${response.status}\n`;
+    debugInfo += `Response ok: ${response.ok}\n`;
 
     console.log('  Final URL used:', urlUsed);
     console.log('  Response status:', response.status);
@@ -1152,6 +1170,7 @@ export const executeSearchEmbeddedCode = async (
 
     if (!response.ok) {
       const errorData = await response.json().catch(() => ({}));
+      debugInfo += `Error data: ${JSON.stringify(errorData)}\n`;
       console.log('  Error data:', errorData);
       throw new Error(
         `Code search API error: ${response.status} - ${
@@ -1161,18 +1180,22 @@ export const executeSearchEmbeddedCode = async (
     }
 
     const data = await response.json();
+    debugInfo += `Response data: ${JSON.stringify(data, null, 2)}\n`;
     console.log('  Response data:', JSON.stringify(data, null, 2));
 
     return {
       success: true,
       results: data.results,
-      message: `Found ${data.results.length} code matches for "${query}" in ${repository}`,
+      message: `Found ${data.results.length} code matches for "${query}" in ${repository}\n\nDEBUG INFO:\n${debugInfo}`,
     };
   } catch (error) {
     console.error('Error searching embedded code:', error);
     return {
       success: false,
       error: error instanceof Error ? error.message : 'Unknown error occurred',
+      message: `Code search failed: ${
+        error instanceof Error ? error.message : 'Unknown error occurred'
+      }`,
     };
   }
 };
