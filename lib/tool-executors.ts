@@ -1093,7 +1093,7 @@ export const executeSearchEmbeddedCode = async (
   });
 
   try {
-    updateStatus?.('Searching embedded code...');
+    updateStatus?.('is searching embedded code...');
 
     // Use the same direct approach as embed-ui
     const searchParams = new URLSearchParams({
@@ -1116,55 +1116,30 @@ export const executeSearchEmbeddedCode = async (
     console.log('  SearchParams:', searchParams.toString());
     console.log('  INTERNAL_API_TOKEN exists:', !!env.INTERNAL_API_TOKEN);
 
-    // Try relative URL first (like embed-ui), then fallback to absolute URL
-    const relativeUrl = `/api/code-search?${searchParams}`;
+    // Use absolute URL directly since relative URLs don't work in server environment
     const baseUrl = env.VERCEL_URL || 'http://localhost:3000';
     const absoluteUrl = baseUrl.startsWith('http')
       ? `${baseUrl}/api/code-search?${searchParams}`
       : `https://${baseUrl}/api/code-search?${searchParams}`;
 
-    console.log('  Trying relative URL first:', relativeUrl);
+    console.log('  Using absolute URL:', absoluteUrl);
 
     let response: Response;
-    let urlUsed: string;
     let debugInfo = '';
 
-    try {
-      // Try relative URL first (same as embed-ui)
-      response = await fetch(relativeUrl, {
-        method: 'GET',
-        headers: {
-          'X-Internal-Token': env.INTERNAL_API_TOKEN,
-          'Content-Type': 'application/json',
-        },
-      });
-      urlUsed = relativeUrl;
-      debugInfo += `Relative URL worked, status: ${response.status}\n`;
-      console.log('  Relative URL worked, status:', response.status);
-    } catch (relativeError) {
-      debugInfo += `Relative URL failed: ${relativeError}\n`;
-      debugInfo += `Trying absolute URL: ${absoluteUrl}\n`;
-      console.log('  Relative URL failed, trying absolute URL:', absoluteUrl);
-      console.log('  Relative error:', relativeError);
+    // Make the API call directly with absolute URL
+    response = await fetch(absoluteUrl, {
+      method: 'GET',
+      headers: {
+        'X-Internal-Token': env.INTERNAL_API_TOKEN,
+        'Content-Type': 'application/json',
+      },
+    });
 
-      // Fallback to absolute URL
-      response = await fetch(absoluteUrl, {
-        method: 'GET',
-        headers: {
-          'X-Internal-Token': env.INTERNAL_API_TOKEN,
-          'Content-Type': 'application/json',
-        },
-      });
-      urlUsed = absoluteUrl;
-      debugInfo += `Absolute URL status: ${response.status}\n`;
-      console.log('  Absolute URL status:', response.status);
-    }
-
-    debugInfo += `Final URL used: ${urlUsed}\n`;
+    debugInfo += `URL used: ${absoluteUrl}\n`;
     debugInfo += `Response status: ${response.status}\n`;
     debugInfo += `Response ok: ${response.ok}\n`;
 
-    console.log('  Final URL used:', urlUsed);
     console.log('  Response status:', response.status);
     console.log('  Response ok:', response.ok);
 
