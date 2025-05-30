@@ -816,13 +816,66 @@ export const executeGetDirectoryStructure = async (
   { repository, directoryPath }: { repository: string; directoryPath: string },
   updateStatus?: (status: string) => void
 ) => {
-  updateStatus?.(`is getting directory structure for ${repository}...`);
+  try {
+    updateStatus?.(
+      `is getting directory structure for ${
+        directoryPath || 'root'
+      } in ${repository}...`
+    );
 
-  const structure = await githubUtils.getDirectoryStructure(
-    repository,
-    directoryPath || ''
-  );
-  return { structure };
+    const structure = await githubUtils.getDirectoryStructure(
+      repository,
+      directoryPath || ''
+    );
+    return {
+      success: true,
+      structure,
+      message: `Retrieved directory structure for ${
+        directoryPath || 'root'
+      } in ${repository}`,
+    };
+  } catch (error) {
+    console.error(
+      `Error getting directory structure for ${
+        directoryPath || 'root'
+      } in ${repository}:`,
+      error
+    );
+
+    // Handle specific error cases
+    if (error instanceof Error && 'status' in error) {
+      const httpError = error as any;
+      if (httpError.status === 404) {
+        return {
+          success: false,
+          structure: [
+            {
+              name: `Directory not found: ${directoryPath || 'root'}`,
+              path: directoryPath || '',
+              type: 'file' as const,
+            },
+          ],
+          message: `Directory "${
+            directoryPath || 'root'
+          }" not found in repository ${repository}. This directory may not exist or you may not have access to it.`,
+        };
+      }
+    }
+
+    return {
+      success: false,
+      structure: [
+        {
+          name: 'Error retrieving directory structure',
+          path: directoryPath || '',
+          type: 'file' as const,
+        },
+      ],
+      message: `Failed to get directory structure: ${
+        error instanceof Error ? error.message : 'Unknown error'
+      }`,
+    };
+  }
 };
 
 // Linear context gathering tool execution functions
@@ -1281,20 +1334,40 @@ export const executeInsertAtLine = async (
   },
   updateStatus?: (status: string) => void
 ) => {
-  updateStatus?.(`is inserting content at line ${line} in ${path}...`);
-
-  await FileEditor.insertAtLine(
+  // Add comprehensive logging
+  console.log('🔧 executeInsertAtLine CALLED');
+  console.log('Parameters:', {
     path,
     repository,
     branch,
     line,
-    content,
-    message
-  );
-  return {
-    success: true,
-    message: `Inserted content at line ${line} in ${path}`,
-  };
+    content: content.substring(0, 100) + '...',
+    message,
+  });
+
+  try {
+    updateStatus?.(`is inserting content at line ${line} in ${path}...`);
+    console.log('📝 About to call FileEditor.insertAtLine');
+
+    await FileEditor.insertAtLine(
+      path,
+      repository,
+      branch,
+      line,
+      content,
+      message
+    );
+
+    console.log('✅ FileEditor.insertAtLine completed successfully');
+
+    return {
+      success: true,
+      message: `Inserted content at line ${line} in ${path}`,
+    };
+  } catch (error) {
+    console.error('❌ Error in executeInsertAtLine:', error);
+    throw error;
+  }
 };
 
 export const executeReplaceLines = async (
@@ -1317,21 +1390,42 @@ export const executeReplaceLines = async (
   },
   updateStatus?: (status: string) => void
 ) => {
-  updateStatus?.(`is replacing lines ${startLine}-${endLine} in ${path}...`);
-
-  await FileEditor.replaceLines(
+  // Add comprehensive logging
+  console.log('🔧 executeReplaceLines CALLED');
+  console.log('Parameters:', {
     path,
     repository,
     branch,
     startLine,
     endLine,
-    content,
-    message
-  );
-  return {
-    success: true,
-    message: `Replaced lines ${startLine}-${endLine} in ${path}`,
-  };
+    content: content.substring(0, 100) + '...',
+    message,
+  });
+
+  try {
+    updateStatus?.(`is replacing lines ${startLine}-${endLine} in ${path}...`);
+    console.log('📝 About to call FileEditor.replaceLines');
+
+    await FileEditor.replaceLines(
+      path,
+      repository,
+      branch,
+      startLine,
+      endLine,
+      content,
+      message
+    );
+
+    console.log('✅ FileEditor.replaceLines completed successfully');
+
+    return {
+      success: true,
+      message: `Replaced lines ${startLine}-${endLine} in ${path}`,
+    };
+  } catch (error) {
+    console.error('❌ Error in executeReplaceLines:', error);
+    throw error;
+  }
 };
 
 export const executeDeleteLines = async (
@@ -1352,20 +1446,40 @@ export const executeDeleteLines = async (
   },
   updateStatus?: (status: string) => void
 ) => {
-  updateStatus?.(`is deleting lines ${startLine}-${endLine} in ${path}...`);
-
-  await FileEditor.deleteLines(
+  // Add comprehensive logging
+  console.log('🔧 executeDeleteLines CALLED');
+  console.log('Parameters:', {
     path,
     repository,
     branch,
     startLine,
     endLine,
-    message
-  );
-  return {
-    success: true,
-    message: `Deleted lines ${startLine}-${endLine} in ${path}`,
-  };
+    message,
+  });
+
+  try {
+    updateStatus?.(`is deleting lines ${startLine}-${endLine} in ${path}...`);
+    console.log('📝 About to call FileEditor.deleteLines');
+
+    await FileEditor.deleteLines(
+      path,
+      repository,
+      branch,
+      startLine,
+      endLine,
+      message
+    );
+
+    console.log('✅ FileEditor.deleteLines completed successfully');
+
+    return {
+      success: true,
+      message: `Deleted lines ${startLine}-${endLine} in ${path}`,
+    };
+  } catch (error) {
+    console.error('❌ Error in executeDeleteLines:', error);
+    throw error;
+  }
 };
 
 export const executeAppendToFile = async (
@@ -1384,13 +1498,32 @@ export const executeAppendToFile = async (
   },
   updateStatus?: (status: string) => void
 ) => {
-  updateStatus?.(`is appending content to ${path}...`);
+  // Add comprehensive logging
+  console.log('🔧 executeAppendToFile CALLED');
+  console.log('Parameters:', {
+    path,
+    repository,
+    branch,
+    content: content.substring(0, 100) + '...',
+    message,
+  });
 
-  await FileEditor.appendToFile(path, repository, branch, content, message);
-  return {
-    success: true,
-    message: `Appended content to ${path}`,
-  };
+  try {
+    updateStatus?.(`is appending content to ${path}...`);
+    console.log('📝 About to call FileEditor.appendToFile');
+
+    await FileEditor.appendToFile(path, repository, branch, content, message);
+
+    console.log('✅ FileEditor.appendToFile completed successfully');
+
+    return {
+      success: true,
+      message: `Appended content to ${path}`,
+    };
+  } catch (error) {
+    console.error('❌ Error in executeAppendToFile:', error);
+    throw error;
+  }
 };
 
 export const executePrependToFile = async (
@@ -1409,13 +1542,32 @@ export const executePrependToFile = async (
   },
   updateStatus?: (status: string) => void
 ) => {
-  updateStatus?.(`is prepending content to ${path}...`);
+  // Add comprehensive logging
+  console.log('🔧 executePrependToFile CALLED');
+  console.log('Parameters:', {
+    path,
+    repository,
+    branch,
+    content: content.substring(0, 100) + '...',
+    message,
+  });
 
-  await FileEditor.prependToFile(path, repository, branch, content, message);
-  return {
-    success: true,
-    message: `Prepended content to ${path}`,
-  };
+  try {
+    updateStatus?.(`is prepending content to ${path}...`);
+    console.log('📝 About to call FileEditor.prependToFile');
+
+    await FileEditor.prependToFile(path, repository, branch, content, message);
+
+    console.log('✅ FileEditor.prependToFile completed successfully');
+
+    return {
+      success: true,
+      message: `Prepended content to ${path}`,
+    };
+  } catch (error) {
+    console.error('❌ Error in executePrependToFile:', error);
+    throw error;
+  }
 };
 
 export const executeFindAndReplace = async (
@@ -1442,27 +1594,52 @@ export const executeFindAndReplace = async (
   },
   updateStatus?: (status: string) => void
 ) => {
-  updateStatus?.(`is finding and replacing "${searchText}" in ${path}...`);
-
-  const result = await FileEditor.findAndReplace(
+  // Add comprehensive logging
+  console.log('🔧 executeFindAndReplace CALLED');
+  console.log('Parameters:', {
     path,
     repository,
     branch,
-    searchText,
-    replaceText,
+    searchText: searchText.substring(0, 50) + '...',
+    replaceText: replaceText.substring(0, 50) + '...',
     message,
-    {
-      replaceAll: replaceAll || false,
-      caseSensitive: caseSensitive !== false, // Default to true
-      wholeWord: wholeWord || false,
-    }
-  );
+    replaceAll,
+    caseSensitive,
+    wholeWord,
+  });
 
-  return {
-    success: true,
-    replacements: result.replacements,
-    message: `Made ${result.replacements} replacement(s) in ${path}`,
-  };
+  try {
+    updateStatus?.(`is finding and replacing "${searchText}" in ${path}...`);
+    console.log('📝 About to call FileEditor.findAndReplace');
+
+    const result = await FileEditor.findAndReplace(
+      path,
+      repository,
+      branch,
+      searchText,
+      replaceText,
+      message,
+      {
+        replaceAll: replaceAll || false,
+        caseSensitive: caseSensitive !== false, // Default to true
+        wholeWord: wholeWord || false,
+      }
+    );
+
+    console.log(
+      '✅ FileEditor.findAndReplace completed successfully, replacements:',
+      result.replacements
+    );
+
+    return {
+      success: true,
+      replacements: result.replacements,
+      message: `Made ${result.replacements} replacement(s) in ${path}`,
+    };
+  } catch (error) {
+    console.error('❌ Error in executeFindAndReplace:', error);
+    throw error;
+  }
 };
 
 export const executeInsertAfterPattern = async (
@@ -1487,31 +1664,55 @@ export const executeInsertAfterPattern = async (
   },
   updateStatus?: (status: string) => void
 ) => {
-  updateStatus?.(
-    `is inserting content after pattern "${pattern}" in ${path}...`
-  );
-
-  const result = await FileEditor.insertAfterPattern(
+  // Add comprehensive logging
+  console.log('🔧 executeInsertAfterPattern CALLED');
+  console.log('Parameters:', {
     path,
     repository,
     branch,
-    pattern,
-    content,
+    pattern: pattern.substring(0, 50) + '...',
+    content: content.substring(0, 100) + '...',
     message,
-    {
-      caseSensitive: caseSensitive !== false, // Default to true
-      wholeWord: wholeWord || false,
-    }
-  );
+    caseSensitive,
+    wholeWord,
+  });
 
-  return {
-    success: result.found,
-    found: result.found,
-    line: result.line,
-    message: result.found
-      ? `Inserted content after pattern "${pattern}" at line ${result.line} in ${path}`
-      : `Pattern "${pattern}" not found in ${path}`,
-  };
+  try {
+    updateStatus?.(
+      `is inserting content after pattern "${pattern}" in ${path}...`
+    );
+    console.log('📝 About to call FileEditor.insertAfterPattern');
+
+    const result = await FileEditor.insertAfterPattern(
+      path,
+      repository,
+      branch,
+      pattern,
+      content,
+      message,
+      {
+        caseSensitive: caseSensitive !== false, // Default to true
+        wholeWord: wholeWord || false,
+      }
+    );
+
+    console.log(
+      '✅ FileEditor.insertAfterPattern completed successfully, result:',
+      result
+    );
+
+    return {
+      success: result.found,
+      found: result.found,
+      line: result.line,
+      message: result.found
+        ? `Inserted content after pattern "${pattern}" at line ${result.line} in ${path}`
+        : `Pattern "${pattern}" not found in ${path}`,
+    };
+  } catch (error) {
+    console.error('❌ Error in executeInsertAfterPattern:', error);
+    throw error;
+  }
 };
 
 export const executeInsertBeforePattern = async (
@@ -1536,31 +1737,55 @@ export const executeInsertBeforePattern = async (
   },
   updateStatus?: (status: string) => void
 ) => {
-  updateStatus?.(
-    `is inserting content before pattern "${pattern}" in ${path}...`
-  );
-
-  const result = await FileEditor.insertBeforePattern(
+  // Add comprehensive logging
+  console.log('🔧 executeInsertBeforePattern CALLED');
+  console.log('Parameters:', {
     path,
     repository,
     branch,
-    pattern,
-    content,
+    pattern: pattern.substring(0, 50) + '...',
+    content: content.substring(0, 100) + '...',
     message,
-    {
-      caseSensitive: caseSensitive !== false, // Default to true
-      wholeWord: wholeWord || false,
-    }
-  );
+    caseSensitive,
+    wholeWord,
+  });
 
-  return {
-    success: result.found,
-    found: result.found,
-    line: result.line,
-    message: result.found
-      ? `Inserted content before pattern "${pattern}" at line ${result.line} in ${path}`
-      : `Pattern "${pattern}" not found in ${path}`,
-  };
+  try {
+    updateStatus?.(
+      `is inserting content before pattern "${pattern}" in ${path}...`
+    );
+    console.log('📝 About to call FileEditor.insertBeforePattern');
+
+    const result = await FileEditor.insertBeforePattern(
+      path,
+      repository,
+      branch,
+      pattern,
+      content,
+      message,
+      {
+        caseSensitive: caseSensitive !== false, // Default to true
+        wholeWord: wholeWord || false,
+      }
+    );
+
+    console.log(
+      '✅ FileEditor.insertBeforePattern completed successfully, result:',
+      result
+    );
+
+    return {
+      success: result.found,
+      found: result.found,
+      line: result.line,
+      message: result.found
+        ? `Inserted content before pattern "${pattern}" at line ${result.line} in ${path}`
+        : `Pattern "${pattern}" not found in ${path}`,
+    };
+  } catch (error) {
+    console.error('❌ Error in executeInsertBeforePattern:', error);
+    throw error;
+  }
 };
 
 export const executeApplyMultipleEdits = async (
@@ -1585,44 +1810,73 @@ export const executeApplyMultipleEdits = async (
   },
   updateStatus?: (status: string) => void
 ) => {
-  updateStatus?.(
-    `is applying ${operations.length} edit operations to ${path}...`
-  );
-
-  // Convert operations to the format expected by FileEditor
-  const editOperations = operations.map((op) => {
-    if (op.type === 'insert') {
-      return {
-        type: op.type,
-        line: op.line,
-        content: op.content,
-      };
-    } else if (op.type === 'replace' || op.type === 'delete') {
-      return {
-        type: op.type,
-        range: {
-          start: op.startLine!,
-          end: op.endLine!,
-        },
-        content: op.content,
-      };
-    }
-    throw new Error(`Invalid operation type: ${op.type}`);
-  });
-
-  await FileEditor.applyEdits({
+  // Add comprehensive logging
+  console.log('🔧 executeApplyMultipleEdits CALLED');
+  console.log('Parameters:', {
     path,
     repository,
     branch,
-    operations: editOperations,
+    operationsCount: operations.length,
+    operations: operations.map((op) => ({
+      type: op.type,
+      line: op.line,
+      startLine: op.startLine,
+      endLine: op.endLine,
+      content: op.content ? op.content.substring(0, 50) + '...' : undefined,
+    })),
     message,
   });
 
-  return {
-    success: true,
-    operationsApplied: operations.length,
-    message: `Applied ${operations.length} edit operations to ${path}`,
-  };
+  try {
+    updateStatus?.(
+      `is applying ${operations.length} edit operations to ${path}...`
+    );
+    console.log(
+      '📝 About to convert operations and call FileEditor.applyEdits'
+    );
+
+    // Convert operations to the format expected by FileEditor
+    const editOperations = operations.map((op) => {
+      if (op.type === 'insert') {
+        return {
+          type: op.type,
+          line: op.line,
+          content: op.content,
+        };
+      } else if (op.type === 'replace' || op.type === 'delete') {
+        return {
+          type: op.type,
+          range: {
+            start: op.startLine!,
+            end: op.endLine!,
+          },
+          content: op.content,
+        };
+      }
+      throw new Error(`Invalid operation type: ${op.type}`);
+    });
+
+    console.log('📝 Converted operations:', editOperations);
+
+    await FileEditor.applyEdits({
+      path,
+      repository,
+      branch,
+      operations: editOperations,
+      message,
+    });
+
+    console.log('✅ FileEditor.applyEdits completed successfully');
+
+    return {
+      success: true,
+      operationsApplied: operations.length,
+      message: `Applied ${operations.length} edit operations to ${path}`,
+    };
+  } catch (error) {
+    console.error('❌ Error in executeApplyMultipleEdits:', error);
+    throw error;
+  }
 };
 
 // Action control tools

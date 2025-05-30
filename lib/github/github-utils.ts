@@ -216,14 +216,26 @@ export const createOrUpdateFile = async (
   repository: string,
   branch: string
 ): Promise<void> => {
+  console.log('🔧 createOrUpdateFile CALLED');
+  console.log('Parameters:', {
+    path,
+    contentLength: content.length,
+    message,
+    repository,
+    branch,
+  });
+
   const [owner, repo] = repository.split('/');
 
   try {
+    console.log('🔑 Getting Octokit client for repository...');
     const octokit = await getOctokitForRepo(repository);
+    console.log('✅ Got Octokit client');
 
     // Check if file exists to get SHA
     let sha: string | undefined;
     try {
+      console.log('📖 Checking if file exists to get SHA...');
       const { data } = await octokit.repos.getContent({
         owner,
         repo,
@@ -233,11 +245,14 @@ export const createOrUpdateFile = async (
 
       if ('sha' in data) {
         sha = data.sha;
+        console.log('✅ File exists, got SHA:', sha.substring(0, 8) + '...');
       }
     } catch (error) {
       // File doesn't exist yet, which is fine
+      console.log("📝 File doesn't exist yet, will create new file");
     }
 
+    console.log('💾 Creating/updating file via GitHub API...');
     // Create or update file
     await octokit.repos.createOrUpdateFileContents({
       owner,
@@ -249,16 +264,17 @@ export const createOrUpdateFile = async (
       sha,
     });
 
-    console.log(`File ${path} updated in ${repository}/${branch}`);
+    console.log(`✅ File ${path} updated in ${repository}/${branch}`);
 
     // Clear cache for this file
     const cacheKey = `${repository}:${path}:${branch}`;
     fileCache.delete(cacheKey);
     const defaultCacheKey = `${repository}:${path}:default`;
     fileCache.delete(defaultCacheKey);
+    console.log('🗑️ Cleared file cache');
   } catch (error) {
     console.error(
-      `Error updating file ${path} in ${repository}/${branch}:`,
+      `❌ Error updating file ${path} in ${repository}/${branch}:`,
       error
     );
     throw error;

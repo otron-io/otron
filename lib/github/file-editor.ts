@@ -28,61 +28,110 @@ export class FileEditor {
    * Apply multiple edit operations to a file
    */
   static async applyEdits(edit: FileEdit): Promise<void> {
-    const { path, repository, branch, operations, message } = edit;
-
-    // Get current file content
-    const currentContent = await getFileContent(
-      path,
-      repository,
-      1,
-      10000,
-      branch
-    );
-
-    // Remove the line info header if present
-    const lines = currentContent.split('\n');
-    let actualLines = lines;
-
-    // Check if first line is a line info comment
-    if (lines[0]?.startsWith('// Lines ')) {
-      actualLines = lines.slice(1);
-    }
-
-    // Sort operations by line number (descending) to avoid line number shifts
-    const sortedOps = [...operations].sort((a, b) => {
-      const aLine = a.line || a.range?.start || 0;
-      const bLine = b.line || b.range?.start || 0;
-      return bLine - aLine;
+    console.log('🔧 FileEditor.applyEdits CALLED');
+    console.log('Edit parameters:', {
+      path: edit.path,
+      repository: edit.repository,
+      branch: edit.branch,
+      operationsCount: edit.operations.length,
+      message: edit.message,
     });
 
-    // Apply operations
-    for (const op of sortedOps) {
-      switch (op.type) {
-        case 'insert':
-          if (op.line !== undefined && op.content !== undefined) {
-            actualLines.splice(op.line - 1, 0, op.content);
-          }
-          break;
+    const { path, repository, branch, operations, message } = edit;
 
-        case 'replace':
-          if (op.range && op.content !== undefined) {
-            const deleteCount = op.range.end - op.range.start + 1;
-            actualLines.splice(op.range.start - 1, deleteCount, op.content);
-          }
-          break;
+    try {
+      console.log('📖 Getting current file content...');
+      // Get current file content
+      const currentContent = await getFileContent(
+        path,
+        repository,
+        1,
+        10000,
+        branch
+      );
+      console.log('✅ Got file content, length:', currentContent.length);
 
-        case 'delete':
-          if (op.range) {
-            const deleteCount = op.range.end - op.range.start + 1;
-            actualLines.splice(op.range.start - 1, deleteCount);
-          }
-          break;
+      // Remove the line info header if present
+      const lines = currentContent.split('\n');
+      let actualLines = lines;
+
+      // Check if first line is a line info comment
+      if (lines[0]?.startsWith('// Lines ')) {
+        actualLines = lines.slice(1);
+        console.log('📝 Removed line info header');
       }
-    }
 
-    // Update the file
-    const newContent = actualLines.join('\n');
-    await createOrUpdateFile(path, newContent, message, repository, branch);
+      console.log('📊 File has', actualLines.length, 'lines');
+
+      // Sort operations by line number (descending) to avoid line number shifts
+      const sortedOps = [...operations].sort((a, b) => {
+        const aLine = a.line || a.range?.start || 0;
+        const bLine = b.line || b.range?.start || 0;
+        return bLine - aLine;
+      });
+
+      console.log(
+        '🔄 Sorted operations:',
+        sortedOps.map((op) => ({
+          type: op.type,
+          line: op.line,
+          range: op.range,
+          contentLength: op.content?.length,
+        }))
+      );
+
+      // Apply operations
+      for (const [index, op] of sortedOps.entries()) {
+        console.log(`🔧 Applying operation ${index + 1}/${sortedOps.length}:`, {
+          type: op.type,
+          line: op.line,
+          range: op.range,
+        });
+
+        switch (op.type) {
+          case 'insert':
+            if (op.line !== undefined && op.content !== undefined) {
+              actualLines.splice(op.line - 1, 0, op.content);
+              console.log(`✅ Inserted at line ${op.line}`);
+            }
+            break;
+
+          case 'replace':
+            if (op.range && op.content !== undefined) {
+              const deleteCount = op.range.end - op.range.start + 1;
+              actualLines.splice(op.range.start - 1, deleteCount, op.content);
+              console.log(
+                `✅ Replaced lines ${op.range.start}-${op.range.end}`
+              );
+            }
+            break;
+
+          case 'delete':
+            if (op.range) {
+              const deleteCount = op.range.end - op.range.start + 1;
+              actualLines.splice(op.range.start - 1, deleteCount);
+              console.log(`✅ Deleted lines ${op.range.start}-${op.range.end}`);
+            }
+            break;
+        }
+      }
+
+      console.log(
+        '📝 All operations applied, new file has',
+        actualLines.length,
+        'lines'
+      );
+
+      // Update the file
+      const newContent = actualLines.join('\n');
+      console.log('💾 Updating file with new content...');
+
+      await createOrUpdateFile(path, newContent, message, repository, branch);
+      console.log('✅ File updated successfully');
+    } catch (error) {
+      console.error('❌ Error in FileEditor.applyEdits:', error);
+      throw error;
+    }
   }
 
   /**
@@ -96,6 +145,16 @@ export class FileEditor {
     content: string,
     message: string
   ): Promise<void> {
+    console.log('🔧 FileEditor.insertAtLine CALLED');
+    console.log('Parameters:', {
+      path,
+      repository,
+      branch,
+      line,
+      contentLength: content.length,
+      message,
+    });
+
     await this.applyEdits({
       path,
       repository,
@@ -117,6 +176,17 @@ export class FileEditor {
     content: string,
     message: string
   ): Promise<void> {
+    console.log('🔧 FileEditor.replaceLines CALLED');
+    console.log('Parameters:', {
+      path,
+      repository,
+      branch,
+      startLine,
+      endLine,
+      contentLength: content.length,
+      message,
+    });
+
     await this.applyEdits({
       path,
       repository,
@@ -143,6 +213,16 @@ export class FileEditor {
     endLine: number,
     message: string
   ): Promise<void> {
+    console.log('🔧 FileEditor.deleteLines CALLED');
+    console.log('Parameters:', {
+      path,
+      repository,
+      branch,
+      startLine,
+      endLine,
+      message,
+    });
+
     await this.applyEdits({
       path,
       repository,
@@ -167,32 +247,53 @@ export class FileEditor {
     content: string,
     message: string
   ): Promise<void> {
-    // Get current file to determine line count
-    const currentContent = await getFileContent(
-      path,
-      repository,
-      1,
-      10000,
-      branch
-    );
-    const lines = currentContent.split('\n');
-
-    // Remove line info header if present
-    let actualLines = lines;
-    if (lines[0]?.startsWith('// Lines ')) {
-      actualLines = lines.slice(1);
-    }
-
-    const lineCount = actualLines.length;
-
-    await this.insertAtLine(
+    console.log('🔧 FileEditor.appendToFile CALLED');
+    console.log('Parameters:', {
       path,
       repository,
       branch,
-      lineCount + 1,
-      content,
-      message
-    );
+      contentLength: content.length,
+      message,
+    });
+
+    try {
+      // Get current file to determine line count
+      console.log('📖 Getting current file to determine line count...');
+      const currentContent = await getFileContent(
+        path,
+        repository,
+        1,
+        10000,
+        branch
+      );
+      const lines = currentContent.split('\n');
+
+      // Remove line info header if present
+      let actualLines = lines;
+      if (lines[0]?.startsWith('// Lines ')) {
+        actualLines = lines.slice(1);
+      }
+
+      const lineCount = actualLines.length;
+      console.log(
+        '📊 Current file has',
+        lineCount,
+        'lines, appending at line',
+        lineCount + 1
+      );
+
+      await this.insertAtLine(
+        path,
+        repository,
+        branch,
+        lineCount + 1,
+        content,
+        message
+      );
+    } catch (error) {
+      console.error('❌ Error in FileEditor.appendToFile:', error);
+      throw error;
+    }
   }
 
   /**
@@ -205,6 +306,15 @@ export class FileEditor {
     content: string,
     message: string
   ): Promise<void> {
+    console.log('🔧 FileEditor.prependToFile CALLED');
+    console.log('Parameters:', {
+      path,
+      repository,
+      branch,
+      contentLength: content.length,
+      message,
+    });
+
     await this.insertAtLine(path, repository, branch, 1, content, message);
   }
 

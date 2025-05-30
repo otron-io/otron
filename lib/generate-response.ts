@@ -2,9 +2,11 @@ import { openai } from '@ai-sdk/openai';
 import { CoreMessage, generateText, tool } from 'ai';
 import { z } from 'zod';
 import {
-  executeGetWeather,
+  // General tools
   executeSearchWeb,
+  // Memory tools
   executeGetIssueContext,
+  // Linear tools
   executeUpdateIssueStatus,
   executeAddLabel,
   executeRemoveLabel,
@@ -13,6 +15,15 @@ import {
   executeAddIssueAttachment,
   executeUpdateIssuePriority,
   executeSetPointEstimate,
+  executeGetLinearTeams,
+  executeGetLinearProjects,
+  executeGetLinearInitiatives,
+  executeGetLinearUsers,
+  executeGetLinearRecentIssues,
+  executeSearchLinearIssues,
+  executeGetLinearWorkflowStates,
+  executeCreateLinearComment,
+  // GitHub tools
   executeGetFileContent,
   executeCreateBranch,
   executeCreateOrUpdateFile,
@@ -20,10 +31,27 @@ import {
   executeGetPullRequest,
   executeAddPullRequestComment,
   executeGetPullRequestFiles,
-  executeSearchCode,
   executeGetDirectoryStructure,
-  executeSearchEmbeddedCode,
   executeGetRepositoryStructure,
+  // GitHub file editing tools
+  executeInsertAtLine,
+  executeReplaceLines,
+  executeDeleteLines,
+  executeAppendToFile,
+  executePrependToFile,
+  executeFindAndReplace,
+  executeInsertAfterPattern,
+  executeInsertBeforePattern,
+  executeApplyMultipleEdits,
+  // GitHub branch management tools
+  executeResetBranchToHead,
+  // GitHub file reading tools
+  executeReadFileWithContext,
+  executeAnalyzeFileStructure,
+  executeReadRelatedFiles,
+  // Embedded repository tools
+  executeSearchEmbeddedCode,
+  // Slack tools
   executeSendSlackMessage,
   executeSendDirectMessage,
   executeSendChannelMessage,
@@ -37,7 +65,6 @@ import {
   executeGetSlackChannelInfo,
   executeJoinSlackChannel,
   executeSearchSlackMessages,
-  executeGetSlackPermalink,
   executeSetSlackStatus,
   executePinSlackMessage,
   executeUnpinSlackMessage,
@@ -46,29 +73,6 @@ import {
   executeSendRichDirectMessage,
   executeCreateFormattedSlackMessage,
   executeRespondToSlackInteraction,
-  executeGetLinearTeams,
-  executeGetLinearProjects,
-  executeGetLinearInitiatives,
-  executeGetLinearUsers,
-  executeGetLinearRecentIssues,
-  executeSearchLinearIssues,
-  executeGetLinearWorkflowStates,
-  executeCreateLinearComment,
-  executeInsertAtLine,
-  executeReplaceLines,
-  executeDeleteLines,
-  executeAppendToFile,
-  executePrependToFile,
-  executeFindAndReplace,
-  executeInsertAfterPattern,
-  executeInsertBeforePattern,
-  executeApplyMultipleEdits,
-  executeEndActions,
-  executeResetBranchToHead,
-  executeReadFileWithContext,
-  executeAnalyzeFileStructure,
-  executeReadRelatedFiles,
-  executeSearchCodeWithContext,
 } from './tool-executors.js';
 import { LinearClient } from '@linear/sdk';
 import { memoryManager } from './memory/memory-manager.js';
@@ -466,19 +470,8 @@ const generateResponseInternal = async (
     model: openai('o3'),
     system: systemPrompt,
     messages,
-    maxSteps: 10,
+    maxSteps: 50,
     tools: {
-      getWeather: tool({
-        description: 'Get the current weather at a location',
-        parameters: z.object({
-          latitude: z.number(),
-          longitude: z.number(),
-          city: z.string(),
-        }),
-        execute: createMemoryAwareToolExecutor('getWeather', (params: any) =>
-          executeGetWeather(params, updateStatus)
-        ),
-      }),
       searchWeb: tool({
         description: 'Use this to search the web for information',
         parameters: z.object({
@@ -660,17 +653,6 @@ const generateResponseInternal = async (
         execute: createMemoryAwareToolExecutor(
           'searchSlackMessages',
           (params: any) => executeSearchSlackMessages(params, updateStatus)
-        ),
-      }),
-      getSlackPermalink: tool({
-        description: 'Get a permalink for a Slack message',
-        parameters: z.object({
-          channel: z.string().describe('The channel ID'),
-          messageTs: z.string().describe('The message timestamp'),
-        }),
-        execute: createMemoryAwareToolExecutor(
-          'getSlackPermalink',
-          (params: any) => executeGetSlackPermalink(params, updateStatus)
         ),
       }),
       setSlackStatus: tool({
@@ -1505,29 +1487,6 @@ const generateResponseInternal = async (
           (params: any) => executeGetPullRequestFiles(params, updateStatus)
         ),
       }),
-      // searchCode: tool({
-      //   description:
-      //     'Search for code in a GitHub repository using basic GitHub search (limited results). For better semantic search, use searchEmbeddedCode if the repository is embedded.',
-      //   parameters: z.object({
-      //     query: z.string().describe('The search query'),
-      //     repository: z
-      //       .string()
-      //       .describe('The repository in format "owner/repo"'),
-      //     fileFilter: z
-      //       .string()
-      //       .describe(
-      //         'Optional file filter (e.g., "*.ts" for TypeScript files). Leave empty if not filtering by file type.'
-      //       ),
-      //     maxResults: z
-      //       .number()
-      //       .describe(
-      //         'Maximum number of results (default: 10). Use 10 if not specified.'
-      //       ),
-      //   }),
-      //   execute: createMemoryAwareToolExecutor('searchCode', (params: any) =>
-      //     executeSearchCode(params, updateStatus)
-      //   ),
-      // }),
       getDirectoryStructure: tool({
         description: 'Get the directory structure of a GitHub repository',
         parameters: z.object({
@@ -1943,25 +1902,6 @@ const generateResponseInternal = async (
           (params: any) => executeApplyMultipleEdits(params, updateStatus)
         ),
       }),
-      // Action control tools
-      endActions: tool({
-        description:
-          'Explicitly end all actions and stop processing. Use this when you have completed your task or need to stop for any reason.',
-        parameters: z.object({
-          reason: z
-            .string()
-            .describe(
-              'The reason for ending actions (e.g., "Task completed", "Waiting for user input", etc.)'
-            ),
-          summary: z.string().describe('A summary of what was accomplished'),
-          nextSteps: z
-            .string()
-            .describe('Optional next steps or recommendations for the user'),
-        }),
-        execute: createMemoryAwareToolExecutor('endActions', (params: any) =>
-          executeEndActions(params, updateStatus)
-        ),
-      }),
       resetBranchToHead: tool({
         description:
           'Reset a branch to the head of another branch (or the default branch). This will force update the branch to match the target branch exactly.',
@@ -2091,40 +2031,6 @@ const generateResponseInternal = async (
           (params: any) => executeReadRelatedFiles(params, updateStatus)
         ),
       }),
-      // searchCodeWithContext: tool({
-      //   description:
-      //     'Search for code patterns across files and provide context around each match. More powerful than basic search.',
-      //   parameters: z.object({
-      //     pattern: z.string().describe('The pattern to search for'),
-      //     repository: z
-      //       .string()
-      //       .describe('The repository in format "owner/repo"'),
-      //     filePattern: z
-      //       .string()
-      //       .describe(
-      //         'File pattern to limit search (e.g., "*.ts", "src/**"). Leave empty to search all files.'
-      //       ),
-      //     contextLines: z
-      //       .number()
-      //       .describe(
-      //         'Number of context lines around each match (default: 3). Use 3 if not specified.'
-      //       ),
-      //     maxResults: z
-      //       .number()
-      //       .describe(
-      //         'Maximum number of results (default: 10). Use 10 if not specified.'
-      //       ),
-      //     branch: z
-      //       .string()
-      //       .describe(
-      //         'Branch to search in (defaults to default branch). Leave empty to use default branch.'
-      //       ),
-      //   }),
-      //   execute: createMemoryAwareToolExecutor(
-      //     'searchCodeWithContext',
-      //     (params: any) => executeSearchCodeWithContext(params, updateStatus)
-      //   ),
-      // }),
     },
   });
 
