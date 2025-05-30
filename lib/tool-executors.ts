@@ -1117,7 +1117,7 @@ export const executeSearchEmbeddedCode = async (
     console.log('  INTERNAL_API_TOKEN exists:', !!env.INTERNAL_API_TOKEN);
 
     // Use absolute URL directly since relative URLs don't work in server environment
-    const baseUrl = env.VERCEL_URL || 'http://localhost:3000';
+    const baseUrl = process.env.OTRON_URL || 'http://localhost:3000';
     const absoluteUrl = baseUrl.startsWith('http')
       ? `${baseUrl}/api/code-search?${searchParams}`
       : `https://${baseUrl}/api/code-search?${searchParams}`;
