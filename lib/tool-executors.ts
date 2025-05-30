@@ -4,6 +4,7 @@ import * as githubUtils from './github/github-utils.js';
 import * as slackUtils from './slack/slack-utils.js';
 import { LinearClient } from '@linear/sdk';
 import { FileEditor } from './github/file-editor.js';
+import { advancedFileReader } from './github/file-reader.js';
 
 // General tool execution functions
 export const executeGetWeather = async (
@@ -1628,5 +1629,281 @@ export const executeResetBranchToHead = async (
         error instanceof Error ? error.message : String(error)
       }`,
     };
+  }
+};
+
+// Advanced file reading and analysis tools
+export const executeReadFileWithContext = async (
+  {
+    path,
+    repository,
+    targetLine,
+    searchPattern,
+    functionName,
+    className,
+    contextLines,
+    maxLines,
+    branch,
+  }: {
+    path: string;
+    repository: string;
+    targetLine: number;
+    searchPattern: string;
+    functionName: string;
+    className: string;
+    contextLines: number;
+    maxLines: number;
+    branch: string;
+  },
+  updateStatus?: (status: string) => void
+) => {
+  try {
+    updateStatus?.('Reading file with context...');
+
+    const options: any = {};
+
+    // Handle optional parameters by checking for empty strings and default values
+    if (targetLine > 0) options.targetLine = targetLine;
+    if (searchPattern && searchPattern.trim())
+      options.searchPattern = searchPattern;
+    if (functionName && functionName.trim())
+      options.functionName = functionName;
+    if (className && className.trim()) options.className = className;
+    if (contextLines > 0) options.contextLines = contextLines;
+    else options.contextLines = 5; // default
+    if (maxLines > 0) options.maxLines = maxLines;
+    else options.maxLines = 100; // default
+    if (branch && branch.trim()) options.branch = branch;
+
+    const result = await advancedFileReader.readFileWithContext(
+      path,
+      repository,
+      options
+    );
+
+    const summary = `File: ${path}
+Lines ${result.lineNumbers.start}-${result.lineNumbers.end} of ${
+      result.lineNumbers.total
+    }
+
+Context:
+${
+  result.beforeLines.length > 0
+    ? `Before:\n${result.beforeLines.join('\n')}\n`
+    : ''
+}
+Target:
+${result.targetLines.join('\n')}
+${
+  result.afterLines.length > 0
+    ? `\nAfter:\n${result.afterLines.join('\n')}`
+    : ''
+}`;
+
+    updateStatus?.('File context retrieved successfully');
+    return summary;
+  } catch (error) {
+    const errorMessage = `Failed to read file with context: ${
+      error instanceof Error ? error.message : String(error)
+    }`;
+    updateStatus?.(errorMessage);
+    return errorMessage;
+  }
+};
+
+export const executeAnalyzeFileStructure = async (
+  {
+    path,
+    repository,
+    branch,
+  }: {
+    path: string;
+    repository: string;
+    branch: string;
+  },
+  updateStatus?: (status: string) => void
+) => {
+  try {
+    updateStatus?.('Analyzing file structure...');
+
+    const branchToUse = branch && branch.trim() ? branch : undefined;
+    const analysis = await advancedFileReader.analyzeFileStructure(
+      path,
+      repository,
+      branchToUse
+    );
+
+    const summary = `File Analysis: ${analysis.path}
+Language: ${analysis.language}
+Total Lines: ${analysis.totalLines}
+
+Functions (${analysis.functions.length}):
+${analysis.functions
+  .map((f: any) => `  - ${f.name} (lines ${f.startLine}-${f.endLine})`)
+  .join('\n')}
+
+Classes (${analysis.classes.length}):
+${analysis.classes
+  .map((c: any) => `  - ${c.name} (lines ${c.startLine}-${c.endLine})`)
+  .join('\n')}
+
+Imports (${analysis.imports.length}):
+${analysis.imports
+  .map((i: any) => `  - ${i.module} (line ${i.line})`)
+  .join('\n')}
+
+Exports (${analysis.exports.length}):
+${analysis.exports
+  .map((e: any) => `  - ${e.name} (${e.type}, line ${e.line})`)
+  .join('\n')}
+
+Dependencies: ${analysis.dependencies.join(', ')}
+
+Complexity:
+  - Cyclomatic: ${analysis.complexity.cyclomaticComplexity}
+  - Cognitive: ${analysis.complexity.cognitiveComplexity}
+  - Maintainability: ${analysis.complexity.maintainabilityIndex}`;
+
+    updateStatus?.('File structure analyzed successfully');
+    return summary;
+  } catch (error) {
+    const errorMessage = `Failed to analyze file structure: ${
+      error instanceof Error ? error.message : String(error)
+    }`;
+    updateStatus?.(errorMessage);
+    return errorMessage;
+  }
+};
+
+export const executeReadRelatedFiles = async (
+  {
+    mainPath,
+    repository,
+    includeImports,
+    includeTests,
+    includeTypes,
+    maxFiles,
+    branch,
+  }: {
+    mainPath: string;
+    repository: string;
+    includeImports: boolean;
+    includeTests: boolean;
+    includeTypes: boolean;
+    maxFiles: number;
+    branch: string;
+  },
+  updateStatus?: (status: string) => void
+) => {
+  try {
+    updateStatus?.('Reading related files...');
+
+    const options: any = {
+      includeImports: includeImports,
+      includeTests: includeTests,
+      includeTypes: includeTypes,
+      maxFiles: maxFiles > 0 ? maxFiles : 10, // default to 10
+    };
+
+    if (branch && branch.trim()) options.branch = branch;
+
+    const relatedFiles = await advancedFileReader.readRelatedFiles(
+      mainPath,
+      repository,
+      options
+    );
+
+    const summary = `Related Files for ${mainPath}:
+
+${relatedFiles
+  .map(
+    (file: any) => `
+${file.relationship}: ${file.path}
+${file.content.substring(0, 200)}${file.content.length > 200 ? '...' : ''}
+`
+  )
+  .join('\n---\n')}
+
+Total related files found: ${relatedFiles.length}`;
+
+    updateStatus?.('Related files read successfully');
+    return summary;
+  } catch (error) {
+    const errorMessage = `Failed to read related files: ${
+      error instanceof Error ? error.message : String(error)
+    }`;
+    updateStatus?.(errorMessage);
+    return errorMessage;
+  }
+};
+
+export const executeSearchCodeWithContext = async (
+  {
+    pattern,
+    repository,
+    filePattern,
+    contextLines,
+    maxResults,
+    branch,
+  }: {
+    pattern: string;
+    repository: string;
+    filePattern: string;
+    contextLines: number;
+    maxResults: number;
+    branch: string;
+  },
+  updateStatus?: (status: string) => void
+) => {
+  try {
+    updateStatus?.('Searching code with context...');
+
+    const options: any = {
+      contextLines: contextLines > 0 ? contextLines : 3, // default to 3
+      maxResults: maxResults > 0 ? maxResults : 10, // default to 10
+    };
+
+    if (filePattern && filePattern.trim()) options.filePattern = filePattern;
+    if (branch && branch.trim()) options.branch = branch;
+
+    const searchResults = await advancedFileReader.searchWithContext(
+      pattern,
+      repository,
+      options
+    );
+
+    const summary = `Search Results for "${pattern}":
+
+${searchResults
+  .map(
+    (file: any) => `
+File: ${file.path}
+${file.matches
+  .map(
+    (match: any) => `
+  Line ${match.line}: ${match.content}
+  Context:
+${match.context.map((ctx: any) => `    ${ctx}`).join('\n')}
+`
+  )
+  .join('\n')}
+`
+  )
+  .join('\n---\n')}
+
+Total files with matches: ${searchResults.length}
+Total matches: ${searchResults.reduce(
+      (sum: number, file: any) => sum + file.matches.length,
+      0
+    )}`;
+
+    updateStatus?.('Code search completed successfully');
+    return summary;
+  } catch (error) {
+    const errorMessage = `Failed to search code with context: ${
+      error instanceof Error ? error.message : String(error)
+    }`;
+    updateStatus?.(errorMessage);
+    return errorMessage;
   }
 };

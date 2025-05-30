@@ -65,6 +65,10 @@ import {
   executeApplyMultipleEdits,
   executeEndActions,
   executeResetBranchToHead,
+  executeReadFileWithContext,
+  executeAnalyzeFileStructure,
+  executeReadRelatedFiles,
+  executeSearchCodeWithContext,
 } from './tool-executors.js';
 import { LinearClient } from '@linear/sdk';
 import { memoryManager } from './memory/memory-manager.js';
@@ -1967,6 +1971,150 @@ const generateResponseInternal = async (
         execute: createMemoryAwareToolExecutor(
           'resetBranchToHead',
           (params: any) => executeResetBranchToHead(params, updateStatus)
+        ),
+      }),
+      // Advanced file reading and analysis tools
+      readFileWithContext: tool({
+        description:
+          'Read a file with intelligent context around specific lines, patterns, functions, or classes. Much more powerful than basic file reading.',
+        parameters: z.object({
+          path: z.string().describe('The file path in the repository'),
+          repository: z
+            .string()
+            .describe('The repository in format "owner/repo"'),
+          targetLine: z
+            .number()
+            .describe(
+              'Specific line number to focus on (1-based). Use 0 if not targeting a specific line.'
+            ),
+          searchPattern: z
+            .string()
+            .describe(
+              'Pattern to search for and provide context around. Leave empty if not searching for a pattern.'
+            ),
+          functionName: z
+            .string()
+            .describe(
+              'Function name to find and provide context for. Leave empty if not searching for a function.'
+            ),
+          className: z
+            .string()
+            .describe(
+              'Class name to find and provide context for. Leave empty if not searching for a class.'
+            ),
+          contextLines: z
+            .number()
+            .describe(
+              'Number of context lines before and after (default: 5). Use 5 if not specified.'
+            ),
+          maxLines: z
+            .number()
+            .describe(
+              'Maximum number of lines to return (default: 100). Use 100 if not specified.'
+            ),
+          branch: z
+            .string()
+            .describe(
+              'Branch to read from (defaults to default branch). Leave empty to use default branch.'
+            ),
+        }),
+        execute: createMemoryAwareToolExecutor(
+          'readFileWithContext',
+          (params: any) => executeReadFileWithContext(params, updateStatus)
+        ),
+      }),
+      analyzeFileStructure: tool({
+        description:
+          'Analyze a file to extract its structure including functions, classes, imports, exports, and complexity metrics.',
+        parameters: z.object({
+          path: z.string().describe('The file path in the repository'),
+          repository: z
+            .string()
+            .describe('The repository in format "owner/repo"'),
+          branch: z
+            .string()
+            .describe(
+              'Branch to analyze (defaults to default branch). Leave empty to use default branch.'
+            ),
+        }),
+        execute: createMemoryAwareToolExecutor(
+          'analyzeFileStructure',
+          (params: any) => executeAnalyzeFileStructure(params, updateStatus)
+        ),
+      }),
+      readRelatedFiles: tool({
+        description:
+          'Read multiple related files for a given file, including imports, tests, and type definitions.',
+        parameters: z.object({
+          mainPath: z
+            .string()
+            .describe('The main file path to find related files for'),
+          repository: z
+            .string()
+            .describe('The repository in format "owner/repo"'),
+          includeImports: z
+            .boolean()
+            .describe(
+              'Include imported files (default: true). Use true if not specified.'
+            ),
+          includeTests: z
+            .boolean()
+            .describe(
+              'Include test files (default: true). Use true if not specified.'
+            ),
+          includeTypes: z
+            .boolean()
+            .describe(
+              'Include type definition files (default: true). Use true if not specified.'
+            ),
+          maxFiles: z
+            .number()
+            .describe(
+              'Maximum number of related files to read (default: 10). Use 10 if not specified.'
+            ),
+          branch: z
+            .string()
+            .describe(
+              'Branch to read from (defaults to default branch). Leave empty to use default branch.'
+            ),
+        }),
+        execute: createMemoryAwareToolExecutor(
+          'readRelatedFiles',
+          (params: any) => executeReadRelatedFiles(params, updateStatus)
+        ),
+      }),
+      searchCodeWithContext: tool({
+        description:
+          'Search for code patterns across files and provide context around each match. More powerful than basic search.',
+        parameters: z.object({
+          pattern: z.string().describe('The pattern to search for'),
+          repository: z
+            .string()
+            .describe('The repository in format "owner/repo"'),
+          filePattern: z
+            .string()
+            .describe(
+              'File pattern to limit search (e.g., "*.ts", "src/**"). Leave empty to search all files.'
+            ),
+          contextLines: z
+            .number()
+            .describe(
+              'Number of context lines around each match (default: 3). Use 3 if not specified.'
+            ),
+          maxResults: z
+            .number()
+            .describe(
+              'Maximum number of results (default: 10). Use 10 if not specified.'
+            ),
+          branch: z
+            .string()
+            .describe(
+              'Branch to search in (defaults to default branch). Leave empty to use default branch.'
+            ),
+        }),
+        execute: createMemoryAwareToolExecutor(
+          'searchCodeWithContext',
+          (params: any) => executeSearchCodeWithContext(params, updateStatus)
         ),
       }),
     },
