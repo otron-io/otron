@@ -129,7 +129,7 @@ export const generateResponse = async (
   while (attemptNumber <= MAX_RETRY_ATTEMPTS) {
     try {
       updateStatus?.(
-        `Attempt ${attemptNumber}/${MAX_RETRY_ATTEMPTS}: Generating response...`
+        `is thinking... (Attempt ${attemptNumber}/${MAX_RETRY_ATTEMPTS})`
       );
 
       // Generate response using the internal function
