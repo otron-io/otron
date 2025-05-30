@@ -1505,28 +1505,29 @@ const generateResponseInternal = async (
           (params: any) => executeGetPullRequestFiles(params, updateStatus)
         ),
       }),
-      searchCode: tool({
-        description: 'Search for code in a GitHub repository',
-        parameters: z.object({
-          query: z.string().describe('The search query'),
-          repository: z
-            .string()
-            .describe('The repository in format "owner/repo"'),
-          fileFilter: z
-            .string()
-            .describe(
-              'Optional file filter (e.g., "*.ts" for TypeScript files). Leave empty if not filtering by file type.'
-            ),
-          maxResults: z
-            .number()
-            .describe(
-              'Maximum number of results (default: 10). Use 10 if not specified.'
-            ),
-        }),
-        execute: createMemoryAwareToolExecutor('searchCode', (params: any) =>
-          executeSearchCode(params, updateStatus)
-        ),
-      }),
+      // searchCode: tool({
+      //   description:
+      //     'Search for code in a GitHub repository using basic GitHub search (limited results). For better semantic search, use searchEmbeddedCode if the repository is embedded.',
+      //   parameters: z.object({
+      //     query: z.string().describe('The search query'),
+      //     repository: z
+      //       .string()
+      //       .describe('The repository in format "owner/repo"'),
+      //     fileFilter: z
+      //       .string()
+      //       .describe(
+      //         'Optional file filter (e.g., "*.ts" for TypeScript files). Leave empty if not filtering by file type.'
+      //       ),
+      //     maxResults: z
+      //       .number()
+      //       .describe(
+      //         'Maximum number of results (default: 10). Use 10 if not specified.'
+      //       ),
+      //   }),
+      //   execute: createMemoryAwareToolExecutor('searchCode', (params: any) =>
+      //     executeSearchCode(params, updateStatus)
+      //   ),
+      // }),
       getDirectoryStructure: tool({
         description: 'Get the directory structure of a GitHub repository',
         parameters: z.object({
@@ -1546,7 +1547,7 @@ const generateResponseInternal = async (
       }),
       searchEmbeddedCode: tool({
         description:
-          'Search for embedded code in a repository. Only works for embedded repositories',
+          'Search for code in a repository using semantic vector search. This is the primary code search tool and works best for finding relevant code based on meaning and context.',
         parameters: z.object({
           query: z.string().describe('The search query'),
           repository: z
@@ -2090,40 +2091,40 @@ const generateResponseInternal = async (
           (params: any) => executeReadRelatedFiles(params, updateStatus)
         ),
       }),
-      searchCodeWithContext: tool({
-        description:
-          'Search for code patterns across files and provide context around each match. More powerful than basic search.',
-        parameters: z.object({
-          pattern: z.string().describe('The pattern to search for'),
-          repository: z
-            .string()
-            .describe('The repository in format "owner/repo"'),
-          filePattern: z
-            .string()
-            .describe(
-              'File pattern to limit search (e.g., "*.ts", "src/**"). Leave empty to search all files.'
-            ),
-          contextLines: z
-            .number()
-            .describe(
-              'Number of context lines around each match (default: 3). Use 3 if not specified.'
-            ),
-          maxResults: z
-            .number()
-            .describe(
-              'Maximum number of results (default: 10). Use 10 if not specified.'
-            ),
-          branch: z
-            .string()
-            .describe(
-              'Branch to search in (defaults to default branch). Leave empty to use default branch.'
-            ),
-        }),
-        execute: createMemoryAwareToolExecutor(
-          'searchCodeWithContext',
-          (params: any) => executeSearchCodeWithContext(params, updateStatus)
-        ),
-      }),
+      // searchCodeWithContext: tool({
+      //   description:
+      //     'Search for code patterns across files and provide context around each match. More powerful than basic search.',
+      //   parameters: z.object({
+      //     pattern: z.string().describe('The pattern to search for'),
+      //     repository: z
+      //       .string()
+      //       .describe('The repository in format "owner/repo"'),
+      //     filePattern: z
+      //       .string()
+      //       .describe(
+      //         'File pattern to limit search (e.g., "*.ts", "src/**"). Leave empty to search all files.'
+      //       ),
+      //     contextLines: z
+      //       .number()
+      //       .describe(
+      //         'Number of context lines around each match (default: 3). Use 3 if not specified.'
+      //       ),
+      //     maxResults: z
+      //       .number()
+      //       .describe(
+      //         'Maximum number of results (default: 10). Use 10 if not specified.'
+      //       ),
+      //     branch: z
+      //       .string()
+      //       .describe(
+      //         'Branch to search in (defaults to default branch). Leave empty to use default branch.'
+      //       ),
+      //   }),
+      //   execute: createMemoryAwareToolExecutor(
+      //     'searchCodeWithContext',
+      //     (params: any) => executeSearchCodeWithContext(params, updateStatus)
+      //   ),
+      // }),
     },
   });
 
