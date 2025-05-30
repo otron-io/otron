@@ -212,7 +212,7 @@ export class RepositoryManager {
   }
 
   /**
-   * Check if repository has embeddings
+   * Check if repository has embeddings (uses same logic as code-search API)
    */
   private async isRepositoryEmbedded(repository: string): Promise<boolean> {
     try {
@@ -220,12 +220,44 @@ export class RepositoryManager {
       const status = await this.redis.get(statusKey);
 
       if (!status) {
-        return false;
+        // Check if we have chunks anyway
+        const chunkKey = `embedding:repo:${repository}:chunks`;
+        const chunkCount = await this.redis.llen(chunkKey);
+        return chunkCount > 0;
       }
 
-      const parsedStatus =
-        typeof status === 'string' ? JSON.parse(status) : status;
-      return parsedStatus.status === 'completed';
+      try {
+        const parsedStatus =
+          typeof status === 'object' ? status : JSON.parse(status as string);
+
+        // Check for chunks to verify the repository actually has content
+        const chunkKey = `embedding:repo:${repository}:chunks`;
+        const chunkCount = await this.redis.llen(chunkKey);
+
+        // More lenient check - either status is completed or we have chunks
+        const isComplete = parsedStatus.status === 'completed';
+        const hasChunks = chunkCount > 0;
+
+        // If we have chunks, consider it embedded even if status isn't "completed"
+        return hasChunks;
+      } catch (parseError) {
+        console.error(
+          `Error parsing status for repository ${repository}:`,
+          parseError
+        );
+
+        // Check if we have chunks anyway
+        const chunkKey = `embedding:repo:${repository}:chunks`;
+        const chunkCount = await this.redis.llen(chunkKey);
+        if (chunkCount > 0) {
+          console.log(
+            `Status parsing failed but found ${chunkCount} chunks - considering repository as embedded`
+          );
+          return true;
+        }
+
+        return false;
+      }
     } catch (error) {
       console.error(
         `Error checking if repository ${repository} is embedded:`,
@@ -236,7 +268,7 @@ export class RepositoryManager {
   }
 
   /**
-   * Search using vector embeddings
+   * Search using vector embeddings (now delegates to code-search API)
    */
   private async searchWithVectorEmbeddings(
     query: string,
@@ -247,62 +279,56 @@ export class RepositoryManager {
     }
   ): Promise<SearchResult[]> {
     try {
-      // Get query embedding
-      const queryEmbedding = await this.getQueryEmbedding(query);
+      // Call the code-search API directly
+      const searchParams = new URLSearchParams({
+        repository,
+        query,
+        method: 'vector',
+        limit: (options.maxResults || 10).toString(),
+      });
 
-      // Get all chunks for the repository
-      const chunksKey = `embedding:repo:${repository}:chunks`;
-      const chunks = await this.redis.lrange(chunksKey, 0, -1);
-
-      if (!chunks || chunks.length === 0) {
-        console.log(`No chunks found for repository ${repository}`);
-        return [];
+      if (options.fileFilter) {
+        searchParams.append('fileFilter', options.fileFilter);
       }
 
-      const results: Array<SearchResult & { score: number }> = [];
+      // Make internal API call to code-search endpoint
+      const baseUrl = env.VERCEL_URL || 'http://localhost:3000';
 
-      // Calculate similarity for each chunk
-      for (const chunkData of chunks) {
-        try {
-          const chunk =
-            typeof chunkData === 'string' ? JSON.parse(chunkData) : chunkData;
-
-          if (!chunk.embedding) {
-            continue;
-          }
-
-          // Apply file filter if specified
-          if (options.fileFilter && !chunk.path.includes(options.fileFilter)) {
-            continue;
-          }
-
-          // Calculate cosine similarity
-          const similarity = this.cosineSimilarity(
-            queryEmbedding,
-            chunk.embedding
-          );
-
-          if (similarity > 0.1) {
-            // Minimum similarity threshold
-            results.push({
-              path: chunk.path,
-              content: chunk.content,
-              score: similarity,
-              metadata: chunk.metadata,
-            });
-          }
-        } catch (error) {
-          console.error('Error processing chunk:', error);
-          continue;
+      const response = await fetch(
+        `${baseUrl}/api/code-search?${searchParams}`,
+        {
+          method: 'GET',
+          headers: {
+            'X-Internal-Token': env.INTERNAL_API_TOKEN,
+            'Content-Type': 'application/json',
+          },
         }
+      );
+
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}));
+        throw new Error(
+          `Code search API error: ${response.status} - ${
+            errorData.error || response.statusText
+          }`
+        );
       }
 
-      // Sort by similarity score (descending)
-      results.sort((a, b) => b.score - a.score);
+      const data = await response.json();
 
-      // Limit results
-      const maxResults = options.maxResults || 10;
-      return results.slice(0, maxResults);
+      // Convert API response to our SearchResult format
+      return data.results.map((result: any) => ({
+        path: result.path,
+        content: result.content,
+        score: result.score,
+        metadata: {
+          startLine: result.startLine,
+          endLine: result.endLine,
+          language: result.language,
+          type: result.type,
+          name: result.name,
+        },
+      }));
     } catch (error) {
       console.error(
         `Error in vector search for repository ${repository}:`,
@@ -344,63 +370,5 @@ export class RepositoryManager {
       );
       throw error;
     }
-  }
-
-  /**
-   * Get embedding for a query using OpenAI API
-   */
-  private async getQueryEmbedding(query: string): Promise<number[]> {
-    try {
-      const response = await fetch('https://api.openai.com/v1/embeddings', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${env.OPENAI_API_KEY}`,
-        },
-        body: JSON.stringify({
-          model: 'text-embedding-3-small',
-          input: query,
-          dimensions: 256,
-        }),
-      });
-
-      if (!response.ok) {
-        throw new Error(`OpenAI API error: ${response.statusText}`);
-      }
-
-      const result = await response.json();
-      return result.data[0].embedding;
-    } catch (error) {
-      console.error('Error creating query embedding:', error);
-      throw error;
-    }
-  }
-
-  /**
-   * Calculate cosine similarity between two vectors
-   */
-  private cosineSimilarity(vecA: number[], vecB: number[]): number {
-    if (vecA.length !== vecB.length) {
-      throw new Error('Vectors must have the same length');
-    }
-
-    let dotProduct = 0;
-    let normA = 0;
-    let normB = 0;
-
-    for (let i = 0; i < vecA.length; i++) {
-      dotProduct += vecA[i] * vecB[i];
-      normA += vecA[i] * vecA[i];
-      normB += vecB[i] * vecB[i];
-    }
-
-    normA = Math.sqrt(normA);
-    normB = Math.sqrt(normB);
-
-    if (normA === 0 || normB === 0) {
-      return 0;
-    }
-
-    return dotProduct / (normA * normB);
   }
 }
