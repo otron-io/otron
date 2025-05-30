@@ -5,6 +5,7 @@ import * as slackUtils from './slack/slack-utils.js';
 import { LinearClient } from '@linear/sdk';
 import { FileEditor } from './github/file-editor.js';
 import { advancedFileReader } from './github/file-reader.js';
+import { env } from './env.js';
 
 // General tool execution functions
 export const executeGetWeather = async (
@@ -1085,22 +1086,44 @@ export const executeSearchEmbeddedCode = async (
   try {
     updateStatus?.('Searching embedded code...');
 
-    // Use the RepositoryManager to search embedded code
-    const { RepositoryManager } = await import(
-      './github/repository-manager.js'
-    );
-    const allowedRepos = process.env.ALLOWED_REPOSITORIES?.split(',') || [];
-    const repoManager = new RepositoryManager(allowedRepos);
-
-    const results = await repoManager.searchCode(query, repository, {
-      fileFilter,
-      maxResults,
+    // Use the same direct approach as embed-ui
+    const searchParams = new URLSearchParams({
+      repository,
+      query,
+      method: 'vector',
+      limit: (maxResults || 10).toString(),
     });
+
+    if (fileFilter) {
+      searchParams.append('fileFilter', fileFilter);
+    }
+
+    // Make internal API call to code-search endpoint
+    const baseUrl = env.VERCEL_URL || 'http://localhost:3000';
+
+    const response = await fetch(`${baseUrl}/api/code-search?${searchParams}`, {
+      method: 'GET',
+      headers: {
+        'X-Internal-Token': env.INTERNAL_API_TOKEN,
+        'Content-Type': 'application/json',
+      },
+    });
+
+    if (!response.ok) {
+      const errorData = await response.json().catch(() => ({}));
+      throw new Error(
+        `Code search API error: ${response.status} - ${
+          errorData.error || response.statusText
+        }`
+      );
+    }
+
+    const data = await response.json();
 
     return {
       success: true,
-      results: results,
-      message: `Found ${results.length} code matches for "${query}" in ${repository}`,
+      results: data.results,
+      message: `Found ${data.results.length} code matches for "${query}" in ${repository}`,
     };
   } catch (error) {
     console.error('Error searching embedded code:', error);
@@ -1118,14 +1141,11 @@ export const executeGetRepositoryStructure = async (
   try {
     updateStatus?.('Getting repository structure...');
 
-    // Use the RepositoryManager to get repository structure
-    const { RepositoryManager } = await import(
-      './github/repository-manager.js'
+    // Use the direct GitHub utils approach
+    const structure = await githubUtils.getDirectoryStructure(
+      repository,
+      path || ''
     );
-    const allowedRepos = process.env.ALLOWED_REPOSITORIES?.split(',') || [];
-    const repoManager = new RepositoryManager(allowedRepos);
-
-    const structure = await repoManager.getDirectoryStructure(repository, path);
 
     return {
       success: true,

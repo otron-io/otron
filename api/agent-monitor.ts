@@ -3,18 +3,12 @@ import { Redis } from '@upstash/redis';
 import { env } from '../lib/env.js';
 import { withInternalAccess } from '../lib/auth.js';
 import { LinearClient } from '@linear/sdk';
-import { RepositoryManager } from '../lib/github/repository-manager.js';
 
 // Initialize Redis client
 const redis = new Redis({
   url: env.KV_REST_API_URL,
   token: env.KV_REST_API_TOKEN,
 });
-
-// Initialize repository manager
-const repoManager = new RepositoryManager(
-  env.ALLOWED_REPOSITORIES?.split(',').map((r) => r.trim()) || []
-);
 
 // We'll initialize the LinearClient in the handler to handle errors better
 
