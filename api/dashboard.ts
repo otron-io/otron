@@ -38,6 +38,8 @@ async function handler(req: VercelRequest, res: VercelResponse) {
               <div class="flex space-x-4 ml-8">
                 <a href="/pages/agent" class="px-3 py-2 rounded-md hover:bg-indigo-700 font-medium">Agent Monitor</a>
                 <a href="/pages/embed" class="px-3 py-2 rounded-md hover:bg-indigo-700 font-medium">Repository Embeddings</a>
+
+                <a href="/linear-app" class="px-3 py-2 rounded-md hover:bg-indigo-700 font-medium">Install Linear App</a>
               </div>
         </div>
       </div>
