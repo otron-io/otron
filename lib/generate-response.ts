@@ -660,15 +660,10 @@ const generateResponseInternal = async (
   };
 
   const { text } = await generateText({
-    model: openai.responses('o3'),
+    model: openai.responses('gpt-4.1'),
     system: systemPrompt,
     messages,
     maxSteps: 25, // Reduced from 50 to force more focused execution
-    providerOptions: {
-      openai: {
-        reasoningEffort: 'high',
-      },
-    },
     tools: {
       // Disabled for now as they removed support for it
       // webSearch: openai.tools.webSearchPreview(),
