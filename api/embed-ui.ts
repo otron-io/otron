@@ -114,7 +114,7 @@ async function handler(req: VercelRequest, res: VercelResponse) {
       <div class="max-w-6xl mx-auto px-4 py-3">
         <div class="flex justify-between items-center">
           <div class="flex items-center space-x-8">
-            <a href="/api/dashboard" class="text-lg font-bold">Otron</a>
+            <a href="/pages/dashboard" class="text-lg font-bold">Otron</a>
             <div class="flex space-x-4">
               <a href="/pages/agent" class="px-3 py-2 rounded-md hover:bg-indigo-700 font-medium">Agent Monitor</a>
               <a href="/pages/embed" class="px-3 py-2 rounded-md bg-indigo-700 font-medium">Repository Embeddings</a>

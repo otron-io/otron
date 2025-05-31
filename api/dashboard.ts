@@ -68,6 +68,17 @@ async function handler(req: VercelRequest, res: VercelResponse) {
             <p class="text-gray-600">Manage and search code repository embeddings for AI analysis.</p>
           </div>
         </a>
+
+        <!-- Install Linear Card -->
+        <a href="/linear-app" class="block">
+          <div class="bg-white rounded-xl shadow-md p-6 card-hover">
+            <div class="flex items-center justify-center h-12 w-12 rounded-md bg-white mb-4">
+              <img src="https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcTxh-ehr-zuOE7bQqm2Whuom2ZZtAa-yhFzhg&s" alt="Linear Logo" class="h-8 w-8" />
+            </div>
+            <h2 class="text-2xl font-semibold text-gray-900 mb-2">Install Linear Agent</h2>
+            <p class="text-gray-600">Install Linear Agent to manage your issues.</p>
+          </div>
+        </a>
       </div>
 
       <div class="mt-16 bg-white rounded-lg shadow-md p-6">
