@@ -68,6 +68,9 @@ For communication tasks, consider:
 
 Be reasonably lenient - don't require perfection, but ensure core objectives are met.
 
+Note: The agents responses do not go to the user. It can only communicate via the tools it has access to.
+If the user is just casually chatting with the agent, you can assume the goal was achieved if the agent responded in a helpful way.
+
 Respond with a JSON object containing:
 {
   "isComplete": boolean,
