@@ -25,7 +25,7 @@ on:
       - '**/*.sh'
       - '**/*.pl'
       - '**/*.pm'
-  workflow_dispatch:
+      default: 'diff'
     inputs:
       mode:
         description: 'Embedding mode'
@@ -75,10 +75,9 @@ jobs:
             "${{ secrets.OTRON_URL }}/api/embed-repo" \
             -H "Content-Type: application/json" \
             -d '{
-              "repository": "${{ steps.repo.outputs.name }}",
-              "mode": "${{ steps.mode.outputs.mode }}"
-            }')
-
+          else
+            # For push events to main, always use diff mode
+            MODE="diff"
           HTTP_CODE=$(echo "$RESPONSE" | tail -n1)
           BODY=$(echo "$RESPONSE" | head -n -1)
 
