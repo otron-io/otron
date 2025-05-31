@@ -468,7 +468,7 @@ const generateResponseInternal = async (
   };
 
   const { text } = await generateText({
-    model: openai('o3'),
+    model: openai.responses('o3'),
     system: systemPrompt,
     messages,
     maxSteps: 50,
@@ -478,15 +478,7 @@ const generateResponseInternal = async (
       },
     },
     tools: {
-      searchWeb: tool({
-        description: 'Use this to search the web for information',
-        parameters: z.object({
-          query: z.string().describe('The search query'),
-        }),
-        execute: createMemoryAwareToolExecutor('searchWeb', (params: any) =>
-          executeSearchWeb(params, updateStatus)
-        ),
-      }),
+      webSearch: openai.tools.webSearchPreview(),
       // Slack tools
       sendSlackMessage: tool({
         description: 'Send a message to a Slack channel or thread',
