@@ -23,6 +23,8 @@ export const env = createEnv({
     ALLOWED_REPOSITORIES: z.string().optional(),
     ANTHROPIC_API_KEY: z.string().min(1),
 
+    // Slack
+    SLACK_USER_TOKEN: z.string().min(1),
     // Authentication
     ADMIN_PASSWORD: z.string().min(1).default('admin'),
     INTERNAL_API_TOKEN: z.string().min(1).default('internal-token'),
