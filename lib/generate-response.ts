@@ -478,7 +478,8 @@ const generateResponseInternal = async (
       },
     },
     tools: {
-      webSearch: openai.tools.webSearchPreview(),
+      // Disabled for now as they removed support for it
+      // webSearch: openai.tools.webSearchPreview(),
       // Slack tools
       sendSlackMessage: tool({
         description: 'Send a message to a Slack channel or thread',
