@@ -260,9 +260,30 @@ async function handler(req: VercelRequest, res: VercelResponse) {
                     </div>
                     <span class="text-xs">${repo.progress}%</span>
                   </td>
-                  <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">${
-                    repo.processedFiles || 0
-                  } / ${repo.totalFiles || 'unknown'}</td>
+                  <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                    ${(() => {
+                      // For completed repositories, show total processed files from the set
+                      if (repo.status === 'completed') {
+                        // If totalFiles is much smaller than processedFiles, this was likely a diff operation
+                        if (
+                          repo.totalFiles &&
+                          repo.processedFiles &&
+                          repo.totalFiles < repo.processedFiles
+                        ) {
+                          return `${repo.processedFiles} total (${repo.totalFiles} updated)`;
+                        } else {
+                          return `${repo.processedFiles || 0} / ${
+                            repo.totalFiles || 'unknown'
+                          }`;
+                        }
+                      } else {
+                        // For in-progress, show current operation progress
+                        return `${repo.processedFiles || 0} / ${
+                          repo.totalFiles || 'unknown'
+                        }`;
+                      }
+                    })()}
+                  </td>
                   <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">${new Date(
                     repo.lastProcessedAt
                   ).toLocaleString()}</td>
