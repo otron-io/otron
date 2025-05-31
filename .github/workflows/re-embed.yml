@@ -1,0 +1,102 @@
+name: Re-embed Repository
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - '**/*.ts'
+      - '**/*.tsx'
+      - '**/*.js'
+      - '**/*.jsx'
+      - '**/*.vue'
+      - '**/*.py'
+      - '**/*.rb'
+      - '**/*.java'
+      - '**/*.php'
+      - '**/*.go'
+      - '**/*.rs'
+      - '**/*.c'
+      - '**/*.cpp'
+      - '**/*.cs'
+      - '**/*.swift'
+      - '**/*.kt'
+      - '**/*.scala'
+      - '**/*.sh'
+      - '**/*.pl'
+      - '**/*.pm'
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: 'Embedding mode'
+        required: false
+        default: 'full'
+        type: choice
+        options:
+          - diff
+          - full
+
+jobs:
+  re-embed:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0 # Fetch full history for diff comparison
+
+      - name: Get repository name
+        id: repo
+        run: |
+          REPO_NAME="${{ github.repository }}"
+          echo "name=${REPO_NAME}" >> $GITHUB_OUTPUT
+          echo "Repository: ${REPO_NAME}"
+
+      - name: Determine embedding mode
+        id: mode
+        run: |
+          if [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
+            MODE="${{ github.event.inputs.mode }}"
+          else
+            # For push events to main, always use full mode
+            MODE="full"
+          fi
+          echo "mode=${MODE}" >> $GITHUB_OUTPUT
+          echo "Embedding mode: ${MODE}"
+
+      - name: Trigger repository re-embedding
+        run: |
+          echo "Triggering re-embedding for repository: ${{ steps.repo.outputs.name }}"
+          echo "Mode: ${{ steps.mode.outputs.mode }}"
+
+          RESPONSE=$(curl -s -w "\n%{http_code}" -X POST \
+            "${{ secrets.OTRON_URL }}/api/embed-repo" \
+            -H "Content-Type: application/json" \
+            -d '{
+              "repository": "${{ steps.repo.outputs.name }}",
+              "mode": "${{ steps.mode.outputs.mode }}"
+            }')
+
+          HTTP_CODE=$(echo "$RESPONSE" | tail -n1)
+          BODY=$(echo "$RESPONSE" | head -n -1)
+
+          echo "HTTP Status: $HTTP_CODE"
+          echo "Response: $BODY"
+
+          if [[ $HTTP_CODE -ge 200 && $HTTP_CODE -lt 300 ]]; then
+            echo "✅ Re-embedding triggered successfully"
+          else
+            echo "❌ Failed to trigger re-embedding"
+            echo "Response body: $BODY"
+            exit 1
+          fi
+
+      - name: Monitor embedding progress (optional)
+        if: success()
+        run: |
+          echo "Re-embedding has been triggered. You can monitor progress at:"
+          echo "${{ secrets.OTRON_URL }}/pages/embed"
+          echo ""
+          echo "Note: The embedding process runs asynchronously and may take several minutes to complete."

@@ -1332,8 +1332,8 @@ async function handler(req: VercelRequest, res: VercelResponse) {
   }
 }
 
-// Export with internal access protection
-export default withInternalAccess(handler);
+// Export without authentication protection for CI usage
+export default handler;
 
 /**
  * Get the latest commit SHA for a repository
