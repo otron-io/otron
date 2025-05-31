@@ -322,12 +322,64 @@ Respond with a JSON object containing:
       adjustedConfidence += 0.15;
     }
 
+    // Boost confidence if agent used execution planning tools (shows good strategy)
+    const planningTools = ['createExecutionPlan', 'checkExecutionProgress'];
+    const usedPlanningTools = executionSummary.toolsUsed.some((tool) =>
+      planningTools.includes(tool)
+    );
+    if (usedPlanningTools) {
+      adjustedConfidence += 0.1;
+    }
+
+    // Boost confidence if agent shows good action-to-analysis ratio
+    const searchTools = executionSummary.toolsUsed.filter((tool) =>
+      [
+        'searchEmbeddedCode',
+        'searchLinearIssues',
+        'searchSlackMessages',
+      ].includes(tool)
+    ).length;
+    const actionTools = executionSummary.toolsUsed.filter((tool) =>
+      [
+        'createOrUpdateFile',
+        'insertAtLine',
+        'replaceLines',
+        'deleteLines',
+        'appendToFile',
+        'prependToFile',
+        'findAndReplace',
+        'insertAfterPattern',
+        'insertBeforePattern',
+        'applyMultipleEdits',
+        'createBranch',
+        'createPullRequest',
+        'updateIssueStatus',
+        'createLinearComment',
+        'sendSlackMessage',
+        'sendChannelMessage',
+        'sendDirectMessage',
+      ].includes(tool)
+    ).length;
+
+    if (actionTools > 0 && searchTools <= 5) {
+      adjustedConfidence += 0.05; // Reward balanced execution
+    }
+
     // Reduce confidence if no tools were used when they were clearly needed
     if (
       requestAnalysis.requiresTools &&
       executionSummary.toolsUsed.length === 0
     ) {
       adjustedConfidence -= 0.2;
+    }
+
+    // Reduce confidence if agent used too many search tools without action (analysis paralysis)
+    if (
+      searchTools > 6 &&
+      actionTools === 0 &&
+      requestAnalysis.type === 'code_development'
+    ) {
+      adjustedConfidence -= 0.15;
     }
 
     return Math.min(Math.max(adjustedConfidence, 0), 1);

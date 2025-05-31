@@ -237,6 +237,21 @@ const generateResponseInternal = async (
     endedExplicitly: false,
   };
 
+  // Add execution strategy tracking
+  const executionStrategy = {
+    phase: 'planning' as 'planning' | 'gathering' | 'acting' | 'completing',
+    toolUsageCounts: new Map<string, number>(),
+    searchOperations: 0,
+    maxSearchOperations: 5, // Limit search operations
+    readOperations: 0,
+    maxReadOperations: 8, // Limit file reading operations
+    analysisOperations: 0,
+    maxAnalysisOperations: 3, // Limit analysis operations
+    actionOperations: 0,
+    hasStartedActions: false,
+    shouldForceAction: false,
+  };
+
   // Extract context ID for memory operations
   const contextId = extractIssueIdFromContext(messages, slackContext);
 
@@ -287,7 +302,7 @@ const generateResponseInternal = async (
     console.error('Error retrieving memory context:', error);
   }
 
-  // Create enhanced system prompt with memory context
+  // Create enhanced system prompt with memory context and execution strategy
   const systemPrompt = `You are Otron. An omnipresent AI agent. You exist across Slack, Linear, and GitHub.
     - You keep your responses concise and to the point, but friendly and engaging while being as helpful as possible.
     - You can be notified to take action via all 3 platforms, and can take actions on all 3 platforms.
@@ -300,6 +315,44 @@ const generateResponseInternal = async (
     - You can choose to respond on the same platform, a different platform, multiple platforms, or not respond at all.
     - Use the appropriate tools (sendSlackMessage, createIssue, addPullRequestComment, etc.) to take any actions you deem necessary.
     - While you are in charge of where and how to respond, you must still provide feedback to show you are aware. This can be as simple as a reaction to acknowledge the message. For example, if a user asks you to send a message elsewhere, you can send it and just respond to the original message with a reaction to acknowledge the message.
+
+    EXECUTION STRATEGY - CRITICAL FOR EFFICIENCY:
+    
+    **PHASE-BASED EXECUTION:**
+    1. **PLANNING (First 1-2 steps):** Understand the request and create a plan
+    2. **GATHERING (Next 3-5 steps):** Collect only essential information
+    3. **ACTING (Remaining steps):** Execute the plan and make changes
+    4. **COMPLETING:** Finalize and communicate results
+    
+    **TOOL USAGE LIMITS - STRICTLY ENFORCE:**
+    - Search operations (searchEmbeddedCode, searchLinearIssues): MAX 5 total
+    - File reading operations (getFileContent, readFileWithContext): MAX 8 total
+    - Analysis operations (analyzeFileStructure, getRepositoryStructure): MAX 3 total
+    - Once you hit these limits, you MUST move to action phase
+    
+    **ANTI-ANALYSIS PARALYSIS RULES:**
+    1. **No endless searching** - After 3 search operations, start planning actions
+    2. **No perfect information** - Work with what you have, don't seek 100% understanding
+    3. **Bias toward action** - When in doubt, make a reasonable change and iterate
+    4. **Time-box exploration** - Spend max 30% of your steps on information gathering
+    5. **Force action mode** - If you've used >60% of steps without taking action, immediately switch to action mode
+    
+    **EXECUTION PRIORITIES:**
+    - For coding tasks: Search → Read key files → Make changes → Test/Verify
+    - For issue management: Get issue context → Take action → Update status → Comment
+    - For communication: Understand request → Send appropriate messages → Confirm delivery
+    
+    **WHEN TO STOP SEARCHING:**
+    - You have enough info to make a reasonable attempt
+    - You've found the relevant files/code sections
+    - You understand the problem and potential solution
+    - You've hit the search/read limits
+    
+    **DECISION MAKING:**
+    - Make decisions with incomplete information rather than searching forever
+    - Use your best judgment based on available context
+    - Prefer making a change and iterating over endless analysis
+    - Remember: Done is better than perfect
 
     MEMORY & CONTEXT AWARENESS:
     - You have access to previous conversations, actions, and related context through your persistent memory system.
@@ -415,9 +468,10 @@ const generateResponseInternal = async (
     - Remember: You control all communication - use your tools to respond where and how you see fit.
     - Choose rich Block Kit messages when the content benefits from visual structure, formatting, or interactivity.
     - Use your memory context to provide more informed and continuous conversations.
-    - ALWAYS use targeted file editing tools for precise code changes to avoid unintentional deletions.`;
+    - ALWAYS use targeted file editing tools for precise code changes to avoid unintentional deletions.
+    - FOLLOW THE EXECUTION STRATEGY - Don't get stuck in analysis loops!`;
 
-  // Create a wrapper for tool execution that tracks usage in memory
+  // Create a wrapper for tool execution that tracks usage and enforces limits
   const createMemoryAwareToolExecutor = (
     toolName: string,
     originalExecutor: Function
@@ -427,10 +481,141 @@ const generateResponseInternal = async (
       let success = false;
       let response = '';
 
+      // Track tool usage counts
+      const currentCount = executionStrategy.toolUsageCounts.get(toolName) || 0;
+      executionStrategy.toolUsageCounts.set(toolName, currentCount + 1);
+
+      // Categorize tool types and enforce limits
+      const searchTools = [
+        'searchEmbeddedCode',
+        'searchLinearIssues',
+        'searchSlackMessages',
+      ];
+      const readTools = [
+        'getFileContent',
+        'readFileWithContext',
+        'readRelatedFiles',
+        'getIssueContext',
+      ];
+      const actionTools = [
+        'createOrUpdateFile',
+        'insertAtLine',
+        'replaceLines',
+        'deleteLines',
+        'appendToFile',
+        'prependToFile',
+        'findAndReplace',
+        'insertAfterPattern',
+        'insertBeforePattern',
+        'applyMultipleEdits',
+        'createBranch',
+        'createPullRequest',
+        'updateIssueStatus',
+        'createLinearComment',
+        'sendSlackMessage',
+        'sendChannelMessage',
+        'sendDirectMessage',
+      ];
+      const analysisTools = [
+        'analyzeFileStructure',
+        'getRepositoryStructure',
+        'getDirectoryStructure',
+      ];
+
+      // Check limits and update counters
+      if (searchTools.includes(toolName)) {
+        executionStrategy.searchOperations++;
+        if (
+          executionStrategy.searchOperations >
+          executionStrategy.maxSearchOperations
+        ) {
+          return `⚠️ Search limit reached (${executionStrategy.maxSearchOperations}). You must now focus on taking action with the information you have. No more searching allowed.`;
+        }
+      }
+
+      if (readTools.includes(toolName)) {
+        executionStrategy.readOperations++;
+        if (
+          executionStrategy.readOperations > executionStrategy.maxReadOperations
+        ) {
+          return `⚠️ File reading limit reached (${executionStrategy.maxReadOperations}). You must now take action with the information you have. No more file reading allowed.`;
+        }
+      }
+
+      if (analysisTools.includes(toolName)) {
+        executionStrategy.analysisOperations++;
+        if (
+          executionStrategy.analysisOperations >
+          executionStrategy.maxAnalysisOperations
+        ) {
+          return `⚠️ Analysis limit reached (${executionStrategy.maxAnalysisOperations}). You must now take action with the information you have. No more analysis allowed.`;
+        }
+      }
+
+      if (actionTools.includes(toolName)) {
+        executionStrategy.actionOperations++;
+        executionStrategy.hasStartedActions = true;
+        executionStrategy.phase = 'acting';
+      }
+
+      // Update execution phase based on tool usage
+      if (
+        executionStrategy.searchOperations +
+          executionStrategy.readOperations +
+          executionStrategy.analysisOperations >=
+          3 &&
+        executionStrategy.phase === 'planning'
+      ) {
+        executionStrategy.phase = 'gathering';
+      }
+
+      if (
+        executionStrategy.searchOperations +
+          executionStrategy.readOperations +
+          executionStrategy.analysisOperations >=
+          6 &&
+        !executionStrategy.hasStartedActions
+      ) {
+        executionStrategy.shouldForceAction = true;
+      }
+
       try {
         const result = await originalExecutor(...args);
         success = true;
         response = typeof result === 'string' ? result : JSON.stringify(result);
+
+        // Add execution guidance to response for information gathering tools
+        if (
+          (searchTools.includes(toolName) ||
+            readTools.includes(toolName) ||
+            analysisTools.includes(toolName)) &&
+          !executionStrategy.hasStartedActions
+        ) {
+          const remainingSearches = Math.max(
+            0,
+            executionStrategy.maxSearchOperations -
+              executionStrategy.searchOperations
+          );
+          const remainingReads = Math.max(
+            0,
+            executionStrategy.maxReadOperations -
+              executionStrategy.readOperations
+          );
+          const remainingAnalysis = Math.max(
+            0,
+            executionStrategy.maxAnalysisOperations -
+              executionStrategy.analysisOperations
+          );
+
+          if (
+            remainingSearches <= 2 ||
+            remainingReads <= 3 ||
+            remainingAnalysis <= 1 ||
+            executionStrategy.shouldForceAction
+          ) {
+            response += `\n\n🚨 EXECUTION GUIDANCE: You're approaching your information gathering limits (${remainingSearches} searches, ${remainingReads} reads, ${remainingAnalysis} analysis remaining). Start planning your actions now. Don't search for perfect information - work with what you have!`;
+          }
+        }
 
         // Track tool usage for goal evaluation
         executionTracker.toolsUsed.add(toolName);
@@ -471,7 +656,7 @@ const generateResponseInternal = async (
     model: openai.responses('o3'),
     system: systemPrompt,
     messages,
-    maxSteps: 50,
+    maxSteps: 25, // Reduced from 50 to force more focused execution
     providerOptions: {
       openai: {
         reasoningEffort: 'high',
@@ -480,6 +665,117 @@ const generateResponseInternal = async (
     tools: {
       // Disabled for now as they removed support for it
       // webSearch: openai.tools.webSearchPreview(),
+
+      // Execution Strategy Tools
+      createExecutionPlan: tool({
+        description:
+          'Create an execution plan for the current task. Use this FIRST to avoid analysis paralysis and stay focused.',
+        parameters: z.object({
+          taskSummary: z
+            .string()
+            .describe('Brief summary of what needs to be accomplished'),
+          approach: z
+            .string()
+            .describe('High-level approach to solve the task'),
+          keySteps: z
+            .array(z.string())
+            .describe('3-5 key steps to complete the task'),
+          informationNeeded: z
+            .array(z.string())
+            .describe('Specific information you need to gather (be minimal)'),
+          expectedActions: z
+            .array(z.string())
+            .describe('Specific actions you plan to take'),
+          successCriteria: z
+            .string()
+            .describe('How you will know the task is complete'),
+        }),
+        execute: createMemoryAwareToolExecutor(
+          'createExecutionPlan',
+          async (params: any) => {
+            executionStrategy.phase = 'gathering';
+            return `📋 **Execution Plan Created**
+
+**Task:** ${params.taskSummary}
+
+**Approach:** ${params.approach}
+
+**Key Steps:**
+${params.keySteps
+  .map((step: string, i: number) => `${i + 1}. ${step}`)
+  .join('\n')}
+
+**Information Needed:**
+${params.informationNeeded.map((info: string) => `• ${info}`).join('\n')}
+
+**Planned Actions:**
+${params.expectedActions.map((action: string) => `• ${action}`).join('\n')}
+
+**Success Criteria:** ${params.successCriteria}
+
+🎯 **Next:** Start gathering the specific information identified above, then move to action phase.`;
+          }
+        ),
+      }),
+
+      checkExecutionProgress: tool({
+        description:
+          'Check your execution progress and get guidance on next steps. Use when feeling stuck or unsure.',
+        parameters: z.object({
+          currentPhase: z
+            .enum(['planning', 'gathering', 'acting', 'completing'])
+            .describe('What phase you think you are in'),
+          whatYouKnow: z
+            .string()
+            .describe('Summary of information you have gathered'),
+          whatYouNeed: z.string().describe('What you still need to know or do'),
+          blockers: z
+            .string()
+            .describe('Any blockers or uncertainties you have'),
+        }),
+        execute: createMemoryAwareToolExecutor(
+          'checkExecutionProgress',
+          async (params: any) => {
+            const totalOperations =
+              executionStrategy.searchOperations +
+              executionStrategy.readOperations +
+              executionStrategy.analysisOperations;
+            const actionRatio =
+              executionStrategy.actionOperations /
+              (totalOperations + executionStrategy.actionOperations);
+
+            let guidance = `📊 **Execution Progress Check**
+
+**Current Status:**
+- Search operations: ${executionStrategy.searchOperations}/${executionStrategy.maxSearchOperations}
+- Read operations: ${executionStrategy.readOperations}/${executionStrategy.maxReadOperations}
+- Analysis operations: ${executionStrategy.analysisOperations}/${executionStrategy.maxAnalysisOperations}
+- Action operations: ${executionStrategy.actionOperations}
+- Phase: ${executionStrategy.phase}
+
+**What you know:** ${params.whatYouKnow}
+
+**What you need:** ${params.whatYouNeed}
+
+**Blockers:** ${params.blockers}
+
+**Guidance:**`;
+
+            if (totalOperations >= 6 && !executionStrategy.hasStartedActions) {
+              guidance += `\n🚨 **CRITICAL:** You've gathered significant information but haven't started taking actions. STOP gathering and START acting now!`;
+            } else if (totalOperations >= 4 && actionRatio < 0.3) {
+              guidance += `\n⚠️ **WARNING:** You're spending too much time gathering information. Start taking actions with what you have.`;
+            } else if (executionStrategy.hasStartedActions) {
+              guidance += `\n✅ **GOOD:** You're in action mode. Keep making progress and iterate as needed.`;
+            } else {
+              guidance += `\n📝 **CONTINUE:** You're on track. Gather the specific information you need, then move to action.`;
+            }
+
+            return guidance;
+          }
+        ),
+      }),
+
       // Slack tools
       sendSlackMessage: tool({
         description: 'Send a message to a Slack channel or thread',
