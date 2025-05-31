@@ -30,7 +30,7 @@ on:
       mode:
         description: 'Embedding mode'
         required: false
-        default: 'full'
+        default: 'diff'
         type: choice
         options:
           - diff
@@ -60,8 +60,8 @@ jobs:
           if [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
             MODE="${{ github.event.inputs.mode }}"
           else
-            # For push events to main, always use full mode
-            MODE="full"
+            # For push events to main, use diff mode by default for efficiency
+            MODE="diff"
           fi
           echo "mode=${MODE}" >> $GITHUB_OUTPUT
           echo "Embedding mode: ${MODE}"
@@ -87,6 +87,13 @@ jobs:
 
           if [[ $HTTP_CODE -ge 200 && $HTTP_CODE -lt 300 ]]; then
             echo "✅ Re-embedding triggered successfully"
+            
+            # Log the mode being used for clarity
+            if [[ "${{ steps.mode.outputs.mode }}" == "diff" ]]; then
+              echo "🔄 Using diff-based embedding - only changed files will be processed"
+            else
+              echo "🔄 Using full embedding - all files will be processed"
+            fi
           else
             echo "❌ Failed to trigger re-embedding"
             echo "Response body: $BODY"
@@ -99,4 +106,10 @@ jobs:
           echo "Re-embedding has been triggered. You can monitor progress at:"
           echo "${{ secrets.OTRON_URL }}/pages/embed"
           echo ""
-          echo "Note: The embedding process runs asynchronously and may take several minutes to complete."
+          if [[ "${{ steps.mode.outputs.mode }}" == "diff" ]]; then
+            echo "Note: Diff-based embedding will only process files that have changed since the last embedding."
+            echo "If this is the first embedding for this repository, it will automatically fall back to full embedding."
+          else
+            echo "Note: Full embedding will process all files in the repository."
+          fi
+          echo "The embedding process runs asynchronously and may take several minutes to complete."

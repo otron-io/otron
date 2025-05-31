@@ -41,6 +41,7 @@ import {
   executeInsertAfterPattern,
   executeInsertBeforePattern,
   executeApplyMultipleEdits,
+  executeDeleteFile,
   // GitHub branch management tools
   executeResetBranchToHead,
   // GitHub file reading tools
@@ -2195,6 +2196,23 @@ ${params.expectedActions.map((action: string) => `• ${action}`).join('\n')}
         execute: createMemoryAwareToolExecutor(
           'applyMultipleEdits',
           (params: any) => executeApplyMultipleEdits(params, updateStatus)
+        ),
+      }),
+      deleteFile: tool({
+        description:
+          'Delete a file from the repository. Use this when you need to remove files that are no longer needed.',
+        parameters: z.object({
+          path: z
+            .string()
+            .describe('The file path in the repository to delete'),
+          repository: z
+            .string()
+            .describe('The repository in format "owner/repo"'),
+          branch: z.string().describe('The branch to delete the file from'),
+          message: z.string().describe('Commit message for the deletion'),
+        }),
+        execute: createMemoryAwareToolExecutor('deleteFile', (params: any) =>
+          executeDeleteFile(params, updateStatus)
         ),
       }),
       resetBranchToHead: tool({

@@ -711,6 +711,29 @@ export const executeCreateOrUpdateFile = async (
   };
 };
 
+export const executeDeleteFile = async (
+  {
+    path,
+    message,
+    repository,
+    branch,
+  }: {
+    path: string;
+    message: string;
+    repository: string;
+    branch: string;
+  },
+  updateStatus?: (status: string) => void
+) => {
+  updateStatus?.(`is deleting file ${path} from ${repository}/${branch}...`);
+
+  await githubUtils.deleteFile(path, message, repository, branch);
+  return {
+    success: true,
+    message: `Deleted file ${path} from ${repository}/${branch}`,
+  };
+};
+
 export const executeCreatePullRequest = async (
   {
     title,

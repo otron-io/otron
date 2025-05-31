@@ -282,6 +282,74 @@ export const createOrUpdateFile = async (
 };
 
 /**
+ * Delete a file from the repository
+ */
+export const deleteFile = async (
+  path: string,
+  message: string,
+  repository: string,
+  branch: string
+): Promise<void> => {
+  console.log('🗑️ deleteFile CALLED');
+  console.log('Parameters:', {
+    path,
+    message,
+    repository,
+    branch,
+  });
+
+  const [owner, repo] = repository.split('/');
+
+  try {
+    console.log('🔑 Getting Octokit client for repository...');
+    const octokit = await getOctokitForRepo(repository);
+    console.log('✅ Got Octokit client');
+
+    // Get file SHA (required for deletion)
+    console.log('📖 Getting file SHA for deletion...');
+    const { data } = await octokit.repos.getContent({
+      owner,
+      repo,
+      path,
+      ref: branch,
+    });
+
+    if (!('sha' in data)) {
+      throw new Error(`Cannot delete ${path}: not a file or file not found`);
+    }
+
+    const sha = data.sha;
+    console.log('✅ Got file SHA:', sha.substring(0, 8) + '...');
+
+    console.log('🗑️ Deleting file via GitHub API...');
+    // Delete the file
+    await octokit.repos.deleteFile({
+      owner,
+      repo,
+      path,
+      message,
+      sha,
+      branch,
+    });
+
+    console.log(`✅ File ${path} deleted from ${repository}/${branch}`);
+
+    // Clear cache for this file
+    const cacheKey = `${repository}:${path}:${branch}`;
+    fileCache.delete(cacheKey);
+    const defaultCacheKey = `${repository}:${path}:default`;
+    fileCache.delete(defaultCacheKey);
+    console.log('🗑️ Cleared file cache');
+  } catch (error) {
+    console.error(
+      `❌ Error deleting file ${path} from ${repository}/${branch}:`,
+      error
+    );
+    throw error;
+  }
+};
+
+/**
  * Create a pull request
  */
 export const createPullRequest = async (
