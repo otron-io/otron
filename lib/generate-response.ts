@@ -1,4 +1,3 @@
-import { AnthropicProviderOptions, anthropic } from '@ai-sdk/anthropic';
 import { CoreMessage, generateText, tool } from 'ai';
 import { z } from 'zod';
 import {
@@ -76,6 +75,7 @@ import {
 import { LinearClient } from '@linear/sdk';
 import { memoryManager } from './memory/memory-manager.js';
 import { goalEvaluator } from './goal-evaluator.js';
+import { OpenAIProviderSettings, openai } from '@ai-sdk/openai';
 
 // Helper function to extract issue ID from context
 function extractIssueIdFromContext(
@@ -468,14 +468,14 @@ const generateResponseInternal = async (
   };
 
   const { text } = await generateText({
-    model: anthropic('claude-4-sonnet-20250514'),
+    model: openai('o3'),
     system: systemPrompt,
     messages,
     maxSteps: 50,
     providerOptions: {
-      anthropic: {
-        thinking: { type: 'enabled', budgetTokens: 2000 },
-      } satisfies AnthropicProviderOptions,
+      openai: {
+        reasoningEffort: 'high',
+      },
     },
     tools: {
       searchWeb: tool({
