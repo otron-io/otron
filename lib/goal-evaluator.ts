@@ -33,10 +33,20 @@ export class GoalEvaluator {
     const userRequest = this.extractUserRequest(initialContext);
 
     // Create evaluation prompt
-    const evaluationPrompt = `You are an AI goal completion evaluator. Your job is to determine if an AI agent has successfully completed the user's request.
+    const evaluationPrompt = `
 
 USER'S ORIGINAL REQUEST:
-${userRequest}
+${userRequest}`;
+
+    try {
+      const { text } = await generateText({
+        model: openai('o4-mini'),
+        providerOptions: {
+          openai: {
+            reasoningEffort: 'high',
+          },
+        },
+        system: `You are an AI goal completion evaluator. Your job is to determine if an AI agent has successfully completed the user's request.
 
 AGENT'S EXECUTION SUMMARY:
 - Tools used: ${executionSummary.toolsUsed.join(', ')}
@@ -69,7 +79,7 @@ For communication tasks, consider:
 Be reasonably lenient - don't require perfection, but ensure core objectives are met.
 
 Note: The agents responses do not go to the user. It can only communicate via the tools it has access to.
-If the user is just casually chatting with the agent, you can assume the goal was achieved if the agent responded in a helpful way.
+If the user is just casually chatting with the agent in Slack, you can just assume the goal was achieved if the agent is sending slack messages to the user since you can't see the contents of the messages.
 
 Respond with a JSON object containing:
 {
@@ -78,20 +88,14 @@ Respond with a JSON object containing:
   "reasoning": "detailed explanation",
   "missingActions": ["action1", "action2"] (if incomplete),
   "nextSteps": "what should be done next" (if incomplete)
-}`;
-
-    try {
-      const { text } = await generateText({
-        model: openai('o4-mini'),
-        system:
-          'You are a precise goal completion evaluator. Always respond with valid JSON.',
+}`,
         messages: [
           {
             role: 'user',
             content: evaluationPrompt,
           },
         ],
-        temperature: 0.1, // Low temperature for consistent evaluation
+        temperature: 0, // Low temperature for consistent evaluation
       });
 
       // Parse the JSON response
