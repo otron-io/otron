@@ -433,6 +433,12 @@ const generateResponseInternal = async (
     - If code search is resulting in no results, try other methods of finding the information you need and if you can't then inform the user either via Slack or Linear.
     - If you need help, you are more than encouraged to ask a user for help. Either via Slack or Linear. You must do this as soon as you realize you need help.
     - You do not need to excessively research the codebase when working on an issue. Understand what you need to and then use the editing tools to make the changes.
+    - When you begin working on an issue, you must do the following:
+      * Create a new branch for the issue with the branch name from the issue data.
+      * Create a new PR for the issue with the PR title from the issue data.
+      * Comment on the issue with the PR link and your technical spec for the changes you will make.
+      * Update the issue assignee to yourself if you are not already assigned.
+      * Begin committing your changes to the branch that has the PR so we can see your progress. Make small, atomic commits and changes.
 
     GITHUB REPO NOTES:
     - Your repository is https://github.com/otron-io/otron, you can develop and improve yourself via this repository.
