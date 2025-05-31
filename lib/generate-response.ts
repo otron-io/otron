@@ -1,4 +1,4 @@
-import { openai } from '@ai-sdk/openai';
+import { AnthropicProviderOptions, anthropic } from '@ai-sdk/anthropic';
 import { CoreMessage, generateText, tool } from 'ai';
 import { z } from 'zod';
 import {
@@ -468,10 +468,15 @@ const generateResponseInternal = async (
   };
 
   const { text } = await generateText({
-    model: openai('o3'),
+    model: anthropic('claude-4-sonnet-20250514'),
     system: systemPrompt,
     messages,
     maxSteps: 50,
+    providerOptions: {
+      anthropic: {
+        thinking: { type: 'enabled', budgetTokens: 2000 },
+      } satisfies AnthropicProviderOptions,
+    },
     tools: {
       searchWeb: tool({
         description: 'Use this to search the web for information',
