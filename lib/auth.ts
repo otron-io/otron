@@ -1,7 +1,7 @@
 import { VercelRequest, VercelResponse } from '@vercel/node';
 import { env } from './env.js';
-import { Redis } from '@upstash/redis';
 import { createHmac, timingSafeEqual } from 'crypto';
+import { addCorsHeaders } from './cors.js';
 
 /**
  * Middleware to protect routes with a simple password
@@ -39,6 +39,14 @@ export function withPasswordProtection(handler: Function) {
  */
 export function withInternalAccess(handler: Function) {
   return async (req: VercelRequest, res: VercelResponse) => {
+    // Add CORS headers for cross-origin requests
+    const isPreflight = addCorsHeaders(req, res);
+
+    // If it was a preflight request, we already handled it
+    if (isPreflight) {
+      return;
+    }
+
     // Check for the internal access token
     const token = req.headers['x-internal-token'] || req.query.token;
 

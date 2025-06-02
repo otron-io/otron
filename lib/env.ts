@@ -27,6 +27,9 @@ export const env = createEnv({
     ADMIN_PASSWORD: z.string().min(1).default('admin'),
     INTERNAL_API_TOKEN: z.string().min(1).default('internal-token'),
 
+    // CORS and Frontend
+    FRONTEND_URL: z.string().url().optional(),
+
     // Runtime environment
     VERCEL_URL: z.string().optional().default('http://localhost:3000'),
   },
