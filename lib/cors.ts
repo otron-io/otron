@@ -7,35 +7,72 @@ import { env } from './env.js';
 export function addCorsHeaders(req: VercelRequest, res: VercelResponse) {
   // Allow requests from the marketing site and development environments
   const allowedOrigins = [
-    env.FRONTEND_URL || ['https://otron.io', 'https://www.otron.io'],
+    // Development environments
+    'http://localhost:5173',
+    'http://localhost:3000',
+    'http://localhost:4173',
+    'https://localhost:5173',
+    'https://localhost:3000',
+    'https://localhost:4173',
+    'http://127.0.0.1:5173',
+    'http://127.0.0.1:3000',
+    'http://127.0.0.1:4173',
+
+    // Production domains
+    'https://otron.io',
+    'https://www.otron.io',
+  ];
+
+  // Add the frontend URL from environment variable if it exists
+  if (env.FRONTEND_URL) {
+    allowedOrigins.push(env.FRONTEND_URL);
+  }
+
+  // Also allow common Vercel deployment patterns for the marketing site
+  const vercelPatterns = [
+    /^https:\/\/.*-marketing.*\.vercel\.app$/,
+    /^https:\/\/marketing.*\.vercel\.app$/,
+    /^https:\/\/.*\.vercel\.app$/,
   ];
 
   const origin = req.headers.origin;
-  let allowOrigin = false;
+
+  // Debug logging
+  console.log('CORS Debug:', {
+    origin,
+    allowedOrigins,
+    frontendUrl: env.FRONTEND_URL,
+    nodeEnv: process.env.NODE_ENV,
+  });
+
+  // Check if origin is allowed
+  let isAllowed = false;
 
   if (origin) {
-    // Check exact matches first
-    if (
-      allowedOrigins.some(
-        (allowed) => typeof allowed === 'string' && allowed === origin
-      )
-    ) {
-      allowOrigin = true;
-    }
-
-    // Check regex patterns
-    if (!allowOrigin) {
-      allowOrigin = allowedOrigins.some(
-        (allowed) => allowed instanceof RegExp && allowed.test(origin)
-      );
+    // Check exact string matches
+    if (allowedOrigins.includes(origin)) {
+      isAllowed = true;
+      console.log('Origin allowed by exact match:', origin);
+    } else {
+      // Check regex patterns for Vercel deployments
+      isAllowed = vercelPatterns.some((pattern) => pattern.test(origin));
+      if (isAllowed) {
+        console.log('Origin allowed by regex pattern:', origin);
+      }
     }
   }
 
-  if (allowOrigin && origin) {
+  if (isAllowed && origin) {
     res.setHeader('Access-Control-Allow-Origin', origin);
   } else {
-    // Allow any origin for now during development (you can restrict this in production)
-    res.setHeader('Access-Control-Allow-Origin', '*');
+    // For development, be more permissive
+    if (process.env.NODE_ENV === 'development' || !process.env.NODE_ENV) {
+      console.log('Using permissive CORS for development');
+      res.setHeader('Access-Control-Allow-Origin', '*');
+    } else {
+      console.log('Origin not allowed, using fallback:', origin);
+      res.setHeader('Access-Control-Allow-Origin', 'https://otron.io');
+    }
   }
 
   res.setHeader(
