@@ -8,6 +8,10 @@
     { "source": "/webhook", "destination": "/api/webhook.ts" },
     { "source": "/oauth/callback", "destination": "/api/callback.ts" },
     { "source": "/api/embed-repo", "destination": "/api/embed-repo.ts" },
+    {
+      "source": "/api/embedding-status",
+      "destination": "/api/embedding-status.ts"
+    },
     { "source": "/api/code-search", "destination": "/api/code-search.ts" },
     { "source": "/api/agent-monitor", "destination": "/api/agent-monitor.ts" },
     { "source": "/api/issue-actions", "destination": "/api/issue-actions.ts" },
