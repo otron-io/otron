@@ -1,7 +1,7 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
 import { Redis } from '@upstash/redis';
 import { env } from '../lib/env.js';
-import { withInternalAccess } from '../lib/auth.js';
+import { addCorsHeaders } from '../lib/cors.js';
 
 // Initialize Redis client
 const redis = new Redis({
@@ -14,6 +14,14 @@ const redis = new Redis({
  * Returns system health status including database connectivity
  */
 async function handler(req: VercelRequest, res: VercelResponse) {
+  // Add CORS headers for cross-origin requests
+  const isPreflight = addCorsHeaders(req, res);
+
+  // If it was a preflight request, we already handled it
+  if (isPreflight) {
+    return;
+  }
+
   // Only accept GET requests
   if (req.method !== 'GET') {
     return res.status(405).json({ error: 'Method not allowed' });
@@ -108,4 +116,4 @@ async function handler(req: VercelRequest, res: VercelResponse) {
 }
 
 // Export with internal access protection
-export default withInternalAccess(handler);
+export default handler;
