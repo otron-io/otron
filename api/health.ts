@@ -31,10 +31,29 @@ async function handler(req: VercelRequest, res: VercelResponse) {
     // Test Redis connectivity
     const redisTestKey = 'health:test';
     const testValue = Date.now().toString();
-    await redis.set(redisTestKey, testValue, { ex: 10 }); // Expire in 10 seconds
-    const retrievedValue = await redis.get(redisTestKey);
 
-    if (retrievedValue === testValue) {
+    console.log('Redis health check - setting value:', testValue);
+    await redis.set(redisTestKey, testValue, { ex: 10 }); // Expire in 10 seconds
+
+    const retrievedValue = await redis.get(redisTestKey);
+    console.log(
+      'Redis health check - retrieved value:',
+      retrievedValue,
+      'type:',
+      typeof retrievedValue
+    );
+    console.log(
+      'Redis health check - comparison:',
+      retrievedValue === testValue,
+      retrievedValue,
+      '===',
+      testValue
+    );
+
+    // More robust comparison - handle string/number type mismatches
+    const valuesMatch = String(retrievedValue) === String(testValue);
+
+    if (valuesMatch && retrievedValue !== null) {
       healthData.checks.database = {
         status: 'healthy',
         message: 'Redis connection successful',
@@ -42,11 +61,12 @@ async function handler(req: VercelRequest, res: VercelResponse) {
     } else {
       healthData.checks.database = {
         status: 'unhealthy',
-        message: 'Redis read/write test failed',
+        message: `Redis read/write test failed. Set: ${testValue}, Got: ${retrievedValue}`,
       };
       healthData.status = 'degraded';
     }
   } catch (error) {
+    console.error('Redis health check error:', error);
     healthData.checks.database = {
       status: 'unhealthy',
       message: `Redis connection failed: ${
