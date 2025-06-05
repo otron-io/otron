@@ -53,7 +53,6 @@ import {
   executeAnalyzeFileStructure,
   executeReadRelatedFiles,
   // Embedded repository tools
-  executeSearchEmbeddedCode,
   // Slack tools
   executeSendSlackMessage,
   executeSendDirectMessage,
@@ -1093,21 +1092,6 @@ ${params.expectedActions.map((action: string) => `• ${action}`).join('\n')}
         execute: createMemoryAwareToolExecutor(
           'joinSlackChannel',
           (params: any) => executeJoinSlackChannel(params, updateStatus)
-        ),
-      }),
-      searchSlackMessages: tool({
-        description: 'Search for messages in the Slack workspace',
-        parameters: z.object({
-          query: z.string().describe('The search query'),
-          count: z
-            .number()
-            .describe(
-              'Number of results to return (default: 20). Use 20 if not specified.'
-            ),
-        }),
-        execute: createMemoryAwareToolExecutor(
-          'searchSlackMessages',
-          (params: any) => executeSearchSlackMessages(params, updateStatus)
         ),
       }),
       setSlackStatus: tool({
