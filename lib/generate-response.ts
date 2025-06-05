@@ -660,7 +660,13 @@ const generateResponseInternal = async (
   };
 
   const { text } = await generateText({
-    model: openai('codex-mini-latest'),
+    model: openai.responses('codex-mini-latest'),
+    providerOptions: {
+      openai: {
+        reasoningEffort: 'high',
+      },
+    },
+    temperature: undefined,
     system: systemPrompt,
     messages,
     maxSteps: 25, // Reduced from 50 to force more focused execution
