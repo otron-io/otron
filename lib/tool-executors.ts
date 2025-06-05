@@ -1,4 +1,3 @@
-import { exa } from './utils.js';
 import * as linearUtils from './linear/linear-utils.js';
 import * as githubUtils from './github/github-utils.js';
 import * as slackUtils from './slack/slack-utils.js';
@@ -28,25 +27,6 @@ export const executeGetWeather = async (
     weatherCode: weatherData.current.weathercode,
     humidity: weatherData.current.relativehumidity_2m,
     city,
-  };
-};
-
-export const executeSearchWeb = async (
-  { query }: { query: string },
-  updateStatus?: (status: string) => void
-) => {
-  updateStatus?.(`is searching the web for ${query}...`);
-  const { results } = await exa.searchAndContents(query, {
-    livecrawl: 'always',
-    numResults: 3,
-  });
-
-  return {
-    results: results.map((result: any) => ({
-      title: result.title,
-      url: result.url,
-      snippet: result.text.slice(0, 1000),
-    })),
   };
 };
 

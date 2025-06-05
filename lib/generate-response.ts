@@ -1,8 +1,12 @@
 import { CoreMessage, generateText, tool } from 'ai';
 import { z } from 'zod';
 import {
-  // General tools
-  executeSearchWeb,
+  // Exa search tools
+  executeExaSearch,
+  executeExaCrawlContent,
+  executeExaFindSimilar,
+} from './exa/exa-utils.js';
+import {
   // Linear tools
   executeGetIssueContext,
   executeUpdateIssueStatus,
@@ -429,6 +433,20 @@ const generateResponseInternal = async (
       {"type": "context", "elements": [{"type": "mrkdwn", "text": "Updated 2 hours ago"}]}
     ]
 
+    EXA WEB SEARCH AND RESEARCH CAPABILITIES:
+    - You have access to powerful Exa AI search tools that provide semantic search, live crawling, and AI-powered answers
+    - exaSearch: Comprehensive tool with three modes:
+      * search: Find web content with semantic understanding
+      * answer: Get AI-powered answers with authoritative sources 
+      * research: Comprehensive analysis with multiple sources and content extraction
+    - exaCrawlContent: Extract full content, HTML, and metadata from specific URLs
+    - exaFindSimilar: Find semantically similar content to any given URL
+    - These tools support live crawling, domain filtering, time restrictions, and content type filtering
+    - Use "answer" mode when users ask direct questions that need authoritative responses
+    - Use "research" mode for in-depth analysis and comprehensive information gathering
+    - Use "search" mode for finding specific content or sources
+    - Always include sources and citations when using Exa tools
+
     LINEAR AND SOFTWARE ENGINEERING NOTES:
     - You are a software engineer. You work on issues and raise PRs to fix them and create new features.
     - When assigned to a linear issue, you must follow through and finish the issue.
@@ -455,6 +473,7 @@ const generateResponseInternal = async (
     - This approach ensures precise changes and prevents accidental deletion of existing code.
 
     IMPORTANT CONTEXT AWARENESS:
+    - Use the Exa tools when you need things like documentation and current information. Always prefer realtime information your own knowledge.
     - When users refer to "my message", "this message", "the message above", or similar contextual references, look at the message history to identify which specific message they're referring to.
     - User messages include metadata in the format: [Message from user {userId} at {timestamp}]: {content}
     - Use the timestamp and channel information to identify specific messages when users ask you to react, reply, or take action on them.
@@ -784,6 +803,130 @@ ${params.expectedActions.map((action: string) => `• ${action}`).join('\n')}
 
             return guidance;
           }
+        ),
+      }),
+
+      // Enhanced Exa Web Search, Answer, and Research Tools
+      exaSearch: tool({
+        description:
+          'Comprehensive web search, answer generation, and research using Exa AI. Supports three modes: search (find web content), answer (get AI-powered answers with sources), and research (comprehensive analysis). This is the primary tool for web-based information gathering.',
+        parameters: z.object({
+          query: z.string().describe('The search query or question to ask'),
+          mode: z
+            .enum(['search', 'answer', 'research'])
+            .describe(
+              'Mode: "search" for finding web content, "answer" for AI-powered answers with sources, "research" for comprehensive analysis with multiple sources'
+            ),
+          numResults: z
+            .number()
+            .describe(
+              'Number of results to return (default: 5 for search/answer, 10 for research). Use 5 if not specified.'
+            ),
+          includeContent: z
+            .boolean()
+            .describe(
+              'Whether to include full content/text from sources (default: true for research, false for search). Use true for research mode.'
+            ),
+          livecrawl: z
+            .enum(['always', 'never', 'when-necessary'])
+            .describe(
+              'Live crawling behavior: "always" for fresh content, "never" for cached only, "when-necessary" for smart crawling (default). Use "when-necessary" if not specified.'
+            ),
+          timeRange: z
+            .enum(['day', 'week', 'month', 'year'])
+            .optional()
+            .describe(
+              'Optional time filter for content age. Leave empty for no time restriction.'
+            ),
+          domainFilter: z
+            .string()
+            .describe(
+              'Optional domain to restrict search to (e.g., "github.com"). Leave empty for all domains.'
+            ),
+          fileType: z
+            .string()
+            .describe(
+              'Optional file type filter (e.g., "pdf", "doc"). Leave empty for all file types.'
+            ),
+          category: z
+            .string()
+            .describe(
+              'Optional content category filter. Leave empty for all categories.'
+            ),
+          useAutoprompt: z
+            .boolean()
+            .describe(
+              'Whether to use Exa autoprompt for improved query understanding (default: true). Use true if not specified.'
+            ),
+        }),
+        execute: createMemoryAwareToolExecutor('exaSearch', (params: any) =>
+          executeExaSearch(params, updateStatus)
+        ),
+      }),
+
+      exaCrawlContent: tool({
+        description:
+          'Crawl and extract content from specific URLs using Exa. Get full text, HTML, links, and metadata from web pages.',
+        parameters: z.object({
+          urls: z
+            .array(z.string())
+            .describe('Array of URLs to crawl and extract content from'),
+          includeLinks: z
+            .boolean()
+            .describe(
+              'Whether to extract links from the pages (default: false). Use false if not specified.'
+            ),
+          includeImages: z
+            .boolean()
+            .describe(
+              'Whether to extract image information (default: false). Use false if not specified.'
+            ),
+          includeMetadata: z
+            .boolean()
+            .describe(
+              'Whether to extract page metadata (default: true). Use true if not specified.'
+            ),
+          textOnly: z
+            .boolean()
+            .describe(
+              'Whether to return only text content without HTML (default: false). Use false if not specified.'
+            ),
+        }),
+        execute: createMemoryAwareToolExecutor(
+          'exaCrawlContent',
+          (params: any) => executeExaCrawlContent(params, updateStatus)
+        ),
+      }),
+
+      exaFindSimilar: tool({
+        description:
+          'Find content similar to a given URL using Exa semantic search. Great for discovering related articles, papers, or content.',
+        parameters: z.object({
+          url: z.string().describe('The URL to find similar content for'),
+          numResults: z
+            .number()
+            .describe(
+              'Number of similar results to return (default: 5). Use 5 if not specified.'
+            ),
+          includeContent: z
+            .boolean()
+            .describe(
+              'Whether to include full content from similar pages (default: false). Use false if not specified.'
+            ),
+          livecrawl: z
+            .enum(['always', 'never', 'when-necessary'])
+            .describe(
+              'Live crawling behavior for similar content (default: "when-necessary"). Use "when-necessary" if not specified.'
+            ),
+          excludeSourceDomain: z
+            .boolean()
+            .describe(
+              'Whether to exclude results from the same domain as the source URL (default: true). Use true if not specified.'
+            ),
+        }),
+        execute: createMemoryAwareToolExecutor(
+          'exaFindSimilar',
+          (params: any) => executeExaFindSimilar(params, updateStatus)
         ),
       }),
 
