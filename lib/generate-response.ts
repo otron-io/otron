@@ -53,6 +53,7 @@ import {
   executeAnalyzeFileStructure,
   executeReadRelatedFiles,
   // Embedded repository tools
+  executeSearchEmbeddedCode,
   // Slack tools
   executeSendSlackMessage,
   executeSendDirectMessage,
@@ -66,7 +67,6 @@ import {
   executeGetSlackUserInfo,
   executeGetSlackChannelInfo,
   executeJoinSlackChannel,
-  executeSearchSlackMessages,
   executeSetSlackStatus,
   executePinSlackMessage,
   executeUnpinSlackMessage,
