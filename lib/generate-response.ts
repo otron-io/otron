@@ -450,6 +450,13 @@ const generateResponseInternal = async (
     LINEAR AND SOFTWARE ENGINEERING NOTES:
     - You are a software engineer. You work on issues and raise PRs to fix them and create new features.
     - When assigned to a linear issue, you must follow through and finish the issue.
+    - **CRITICAL: When you START working on ANY Linear issue, you MUST immediately leave a comment with your implementation plan including:**
+      * Brief analysis of what needs to be done
+      * Technical approach you will take
+      * Key files/components you will modify
+      * Estimated steps/timeline (Set issue point estimate as well)
+      * Any potential risks or dependencies
+      * This plan comment must be posted BEFORE you start making any code changes
     - Regardless of the outcome of your work, you must leave a comment on the linear issue with the outcome of your work, even if you could not complete the issue.
     - If someone is speaking to you in Slack and you start working on something, you must get back to them when you are done so they know what happened. 
     - If code search is resulting in no results, try other methods of finding the information you need and if you can't then inform the user either via Slack or Linear.

@@ -1,4 +1,5 @@
 import { getFileContent, createOrUpdateFile } from './github-utils.js';
+import { GitHubAppService } from './github-app.js';
 
 export interface LineRange {
   start: number;
@@ -21,6 +22,81 @@ export interface FileEdit {
 }
 
 /**
+ * Get the complete raw file content without any headers or line limits
+ */
+const getRawFileContent = async (
+  path: string,
+  repository: string,
+  branch: string
+): Promise<string> => {
+  console.log('📖 Getting complete raw file content...');
+
+  try {
+    // Get GitHub App service and Octokit client
+    const githubAppService = GitHubAppService.getInstance();
+    const octokit = await githubAppService.getOctokitForRepo(repository);
+    const [owner, repo] = repository.split('/');
+
+    console.log(
+      `🔍 Fetching raw content for ${path} from ${repository}${
+        branch ? ` (branch: ${branch})` : ''
+      }`
+    );
+
+    // Get file content directly from GitHub API without any processing
+    const { data } = await octokit.repos.getContent({
+      owner,
+      repo,
+      path,
+      ref: branch,
+    });
+
+    if (!('content' in data) || typeof data.content !== 'string') {
+      throw new Error(`Unexpected response format for ${path}`);
+    }
+
+    // Decode base64 content to get the raw file content
+    const rawContent = Buffer.from(data.content, 'base64').toString('utf-8');
+
+    console.log('✅ Got complete raw file content, length:', rawContent.length);
+    console.log('📊 File has', rawContent.split('\n').length, 'lines');
+
+    return rawContent;
+  } catch (error: any) {
+    console.error(`❌ Error getting raw file content for ${path}:`, error);
+
+    // Fallback to the getFileContent function if direct API access fails
+    console.log('🔄 Falling back to getFileContent...');
+
+    const contentWithHeader = await getFileContent(
+      path,
+      repository,
+      1,
+      10000, // Large number to get most/all of the file
+      branch
+    );
+
+    const lines = contentWithHeader.split('\n');
+
+    // Check if first line is the line info header from getFileContent
+    if (lines.length > 0 && lines[0]?.match(/^\/\/ Lines \d+-\d+ of \d+$/)) {
+      const rawContent = lines.slice(1).join('\n');
+      console.log(
+        '✅ Removed line info header from fallback, raw content length:',
+        rawContent.length
+      );
+      return rawContent;
+    }
+
+    // If no header detected, return as-is
+    console.log(
+      'ℹ️ No line info header detected in fallback, using content as-is'
+    );
+    return contentWithHeader;
+  }
+};
+
+/**
  * Advanced file editor that provides precise editing capabilities
  */
 export class FileEditor {
@@ -40,28 +116,12 @@ export class FileEditor {
     const { path, repository, branch, operations, message } = edit;
 
     try {
-      console.log('📖 Getting current file content...');
-      // Get current file content
-      const currentContent = await getFileContent(
-        path,
-        repository,
-        1,
-        10000,
-        branch
-      );
-      console.log('✅ Got file content, length:', currentContent.length);
+      // Get raw file content without any headers
+      const currentContent = await getRawFileContent(path, repository, branch);
 
-      // Remove the line info header if present
+      // Split into lines
       const lines = currentContent.split('\n');
-      let actualLines = lines;
-
-      // Check if first line is a line info comment
-      if (lines[0]?.startsWith('// Lines ')) {
-        actualLines = lines.slice(1);
-        console.log('📝 Removed line info header');
-      }
-
-      console.log('📊 File has', actualLines.length, 'lines');
+      console.log('📊 File has', lines.length, 'lines');
 
       // Sort operations by line number (descending) to avoid line number shifts
       const sortedOps = [...operations].sort((a, b) => {
@@ -80,7 +140,9 @@ export class FileEditor {
         }))
       );
 
-      // Apply operations
+      // Apply operations to a copy of the lines
+      let modifiedLines = [...lines];
+
       for (const [index, op] of sortedOps.entries()) {
         console.log(`🔧 Applying operation ${index + 1}/${sortedOps.length}:`, {
           type: op.type,
@@ -91,39 +153,59 @@ export class FileEditor {
         switch (op.type) {
           case 'insert':
             if (op.line !== undefined && op.content !== undefined) {
-              actualLines.splice(op.line - 1, 0, op.content);
-              console.log(`✅ Inserted at line ${op.line}`);
+              // Insert at the specified line (1-based indexing)
+              const insertIndex = op.line - 1;
+              modifiedLines.splice(insertIndex, 0, op.content);
+              console.log(
+                `✅ Inserted at line ${op.line} (index ${insertIndex})`
+              );
             }
             break;
 
           case 'replace':
             if (op.range && op.content !== undefined) {
+              // Replace the range of lines (1-based indexing)
+              const startIndex = op.range.start - 1;
               const deleteCount = op.range.end - op.range.start + 1;
-              actualLines.splice(op.range.start - 1, deleteCount, op.content);
+              modifiedLines.splice(startIndex, deleteCount, op.content);
               console.log(
-                `✅ Replaced lines ${op.range.start}-${op.range.end}`
+                `✅ Replaced lines ${op.range.start}-${
+                  op.range.end
+                } (indices ${startIndex}-${startIndex + deleteCount - 1})`
               );
             }
             break;
 
           case 'delete':
             if (op.range) {
+              // Delete the range of lines (1-based indexing)
+              const startIndex = op.range.start - 1;
               const deleteCount = op.range.end - op.range.start + 1;
-              actualLines.splice(op.range.start - 1, deleteCount);
-              console.log(`✅ Deleted lines ${op.range.start}-${op.range.end}`);
+              modifiedLines.splice(startIndex, deleteCount);
+              console.log(
+                `✅ Deleted lines ${op.range.start}-${
+                  op.range.end
+                } (indices ${startIndex}-${startIndex + deleteCount - 1})`
+              );
             }
             break;
         }
+
+        console.log(
+          `📊 After operation ${index + 1}, file has ${
+            modifiedLines.length
+          } lines`
+        );
       }
 
       console.log(
         '📝 All operations applied, new file has',
-        actualLines.length,
+        modifiedLines.length,
         'lines'
       );
 
-      // Update the file
-      const newContent = actualLines.join('\n');
+      // Create the new content
+      const newContent = modifiedLines.join('\n');
       console.log('💾 Updating file with new content...');
 
       await createOrUpdateFile(path, newContent, message, repository, branch);
@@ -257,24 +339,12 @@ export class FileEditor {
     });
 
     try {
-      // Get current file to determine line count
-      console.log('📖 Getting current file to determine line count...');
-      const currentContent = await getFileContent(
-        path,
-        repository,
-        1,
-        10000,
-        branch
-      );
+      // Get raw file content to determine line count
+      console.log('📖 Getting raw file to determine line count...');
+      const currentContent = await getRawFileContent(path, repository, branch);
       const lines = currentContent.split('\n');
+      const lineCount = lines.length;
 
-      // Remove line info header if present
-      let actualLines = lines;
-      if (lines[0]?.startsWith('// Lines ')) {
-        actualLines = lines.slice(1);
-      }
-
-      const lineCount = actualLines.length;
       console.log(
         '📊 Current file has',
         lineCount,
@@ -340,24 +410,22 @@ export class FileEditor {
       wholeWord = false,
     } = options;
 
-    // Get current file content
-    const currentContent = await getFileContent(
+    console.log('🔧 FileEditor.findAndReplace CALLED');
+    console.log('Parameters:', {
       path,
       repository,
-      1,
-      10000,
-      branch
-    );
+      branch,
+      searchText: searchText.substring(0, 50) + '...',
+      replaceText: replaceText.substring(0, 50) + '...',
+      options,
+    });
+
+    // Get raw file content
+    const currentContent = await getRawFileContent(path, repository, branch);
     const lines = currentContent.split('\n');
 
-    // Remove line info header if present
-    let actualLines = lines;
-    if (lines[0]?.startsWith('// Lines ')) {
-      actualLines = lines.slice(1);
-    }
-
     let replacements = 0;
-    const newLines = actualLines.map((line) => {
+    const newLines = lines.map((line) => {
       let searchPattern = searchText;
       let flags = 'g';
 
@@ -395,6 +463,9 @@ export class FileEditor {
     if (replacements > 0) {
       const newContent = newLines.join('\n');
       await createOrUpdateFile(path, newContent, message, repository, branch);
+      console.log(`✅ Made ${replacements} replacement(s)`);
+    } else {
+      console.log('ℹ️ No matches found for replacement');
     }
 
     return { replacements };
@@ -417,21 +488,19 @@ export class FileEditor {
   ): Promise<{ found: boolean; line?: number }> {
     const { caseSensitive = true, wholeWord = false } = options;
 
-    // Get current file content
-    const currentContent = await getFileContent(
+    console.log('🔧 FileEditor.insertAfterPattern CALLED');
+    console.log('Parameters:', {
       path,
       repository,
-      1,
-      10000,
-      branch
-    );
-    const lines = currentContent.split('\n');
+      branch,
+      pattern: pattern.substring(0, 50) + '...',
+      contentLength: content.length,
+      options,
+    });
 
-    // Remove line info header if present
-    let actualLines = lines;
-    if (lines[0]?.startsWith('// Lines ')) {
-      actualLines = lines.slice(1);
-    }
+    // Get raw file content
+    const currentContent = await getRawFileContent(path, repository, branch);
+    const lines = currentContent.split('\n');
 
     let searchPattern = pattern;
     let flags = '';
@@ -449,13 +518,14 @@ export class FileEditor {
     const regex = new RegExp(searchPattern, flags);
 
     // Find the line with the pattern
-    for (let i = 0; i < actualLines.length; i++) {
-      if (regex.test(actualLines[i])) {
+    for (let i = 0; i < lines.length; i++) {
+      if (regex.test(lines[i])) {
+        console.log(`✅ Found pattern at line ${i + 1}, inserting after it`);
         await this.insertAtLine(
           path,
           repository,
           branch,
-          i + 2,
+          i + 2, // Insert after this line
           content,
           message
         );
@@ -463,6 +533,7 @@ export class FileEditor {
       }
     }
 
+    console.log('ℹ️ Pattern not found');
     return { found: false };
   }
 
@@ -483,21 +554,19 @@ export class FileEditor {
   ): Promise<{ found: boolean; line?: number }> {
     const { caseSensitive = true, wholeWord = false } = options;
 
-    // Get current file content
-    const currentContent = await getFileContent(
+    console.log('🔧 FileEditor.insertBeforePattern CALLED');
+    console.log('Parameters:', {
       path,
       repository,
-      1,
-      10000,
-      branch
-    );
-    const lines = currentContent.split('\n');
+      branch,
+      pattern: pattern.substring(0, 50) + '...',
+      contentLength: content.length,
+      options,
+    });
 
-    // Remove line info header if present
-    let actualLines = lines;
-    if (lines[0]?.startsWith('// Lines ')) {
-      actualLines = lines.slice(1);
-    }
+    // Get raw file content
+    const currentContent = await getRawFileContent(path, repository, branch);
+    const lines = currentContent.split('\n');
 
     let searchPattern = pattern;
     let flags = '';
@@ -515,13 +584,14 @@ export class FileEditor {
     const regex = new RegExp(searchPattern, flags);
 
     // Find the line with the pattern
-    for (let i = 0; i < actualLines.length; i++) {
-      if (regex.test(actualLines[i])) {
+    for (let i = 0; i < lines.length; i++) {
+      if (regex.test(lines[i])) {
+        console.log(`✅ Found pattern at line ${i + 1}, inserting before it`);
         await this.insertAtLine(
           path,
           repository,
           branch,
-          i + 1,
+          i + 1, // Insert before this line
           content,
           message
         );
@@ -529,6 +599,7 @@ export class FileEditor {
       }
     }
 
+    console.log('ℹ️ Pattern not found');
     return { found: false };
   }
 }
