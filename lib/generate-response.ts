@@ -660,7 +660,7 @@ const generateResponseInternal = async (
   };
 
   const { text } = await generateText({
-    model: openai.responses('o4-mini'),
+    model: openai.responses('codex-mini-latest'),
     providerOptions: {
       openai: {
         reasoningEffort: 'high',
