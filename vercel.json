@@ -5,6 +5,7 @@
     { "source": "/", "destination": "/api/dashboard.ts" },
     { "source": "/linear-app", "destination": "/api/index.ts" },
     { "source": "/health", "destination": "/api/health.ts" },
+    { "source": "/docs", "destination": "/api/docs.ts" },
     { "source": "/webhook", "destination": "/api/webhook.ts" },
     { "source": "/oauth/callback", "destination": "/api/callback.ts" },
     { "source": "/api/embed-repo", "destination": "/api/embed-repo.ts" },
