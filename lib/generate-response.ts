@@ -833,10 +833,9 @@ ${params.expectedActions.map((action: string) => `• ${action}`).join('\n')}
               'Live crawling behavior: "always" for fresh content, "never" for cached only, "when-necessary" for smart crawling (default). Use "when-necessary" if not specified.'
             ),
           timeRange: z
-            .enum(['day', 'week', 'month', 'year'])
-            .optional()
+            .string()
             .describe(
-              'Optional time filter for content age. Leave empty for no time restriction.'
+              'Optional time filter for content age: "day", "week", "month", "year". Leave empty for no time restriction.'
             ),
           domainFilter: z
             .string()

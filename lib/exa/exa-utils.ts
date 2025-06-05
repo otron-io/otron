@@ -19,7 +19,7 @@ export const executeExaSearch = async (
     numResults: number;
     includeContent: boolean;
     livecrawl: 'always' | 'never' | 'when-necessary';
-    timeRange?: 'day' | 'week' | 'month' | 'year';
+    timeRange?: string;
     domainFilter?: string;
     fileType?: string;
     category?: string;
@@ -37,8 +37,8 @@ export const executeExaSearch = async (
         livecrawl: livecrawl || 'when-necessary',
       };
 
-      if (timeRange) {
-        const timeRangeMap = {
+      if (timeRange && timeRange.trim()) {
+        const timeRangeMap: { [key: string]: string } = {
           day: '1d',
           week: '1w',
           month: '1m',
@@ -47,11 +47,11 @@ export const executeExaSearch = async (
         answerOptions.startCrawlDate = timeRangeMap[timeRange];
       }
 
-      if (domainFilter) {
+      if (domainFilter && domainFilter.trim()) {
         answerOptions.includeDomains = [domainFilter];
       }
 
-      if (category) {
+      if (category && category.trim()) {
         answerOptions.category = category;
       }
 
@@ -83,8 +83,8 @@ export const executeExaSearch = async (
         summary: true,
       };
 
-      if (timeRange) {
-        const timeRangeMap = {
+      if (timeRange && timeRange.trim()) {
+        const timeRangeMap: { [key: string]: string } = {
           day: new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString(),
           week: new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString(),
           month: new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString(),
@@ -93,15 +93,15 @@ export const executeExaSearch = async (
         searchOptions.startPublishedDate = timeRangeMap[timeRange];
       }
 
-      if (domainFilter) {
+      if (domainFilter && domainFilter.trim()) {
         searchOptions.includeDomains = [domainFilter];
       }
 
-      if (fileType) {
+      if (fileType && fileType.trim()) {
         searchOptions.includeText = [fileType];
       }
 
-      if (category) {
+      if (category && category.trim()) {
         searchOptions.category = category;
       }
 
@@ -141,8 +141,8 @@ export const executeExaSearch = async (
         highlights: includeContent,
       };
 
-      if (timeRange) {
-        const timeRangeMap = {
+      if (timeRange && timeRange.trim()) {
+        const timeRangeMap: { [key: string]: string } = {
           day: new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString(),
           week: new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString(),
           month: new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString(),
@@ -151,15 +151,15 @@ export const executeExaSearch = async (
         searchOptions.startPublishedDate = timeRangeMap[timeRange];
       }
 
-      if (domainFilter) {
+      if (domainFilter && domainFilter.trim()) {
         searchOptions.includeDomains = [domainFilter];
       }
 
-      if (fileType) {
+      if (fileType && fileType.trim()) {
         searchOptions.includeText = [fileType];
       }
 
-      if (category) {
+      if (category && category.trim()) {
         searchOptions.category = category;
       }
 
