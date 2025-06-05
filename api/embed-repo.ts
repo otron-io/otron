@@ -4,6 +4,7 @@ import type { VercelRequest, VercelResponse } from '@vercel/node';
 import { env } from '../lib/env.js';
 import { GitHubAppService } from '../lib/github/github-app.js';
 import { withInternalAccess } from '../lib/auth.js';
+import { addCorsHeaders } from '../lib/cors.js';
 
 // Extend VercelResponse with flush method which may be available
 interface EnhancedResponse extends VercelResponse {
@@ -868,6 +869,14 @@ async function processFile(
  * Main handler for the embedding endpoint
  */
 async function handler(req: VercelRequest, res: VercelResponse) {
+  // Add CORS headers for cross-origin requests
+  const isPreflight = addCorsHeaders(req, res);
+
+  // If it was a preflight request, we already handled it
+  if (isPreflight) {
+    return;
+  }
+
   // Check if this is a delete request
   if (req.method === 'DELETE') {
     const { repository } = req.query;
