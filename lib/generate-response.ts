@@ -24,7 +24,6 @@ import {
   // GitHub tools
   executeGetFileContent,
   executeCreateBranch,
-  executeCreateOrUpdateFile,
   executeCreatePullRequest,
   executeGetPullRequest,
   executeAddPullRequestComment,
@@ -42,6 +41,7 @@ import {
   executeInsertBeforePattern,
   executeApplyMultipleEdits,
   executeDeleteFile,
+  executeCreateFile,
   // GitHub branch management tools
   executeResetBranchToHead,
   // GitHub file reading tools
@@ -243,11 +243,11 @@ const generateResponseInternal = async (
     phase: 'planning' as 'planning' | 'gathering' | 'acting' | 'completing',
     toolUsageCounts: new Map<string, number>(),
     searchOperations: 0,
-    maxSearchOperations: 5, // Limit search operations
+    maxSearchOperations: 3, // Limit search operations
     readOperations: 0,
-    maxReadOperations: 8, // Limit file reading operations
+    maxReadOperations: 5, // Limit file reading operations
     analysisOperations: 0,
-    maxAnalysisOperations: 3, // Limit analysis operations
+    maxAnalysisOperations: 2, // Limit analysis operations
     actionOperations: 0,
     hasStartedActions: false,
     shouldForceAction: false,
@@ -326,22 +326,24 @@ const generateResponseInternal = async (
     4. **COMPLETING:** Finalize and communicate results
     
     **TOOL USAGE LIMITS - STRICTLY ENFORCE:**
-    - Search operations (searchEmbeddedCode, searchLinearIssues): MAX 5 total
-    - File reading operations (getFileContent, readFileWithContext): MAX 8 total
-    - Analysis operations (analyzeFileStructure, getRepositoryStructure): MAX 3 total
-    - Once you hit these limits, you MUST move to action phase
+    - Search operations (searchEmbeddedCode, searchLinearIssues): MAX 3 total 
+    - File reading operations (getFileContent, readFileWithContext): MAX 5 total 
+    - Analysis operations (analyzeFileStructure, getRepositoryStructure): MAX 2 total
+    - Once you hit these limits, you MUST move to action phase immediately
     
-    **ANTI-ANALYSIS PARALYSIS RULES:**
-    1. **No endless searching** - After 3 search operations, start planning actions
+    **ANTI-ANALYSIS PARALYSIS RULES - CRITICAL:**
+    1. **No endless searching** - After 2 search operations, start planning actions
     2. **No perfect information** - Work with what you have, don't seek 100% understanding
     3. **Bias toward action** - When in doubt, make a reasonable change and iterate
-    4. **Time-box exploration** - Spend max 30% of your steps on information gathering
-    5. **Force action mode** - If you've used >60% of steps without taking action, immediately switch to action mode
+    4. **Time-box exploration** - Spend max 20% of your steps on information gathering 
+    5. **Force action mode** - If you've used >40% of steps without taking action, immediately switch to action mode
+    6. **PREFER ACTION OVER RESEARCH** - It's better to make a reasonable attempt and iterate than to research endlessly
     
-    **EXECUTION PRIORITIES:**
-    - For coding tasks: Search → Read key files → Make changes → Test/Verify
-    - For issue management: Get issue context → Take action → Update status → Comment
-    - For communication: Understand request → Send appropriate messages → Confirm delivery
+    **EXECUTION PRIORITIES - ACTION FIRST:**
+    - For coding tasks: Brief search → Read 1-2 key files → Make changes immediately → Iterate if needed
+    - For issue management: Get issue context → Take action immediately → Update status → Comment
+    - For communication: Understand request → Send appropriate messages immediately → Confirm delivery
+    - **REMEMBER:** Users prefer quick action with minor corrections over slow perfect solutions
     
     **WHEN TO STOP SEARCHING:**
     - You have enough info to make a reasonable attempt
@@ -364,7 +366,7 @@ const generateResponseInternal = async (
 
     ADVANCED FILE EDITING CAPABILITIES:
     - You have access to precise, targeted file editing tools that allow you to make specific changes without affecting the rest of the file.
-    - ALWAYS prefer these targeted editing tools over createOrUpdateFile to avoid unintentional deletions:
+    - ALWAYS use these targeted editing tools - they are designed to be safe and prevent data loss:
       * insertAtLine: Insert content at a specific line number
       * replaceLines: Replace a specific range of lines (much safer than replacing entire files)
       * deleteLines: Delete a specific range of lines
@@ -374,8 +376,10 @@ const generateResponseInternal = async (
       * insertAfterPattern: Insert content after a line matching a pattern
       * insertBeforePattern: Insert content before a line matching a pattern
       * applyMultipleEdits: Apply multiple edit operations in a single commit (operations are applied in reverse line order to avoid conflicts)
+      * createFile: Create entirely new files (for new file creation only)
+      * deleteFile: Delete files that are no longer needed
     - These tools provide surgical precision for code changes and prevent accidental loss of existing content.
-    - Use createOrUpdateFile only when creating entirely new files or when you need to replace the complete file content intentionally.
+    - NEVER try to replace entire file contents - always use the targeted editing tools above.
 
     SLACK FORMATTING & BLOCK KIT:
     - For simple text messages, use sendSlackMessage, sendChannelMessage, or sendDirectMessage
@@ -505,7 +509,7 @@ const generateResponseInternal = async (
         'getIssueContext',
       ];
       const actionTools = [
-        'createOrUpdateFile',
+        'createFile',
         'insertAtLine',
         'replaceLines',
         'deleteLines',
@@ -668,7 +672,7 @@ const generateResponseInternal = async (
     },
     system: systemPrompt,
     messages,
-    maxSteps: 25, // Reduced from 50 to force more focused execution
+    maxSteps: 30,
     tools: {
       // Disabled for now as they removed support for it
       // webSearch: openai.tools.webSearchPreview(),
@@ -1717,8 +1721,9 @@ ${params.expectedActions.map((action: string) => `• ${action}`).join('\n')}
           executeCreateBranch(params, updateStatus)
         ),
       }),
-      createOrUpdateFile: tool({
-        description: 'Create or update a file in a GitHub repository',
+      createFile: tool({
+        description:
+          'Create a new file in a GitHub repository (for new files only)',
         parameters: z.object({
           path: z.string().describe('The file path in the repository'),
           content: z.string().describe('The file content'),
@@ -1728,9 +1733,8 @@ ${params.expectedActions.map((action: string) => `• ${action}`).join('\n')}
             .describe('The repository in format "owner/repo"'),
           branch: z.string().describe('The branch to commit to'),
         }),
-        execute: createMemoryAwareToolExecutor(
-          'createOrUpdateFile',
-          (params: any) => executeCreateOrUpdateFile(params, updateStatus)
+        execute: createMemoryAwareToolExecutor('createFile', (params: any) =>
+          executeCreateFile(params, updateStatus)
         ),
       }),
       createPullRequest: tool({

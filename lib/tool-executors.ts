@@ -680,7 +680,7 @@ export const executeCreateBranch = async (
   };
 };
 
-export const executeCreateOrUpdateFile = async (
+export const executeCreateFile = async (
   {
     path,
     content,
@@ -696,8 +696,9 @@ export const executeCreateOrUpdateFile = async (
   },
   updateStatus?: (status: string) => void
 ) => {
-  updateStatus?.(`is updating file ${path} in ${repository}/${branch}...`);
+  updateStatus?.(`is creating new file ${path} in ${repository}/${branch}...`);
 
+  // Use createOrUpdateFile but with clear semantics that this creates new files
   await githubUtils.createOrUpdateFile(
     path,
     content,
@@ -707,7 +708,7 @@ export const executeCreateOrUpdateFile = async (
   );
   return {
     success: true,
-    message: `Updated file ${path} in ${repository}/${branch}`,
+    message: `Created new file ${path} in ${repository}/${branch}`,
   };
 };
 
