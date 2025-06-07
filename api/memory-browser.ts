@@ -418,14 +418,18 @@ async function getMemoryStatistics() {
               const result = results[j];
 
               // Handle both standard Redis format and Upstash direct format
-              if (Array.isArray(result)) {
+              if (
+                Array.isArray(result) &&
+                result.length === 2 &&
+                (result[0] === null || result[0] instanceof Error)
+              ) {
                 // Standard Redis: [Error | null, Result]
                 const [error, data] = result;
                 if (!error && Array.isArray(data)) {
                   memories = data as string[];
                 }
               } else if (Array.isArray(result)) {
-                // Upstash direct format
+                // Upstash direct format: just the array of entries
                 memories = result as string[];
               }
             }
