@@ -1,4 +1,5 @@
 import { LinearClient } from '@linear/sdk';
+import { logToLinearIssue } from './linear-logger.js';
 
 /**
  * Get the context for an issue including comments, child issues, and parent issue
@@ -12,6 +13,13 @@ export const getIssueContext = async (
   if (!issue) {
     return `ERROR: Issue ${issueIdOrIdentifier} not found. Please check the issue ID or identifier and try again.`;
   }
+
+  // Log that we're analyzing the issue
+  await logToLinearIssue.info(
+    issueIdOrIdentifier,
+    `Retrieved issue context for analysis`,
+    `Issue: ${issue.identifier} - ${issue.title}`
+  );
 
   // Mark this as the assigned issue
   let context = `>>>>> ASSIGNED/TAGGED ISSUE <<<<<\n`;
@@ -118,10 +126,22 @@ export const updateIssueStatus = async (
   statusName: string
 ): Promise<void> => {
   try {
+    // Log the status update attempt
+    await logToLinearIssue.info(
+      issueIdOrIdentifier,
+      `Updating issue status to: ${statusName}`,
+      'Status change requested'
+    );
+
     // Get all workflow states for the issue's team
     const issue = await linearClient.issue(issueIdOrIdentifier);
     if (!issue) {
       console.error(`Issue ${issueIdOrIdentifier} not found`);
+      await logToLinearIssue.error(
+        issueIdOrIdentifier,
+        `Failed to update status: Issue not found`,
+        statusName
+      );
       return;
     }
 
@@ -157,9 +177,19 @@ export const updateIssueStatus = async (
     await issue.update({ stateId: state.id });
 
     console.log(`Updated issue ${issueIdOrIdentifier} status to ${statusName}`);
+    await logToLinearIssue.info(
+      issueIdOrIdentifier,
+      `Successfully updated issue status to: ${statusName}`,
+      `Changed from previous state to ${state.name}`
+    );
   } catch (error: unknown) {
     console.error(
       `Error updating status for issue ${issueIdOrIdentifier}:`,
+      error instanceof Error ? error.message : String(error)
+    );
+    await logToLinearIssue.error(
+      issueIdOrIdentifier,
+      `Failed to update status to ${statusName}`,
       error instanceof Error ? error.message : String(error)
     );
   }
@@ -862,9 +892,21 @@ export const createComment = async (
   body: string
 ): Promise<void> => {
   try {
+    // Log the comment creation attempt
+    await logToLinearIssue.info(
+      issueIdOrIdentifier,
+      `Creating comment on issue`,
+      `Comment length: ${body.length} characters`
+    );
+
     const issue = await linearClient.issue(issueIdOrIdentifier);
     if (!issue) {
       console.error(`Issue ${issueIdOrIdentifier} not found`);
+      await logToLinearIssue.error(
+        issueIdOrIdentifier,
+        `Failed to create comment: Issue not found`,
+        body.substring(0, 100) + '...'
+      );
       return;
     }
 
@@ -873,9 +915,19 @@ export const createComment = async (
       body,
     });
     console.log(`Created comment on issue ${issueIdOrIdentifier}`);
+    await logToLinearIssue.info(
+      issueIdOrIdentifier,
+      `Successfully created comment on issue`,
+      `Comment: ${body.substring(0, 100)}${body.length > 100 ? '...' : ''}`
+    );
   } catch (error: unknown) {
     console.error(
       `Error creating comment on issue ${issueIdOrIdentifier}:`,
+      error instanceof Error ? error.message : String(error)
+    );
+    await logToLinearIssue.error(
+      issueIdOrIdentifier,
+      `Failed to create comment`,
       error instanceof Error ? error.message : String(error)
     );
   }

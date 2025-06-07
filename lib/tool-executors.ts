@@ -5,6 +5,14 @@ import { LinearClient } from '@linear/sdk';
 import { FileEditor } from './github/file-editor.js';
 import { advancedFileReader } from './github/file-reader.js';
 import { env } from './env.js';
+import { logToLinearIssue } from './linear/linear-logger.js';
+
+// Helper function to extract Linear issue ID from branch name or context
+const extractLinearIssueFromBranch = (branchName: string): string | null => {
+  // Look for Linear issue patterns like OTR-123, ABC-456, etc. in branch names
+  const issueMatch = branchName.match(/\b([A-Z]{2,}-\d+)\b/);
+  return issueMatch ? issueMatch[1] : null;
+};
 
 // General tool execution functions
 export const executeGetWeather = async (
@@ -676,20 +684,47 @@ export const executeCreateFile = async (
   },
   updateStatus?: (status: string) => void
 ) => {
-  updateStatus?.(`is creating new file ${path} in ${repository}/${branch}...`);
+  try {
+    updateStatus?.(`Creating file ${path}...`);
 
-  // Use createOrUpdateFile but with clear semantics that this creates new files
-  await githubUtils.createOrUpdateFile(
-    path,
-    content,
-    message,
-    repository,
-    branch
-  );
-  return {
-    success: true,
-    message: `Created new file ${path} in ${repository}/${branch}`,
-  };
+    // Extract Linear issue ID from branch name for logging
+    const issueId = extractLinearIssueFromBranch(branch);
+    if (issueId) {
+      await logToLinearIssue.info(
+        issueId,
+        `Creating new file: ${path}`,
+        `Branch: ${branch}, Repository: ${repository}`
+      );
+    }
+
+    const result = await githubUtils.createOrUpdateFile(
+      path,
+      content,
+      message,
+      repository,
+      branch
+    );
+
+    if (issueId) {
+      await logToLinearIssue.info(
+        issueId,
+        `Successfully created file: ${path}`,
+        `File size: ${content.length} characters`
+      );
+    }
+
+    return result;
+  } catch (error) {
+    const issueId = extractLinearIssueFromBranch(branch);
+    if (issueId) {
+      await logToLinearIssue.error(
+        issueId,
+        `Failed to create file: ${path}`,
+        error instanceof Error ? error.message : String(error)
+      );
+    }
+    throw error;
+  }
 };
 
 export const executeDeleteFile = async (
@@ -1406,6 +1441,16 @@ export const executeReplaceLines = async (
     message,
   });
 
+  // Extract Linear issue ID from branch name for logging
+  const issueId = extractLinearIssueFromBranch(branch);
+  if (issueId) {
+    await logToLinearIssue.info(
+      issueId,
+      `Replacing lines ${startLine}-${endLine} in ${path}`,
+      `Branch: ${branch}, New content: ${content.length} characters`
+    );
+  }
+
   try {
     updateStatus?.(`is replacing lines ${startLine}-${endLine} in ${path}...`);
     console.log('📝 About to call FileEditor.replaceLines');
@@ -1422,12 +1467,29 @@ export const executeReplaceLines = async (
 
     console.log('✅ FileEditor.replaceLines completed successfully');
 
+    if (issueId) {
+      await logToLinearIssue.info(
+        issueId,
+        `Successfully replaced lines in ${path}`,
+        `Lines ${startLine}-${endLine} updated`
+      );
+    }
+
     return {
       success: true,
       message: `Replaced lines ${startLine}-${endLine} in ${path}`,
     };
   } catch (error) {
     console.error('❌ Error in executeReplaceLines:', error);
+
+    if (issueId) {
+      await logToLinearIssue.error(
+        issueId,
+        `Failed to replace lines in ${path}`,
+        error instanceof Error ? error.message : String(error)
+      );
+    }
+
     throw error;
   }
 };

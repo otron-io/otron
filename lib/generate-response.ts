@@ -79,7 +79,8 @@ import {
 import { LinearClient } from '@linear/sdk';
 import { memoryManager } from './memory/memory-manager.js';
 import { goalEvaluator } from './goal-evaluator.js';
-import { OpenAIProviderSettings, openai } from '@ai-sdk/openai';
+import { openai } from '@ai-sdk/openai';
+import { linearLogger, logToLinearIssue } from './linear/linear-logger.js';
 
 // Helper function to extract issue ID from context
 function extractIssueIdFromContext(
@@ -132,6 +133,23 @@ export const generateResponse = async (
 
   // Store original messages for evaluation
   const originalMessages = [...messages];
+
+  // Initialize Linear logger if client is available
+  if (linearClient) {
+    linearLogger.setLinearClient(linearClient);
+  }
+
+  // Extract issue ID and log initial activity if working on a Linear issue
+  const contextId = extractIssueIdFromContext(messages, slackContext);
+  const isLinearIssue = contextId && !contextId.startsWith('slack:');
+
+  if (isLinearIssue && linearClient) {
+    await logToLinearIssue.info(
+      contextId,
+      'Otron started working on this issue',
+      `Request from ${slackContext ? 'Slack' : 'Linear'}`
+    );
+  }
 
   while (attemptNumber <= MAX_RETRY_ATTEMPTS) {
     try {
@@ -258,6 +276,23 @@ const generateResponseInternal = async (
 
   // Extract context ID for memory operations
   const contextId = extractIssueIdFromContext(messages, slackContext);
+  const isLinearIssue = contextId && !contextId.startsWith('slack:');
+
+  // Initialize Linear logger if client is available
+  if (linearClient) {
+    linearLogger.setLinearClient(linearClient);
+  }
+
+  // Log initial activity if working on a Linear issue
+  if (isLinearIssue && linearClient) {
+    await logToLinearIssue.info(
+      contextId,
+      'Otron started analyzing this issue',
+      `Request from ${
+        slackContext ? 'Slack' : 'Linear'
+      }, Attempt ${attemptNumber}`
+    );
+  }
 
   // Store the incoming message in memory
   try {
@@ -617,6 +652,18 @@ const generateResponseInternal = async (
         executionStrategy.shouldForceAction = true;
       }
 
+      // Log tool execution to Linear if working on a Linear issue
+      if (isLinearIssue && linearClient) {
+        const toolContext = args[0]
+          ? Object.keys(args[0]).join(', ')
+          : 'No parameters';
+        await logToLinearIssue.debug(
+          contextId,
+          `Executing tool: ${toolName}`,
+          toolContext
+        );
+      }
+
       try {
         const result = await originalExecutor(...args);
         success = true;
@@ -628,6 +675,15 @@ const generateResponseInternal = async (
         } else if (typeof result === 'string') {
           // Try to extract structured data from string responses
           detailedOutput = extractDetailedOutput(toolName, result, args[0]);
+        }
+
+        // Log successful tool execution to Linear if working on a Linear issue
+        if (isLinearIssue && linearClient && actionTools.includes(toolName)) {
+          await logToLinearIssue.info(
+            contextId,
+            `Successfully executed: ${toolName}`,
+            response.substring(0, 200) + (response.length > 200 ? '...' : '')
+          );
         }
 
         // Add execution guidance to response for information gathering tools
@@ -686,6 +742,15 @@ const generateResponseInternal = async (
       } catch (error) {
         success = false;
         response = error instanceof Error ? error.message : String(error);
+
+        // Log failed tool execution to Linear if working on a Linear issue
+        if (isLinearIssue && linearClient) {
+          await logToLinearIssue.error(
+            contextId,
+            `Failed to execute: ${toolName}`,
+            response
+          );
+        }
 
         // Track failed tool usage
         await memoryManager.trackToolUsage(toolName, success, {
