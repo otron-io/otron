@@ -119,104 +119,117 @@ async function getAllFilteredMemories(
   filters: MemoryFilters
 ): Promise<MemoryEntry[]> {
   try {
+    console.time('getAllFilteredMemories');
+
+    // Get all relevant Redis keys
     const pattern = 'memory:issue:*';
-    const keys = await redis.keys(pattern);
+    const allKeys = await redis.keys(pattern);
 
-    console.log(`Found ${keys.length} memory keys`);
+    // Filter keys by pattern to avoid wrong data types
+    const validKeys = allKeys.filter((key) => {
+      // Skip tool-specific memory keys (these are hashes, not lists)
+      if (
+        key.includes(':tools:') ||
+        key.includes(':file:') ||
+        key.includes(':related:')
+      ) {
+        return false;
+      }
 
+      const keyParts = key.split(':');
+      if (keyParts.length < 4) return false;
+
+      const issueId = keyParts[2];
+      const memoryType = keyParts[3];
+
+      // Apply filters early
+      if (filters.issueId && issueId !== filters.issueId) return false;
+      if (filters.memoryType && memoryType !== filters.memoryType) return false;
+      if (!['conversation', 'action', 'context'].includes(memoryType))
+        return false;
+
+      return true;
+    });
+
+    console.log(
+      `Filtered ${allKeys.length} keys down to ${validKeys.length} valid keys`
+    );
+
+    if (validKeys.length === 0) {
+      console.timeEnd('getAllFilteredMemories');
+      return [];
+    }
+
+    // Process keys in batches for better performance
+    const batchSize = 10;
     const allMemories: MemoryEntry[] = [];
 
-    for (const key of keys) {
-      try {
-        // Skip tool-specific memory keys (these are hashes, not lists)
-        if (key.includes(':tools:')) {
+    for (let i = 0; i < validKeys.length; i += batchSize) {
+      const batch = validKeys.slice(i, i + batchSize);
+
+      // Use pipeline for batch operations
+      const pipeline = redis.pipeline();
+
+      // Check types and get data in parallel
+      batch.forEach((key) => {
+        pipeline.type(key);
+        pipeline.lrange(key, 0, -1); // Get all entries for now, we'll optimize this later
+      });
+
+      const results = await pipeline.exec();
+
+      // Process results
+      for (let j = 0; j < batch.length; j++) {
+        const key = batch[j];
+        const typeResult = results[j * 2] as [Error | null, string];
+        const dataResult = results[j * 2 + 1] as [Error | null, string[]];
+
+        if (typeResult[1] !== 'list') {
+          console.log(`Skipping key ${key} - wrong type: ${typeResult[1]}`);
           continue;
         }
 
-        // Skip relationship keys
-        if (key.includes(':file:') || key.includes(':related:')) {
-          continue;
-        }
-
-        // Only process standard memory type keys (conversation, action, context)
+        const entries = dataResult[1];
         const keyParts = key.split(':');
-        if (keyParts.length < 4) {
-          continue;
-        }
-
-        const memoryType = keyParts[3]; // memory:issue:{issueId}:{memoryType}
-        if (!['conversation', 'action', 'context'].includes(memoryType)) {
-          continue;
-        }
-
-        // Check Redis key type before attempting to read
-        const keyType = await redis.type(key);
-        if (keyType !== 'list') {
-          console.log(`Skipping key ${key} - wrong type: ${keyType}`);
-          continue;
-        }
-
         const issueId = keyParts[2];
+        const memoryType = keyParts[3] as 'conversation' | 'action' | 'context';
 
-        // Apply issue filter early
-        if (filters.issueId && issueId !== filters.issueId) {
-          continue;
-        }
-
-        // Apply memory type filter early
-        if (filters.memoryType && memoryType !== filters.memoryType) {
-          continue;
-        }
-
-        console.log(`Processing memory key: ${key}`);
-
-        // Get all entries from this list
-        const entries = await redis.lrange(key, 0, -1);
-
-        for (const entry of entries) {
+        // Process entries
+        for (let k = 0; k < entries.length; k++) {
           try {
+            const entry = entries[k];
             const memoryEntry =
               typeof entry === 'string' ? JSON.parse(entry) : entry;
 
             // Create standardized memory entry
             const standardEntry: MemoryEntry = {
-              id: `${key}:${memoryEntry.timestamp}`, // Create unique ID
+              id: `${key}:${memoryEntry.timestamp}:${k}`,
               issueId,
-              memoryType: memoryType as 'conversation' | 'action' | 'context',
+              memoryType,
               timestamp: memoryEntry.timestamp,
               type: memoryEntry.type || memoryType,
               data: memoryEntry.data || memoryEntry,
               relevanceScore: memoryEntry.relevanceScore,
             };
 
-            // Apply filters
-            if (
-              filters.dateFrom &&
-              standardEntry.timestamp < filters.dateFrom
-            ) {
+            // Apply remaining filters
+            if (filters.dateFrom && standardEntry.timestamp < filters.dateFrom)
               continue;
-            }
-
-            if (filters.dateTo && standardEntry.timestamp > filters.dateTo) {
+            if (filters.dateTo && standardEntry.timestamp > filters.dateTo)
               continue;
-            }
 
             if (filters.slackChannel) {
-              // Check if this memory is related to the specified Slack channel
               const dataStr = JSON.stringify(standardEntry.data).toLowerCase();
-              if (!dataStr.includes(filters.slackChannel.toLowerCase())) {
+              if (!dataStr.includes(filters.slackChannel.toLowerCase()))
                 continue;
-              }
             }
 
             if (filters.searchQuery) {
-              // Search within the memory content
               const searchContent = JSON.stringify(
                 standardEntry.data
               ).toLowerCase();
-              if (!searchContent.includes(filters.searchQuery.toLowerCase())) {
+              if (!searchContent.includes(filters.searchQuery.toLowerCase()))
                 continue;
-              }
             }
 
             allMemories.push(standardEntry);
@@ -225,16 +238,14 @@ async function getAllFilteredMemories(
             continue;
           }
         }
-      } catch (keyError) {
-        console.error(`Error processing memory key: ${key}`, keyError);
-        continue; // Skip this key and continue with others
       }
     }
 
     // Sort by timestamp (newest first)
     allMemories.sort((a, b) => b.timestamp - a.timestamp);
 
-    console.log(`Filtered memories: ${allMemories.length}`);
+    console.log(`Processed ${allMemories.length} filtered memories`);
+    console.timeEnd('getAllFilteredMemories');
     return allMemories;
   } catch (error) {
     console.error('Error getting filtered memories:', error);
@@ -244,10 +255,54 @@ async function getAllFilteredMemories(
 
 async function getMemoryStatistics() {
   try {
-    const pattern = 'memory:issue:*';
-    const keys = await redis.keys(pattern);
+    console.time('getMemoryStatistics');
 
-    console.log(`Found ${keys.length} total memory keys for statistics`);
+    const pattern = 'memory:issue:*';
+    const allKeys = await redis.keys(pattern);
+
+    // Filter keys efficiently
+    const validKeys = allKeys.filter((key) => {
+      if (
+        key.includes(':tools:') ||
+        key.includes(':file:') ||
+        key.includes(':related:')
+      ) {
+        return false;
+      }
+
+      const keyParts = key.split(':');
+      if (keyParts.length < 4) return false;
+
+      const memoryType = keyParts[3];
+      return ['conversation', 'action', 'context'].includes(memoryType);
+    });
+
+    console.log(`Processing statistics for ${validKeys.length} valid keys`);
+
+    if (validKeys.length === 0) {
+      console.timeEnd('getMemoryStatistics');
+      return {
+        totalMemories: 0,
+        conversationMemories: 0,
+        actionMemories: 0,
+        contextMemories: 0,
+        totalIssues: 0,
+        oldestMemory: null,
+        newestMemory: null,
+      };
+    }
+
+    // Use pipeline for all length operations
+    const pipeline = redis.pipeline();
+
+    validKeys.forEach((key) => {
+      pipeline.type(key);
+      pipeline.llen(key);
+      pipeline.lindex(key, 0); // newest
+      pipeline.lindex(key, -1); // oldest
+    });
+
+    const results = await pipeline.exec();
 
     let totalMemories = 0;
     let conversationMemories = 0;
@@ -257,111 +312,79 @@ async function getMemoryStatistics() {
     let oldestMemory: number | null = null;
     let newestMemory: number | null = null;
 
-    for (const key of keys) {
+    for (let i = 0; i < validKeys.length; i++) {
+      const key = validKeys[i];
+      const keyParts = key.split(':');
+      const issueId = keyParts[2];
+      const memoryType = keyParts[3];
+
+      const typeResult = results[i * 4] as [Error | null, string];
+      const lenResult = results[i * 4 + 1] as [Error | null, number];
+      const newestResult = results[i * 4 + 2] as [Error | null, string | null];
+      const oldestResult = results[i * 4 + 3] as [Error | null, string | null];
+
+      if (typeResult[1] !== 'list') continue;
+
+      const listLength = lenResult[1];
+      if (listLength === 0) continue;
+
+      uniqueIssues.add(issueId);
+      totalMemories += listLength;
+
+      // Count by memory type
+      switch (memoryType) {
+        case 'conversation':
+          conversationMemories += listLength;
+          break;
+        case 'action':
+          actionMemories += listLength;
+          break;
+        case 'context':
+          contextMemories += listLength;
+          break;
+      }
+
+      // Process timestamps
       try {
-        // Skip tool-specific memory keys (these are hashes, not lists)
-        if (key.includes(':tools:')) {
-          continue;
-        }
-
-        // Skip relationship keys
-        if (key.includes(':file:') || key.includes(':related:')) {
-          continue;
-        }
-
-        // Only process standard memory type keys (conversation, action, context)
-        const keyParts = key.split(':');
-        if (keyParts.length < 4) {
-          continue;
-        }
-
-        const memoryType = keyParts[3]; // memory:issue:{issueId}:{memoryType}
-        if (!['conversation', 'action', 'context'].includes(memoryType)) {
-          continue;
-        }
-
-        // Check Redis key type before attempting to read
-        const keyType = await redis.type(key);
-        if (keyType !== 'list') {
-          console.log(
-            `Skipping statistics key ${key} - wrong type: ${keyType}`
-          );
-          continue;
-        }
-
-        const issueId = keyParts[2];
-        uniqueIssues.add(issueId);
-
-        console.log(`Processing statistics for key: ${key}`);
-
-        // Get the count of entries in this list
-        const listLength = await redis.llen(key);
-        totalMemories += listLength;
-
-        // Count by memory type
-        switch (memoryType) {
-          case 'conversation':
-            conversationMemories += listLength;
-            break;
-          case 'action':
-            actionMemories += listLength;
-            break;
-          case 'context':
-            contextMemories += listLength;
-            break;
-        }
-
-        // Get timestamps for oldest/newest calculation
-        // Get first (newest) and last (oldest) entries
-        if (listLength > 0) {
-          try {
-            const newestEntry = await redis.lindex(key, 0);
-            const oldestEntry = await redis.lindex(key, -1);
-
-            if (newestEntry) {
-              const newestParsed =
-                typeof newestEntry === 'string'
-                  ? JSON.parse(newestEntry)
-                  : newestEntry;
-              const newestTimestamp = newestParsed.timestamp;
-              if (
-                newestTimestamp &&
-                (newestMemory === null || newestTimestamp > newestMemory)
-              ) {
-                newestMemory = newestTimestamp;
-              }
-            }
-
-            if (oldestEntry) {
-              const oldestParsed =
-                typeof oldestEntry === 'string'
-                  ? JSON.parse(oldestEntry)
-                  : oldestEntry;
-              const oldestTimestamp = oldestParsed.timestamp;
-              if (
-                oldestTimestamp &&
-                (oldestMemory === null || oldestTimestamp < oldestMemory)
-              ) {
-                oldestMemory = oldestTimestamp;
-              }
-            }
-          } catch (parseError) {
-            console.error(
-              `Error parsing timestamp entries for ${key}:`,
-              parseError
-            );
-            // Continue without failing the entire statistics operation
+        if (newestResult[1]) {
+          const newestParsed =
+            typeof newestResult[1] === 'string'
+              ? JSON.parse(newestResult[1])
+              : newestResult[1];
+          const newestTimestamp = newestParsed.timestamp;
+          if (
+            newestTimestamp &&
+            (newestMemory === null || newestTimestamp > newestMemory)
+          ) {
+            newestMemory = newestTimestamp;
           }
         }
-      } catch (keyError) {
-        console.error(`Error processing statistics key: ${key}`, keyError);
-        continue; // Skip this key and continue with others
+
+        if (oldestResult[1]) {
+          const oldestParsed =
+            typeof oldestResult[1] === 'string'
+              ? JSON.parse(oldestResult[1])
+              : oldestResult[1];
+          const oldestTimestamp = oldestParsed.timestamp;
+          if (
+            oldestTimestamp &&
+            (oldestMemory === null || oldestTimestamp < oldestMemory)
+          ) {
+            oldestMemory = oldestTimestamp;
+          }
+        }
+      } catch (parseError) {
+        console.error(
+          `Error parsing timestamp entries for ${key}:`,
+          parseError
+        );
       }
     }
 
     console.log(
-      `Statistics processed: ${totalMemories} total memories from ${uniqueIssues.size} unique issues`
+      `Statistics: ${totalMemories} total memories from ${uniqueIssues.size} unique issues`
     );
+    console.timeEnd('getMemoryStatistics');
 
     return {
       totalMemories,
