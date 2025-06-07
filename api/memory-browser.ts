@@ -125,6 +125,9 @@ async function getAllFilteredMemories(
     const pattern = 'memory:issue:*';
     const allKeys = await redis.keys(pattern);
 
+    console.log(`Found ${allKeys.length} total keys:`);
+    console.log('Sample keys:', allKeys.slice(0, 5));
+
     // Filter keys by pattern to avoid wrong data types
     const validKeys = allKeys.filter((key) => {
       // Skip tool-specific memory keys (these are hashes, not lists)
@@ -137,16 +140,37 @@ async function getAllFilteredMemories(
       }
 
       const keyParts = key.split(':');
-      if (keyParts.length < 4) return false;
+      if (keyParts.length < 4) {
+        console.log(
+          `Skipping key with wrong format: ${key} (parts: ${keyParts.length})`
+        );
+        return false;
+      }
 
       const issueId = keyParts[2];
       const memoryType = keyParts[3];
 
+      console.log(
+        `Checking key: ${key} -> issueId: ${issueId}, memoryType: ${memoryType}`
+      );
+
       // Apply filters early
-      if (filters.issueId && issueId !== filters.issueId) return false;
-      if (filters.memoryType && memoryType !== filters.memoryType) return false;
-      if (!['conversation', 'action', 'context'].includes(memoryType))
+      if (filters.issueId && issueId !== filters.issueId) {
+        console.log(
+          `Filtered out by issueId: ${issueId} !== ${filters.issueId}`
+        );
         return false;
+      }
+      if (filters.memoryType && memoryType !== filters.memoryType) {
+        console.log(
+          `Filtered out by memoryType: ${memoryType} !== ${filters.memoryType}`
+        );
+        return false;
+      }
+      if (!['conversation', 'action', 'context'].includes(memoryType)) {
+        console.log(`Filtered out by invalid memoryType: ${memoryType}`);
+        return false;
+      }
 
       return true;
     });
@@ -154,6 +178,7 @@ async function getAllFilteredMemories(
     console.log(
       `Filtered ${allKeys.length} keys down to ${validKeys.length} valid keys`
     );
+    console.log('Valid keys sample:', validKeys.slice(0, 3));
 
     if (validKeys.length === 0) {
       console.timeEnd('getAllFilteredMemories');
@@ -164,42 +189,52 @@ async function getAllFilteredMemories(
     const batchSize = 10;
     const allMemories: MemoryEntry[] = [];
 
-    for (let i = 0; i < validKeys.length; i += batchSize) {
-      const batch = validKeys.slice(i, i + batchSize);
+    // TEMPORARY: Use original approach to debug
+    for (const key of validKeys.slice(0, 5)) {
+      // Limit to first 5 keys for debugging
+      try {
+        console.log(`Processing individual key: ${key}`);
 
-      // Use pipeline for batch operations
-      const pipeline = redis.pipeline();
+        const keyType = await redis.type(key);
+        console.log(`Key ${key} type: ${keyType}`);
 
-      // Check types and get data in parallel
-      batch.forEach((key) => {
-        pipeline.type(key);
-        pipeline.lrange(key, 0, -1); // Get all entries for now, we'll optimize this later
-      });
-
-      const results = await pipeline.exec();
-
-      // Process results
-      for (let j = 0; j < batch.length; j++) {
-        const key = batch[j];
-        const typeResult = results[j * 2] as [Error | null, string];
-        const dataResult = results[j * 2 + 1] as [Error | null, string[]];
-
-        if (typeResult[1] !== 'list') {
-          console.log(`Skipping key ${key} - wrong type: ${typeResult[1]}`);
+        if (keyType !== 'list') {
+          console.log(`Skipping key ${key} - wrong type: ${keyType}`);
           continue;
         }
 
-        const entries = dataResult[1];
+        const entries = await redis.lrange(key, 0, -1);
+        console.log(`Key ${key} has ${entries.length} entries`);
+
+        if (!entries || entries.length === 0) {
+          console.log(`No entries found for key: ${key}`);
+          continue;
+        }
+
         const keyParts = key.split(':');
         const issueId = keyParts[2];
         const memoryType = keyParts[3] as 'conversation' | 'action' | 'context';
+
+        console.log(
+          `Processing ${entries.length} entries for ${key} (issueId: ${issueId}, type: ${memoryType})`
+        );
 
         // Process entries
         for (let k = 0; k < entries.length; k++) {
           try {
             const entry = entries[k];
+            console.log(
+              `Processing entry ${k}:`,
+              typeof entry,
+              entry ? 'has data' : 'no data'
+            );
+
             const memoryEntry =
               typeof entry === 'string' ? JSON.parse(entry) : entry;
+            console.log(`Parsed entry:`, {
+              timestamp: memoryEntry.timestamp,
+              type: memoryEntry.type,
+            });
 
             // Create standardized memory entry
             const standardEntry: MemoryEntry = {
@@ -212,27 +247,151 @@ async function getAllFilteredMemories(
               relevanceScore: memoryEntry.relevanceScore,
             };
 
+            console.log(`Created standard entry:`, {
+              id: standardEntry.id,
+              timestamp: standardEntry.timestamp,
+            });
+
             // Apply remaining filters
-            if (filters.dateFrom && standardEntry.timestamp < filters.dateFrom)
+            if (
+              filters.dateFrom &&
+              standardEntry.timestamp < filters.dateFrom
+            ) {
+              console.log(
+                `Filtered out by dateFrom: ${standardEntry.timestamp} < ${filters.dateFrom}`
+              );
               continue;
-            if (filters.dateTo && standardEntry.timestamp > filters.dateTo)
+            }
+            if (filters.dateTo && standardEntry.timestamp > filters.dateTo) {
+              console.log(
+                `Filtered out by dateTo: ${standardEntry.timestamp} > ${filters.dateTo}`
+              );
               continue;
+            }
 
             if (filters.slackChannel) {
               const dataStr = JSON.stringify(standardEntry.data).toLowerCase();
-              if (!dataStr.includes(filters.slackChannel.toLowerCase()))
+              if (!dataStr.includes(filters.slackChannel.toLowerCase())) {
+                console.log(
+                  `Filtered out by slackChannel: ${filters.slackChannel} not in data`
+                );
                 continue;
+              }
             }
 
             if (filters.searchQuery) {
               const searchContent = JSON.stringify(
                 standardEntry.data
               ).toLowerCase();
-              if (!searchContent.includes(filters.searchQuery.toLowerCase()))
+              if (!searchContent.includes(filters.searchQuery.toLowerCase())) {
+                console.log(
+                  `Filtered out by searchQuery: ${filters.searchQuery} not in content`
+                );
                 continue;
+              }
             }
 
             allMemories.push(standardEntry);
+            console.log(`Added memory entry: ${standardEntry.id}`);
+          } catch (parseError) {
+            console.error(`Error parsing memory entry ${k}:`, parseError);
+            continue;
+          }
+        }
+      } catch (keyError) {
+        console.error(`Error processing key: ${key}`, keyError);
+        continue;
+      }
+    }
+
+    /* ORIGINAL PIPELINE CODE - COMMENTED OUT FOR DEBUGGING
+    for (let i = 0; i < validKeys.length; i += batchSize) {
+      const batch = validKeys.slice(i, i + batchSize);
+      
+      console.log(`Processing batch ${Math.floor(i/batchSize) + 1}: ${batch.length} keys`);
+      
+      // Use pipeline for batch operations
+      const pipeline = redis.pipeline();
+      
+      // Check types and get data in parallel
+      batch.forEach(key => {
+        pipeline.type(key);
+        pipeline.lrange(key, 0, -1); // Get all entries for now, we'll optimize this later
+      });
+      
+      const results = await pipeline.exec();
+      console.log(`Pipeline results: ${results?.length} results for ${batch.length * 2} operations`);
+      
+      // Process results
+      for (let j = 0; j < batch.length; j++) {
+        const key = batch[j];
+        const typeResult = results[j * 2] as [Error | null, string];
+        const dataResult = results[j * 2 + 1] as [Error | null, string[]];
+        
+        console.log(`Key ${key}: type=${typeResult[1]}, entries=${dataResult[1]?.length || 0}`);
+        
+        if (typeResult[1] !== 'list') {
+          console.log(`Skipping key ${key} - wrong type: ${typeResult[1]}`);
+          continue;
+        }
+        
+        const entries = dataResult[1];
+        if (!entries || entries.length === 0) {
+          console.log(`No entries found for key: ${key}`);
+          continue;
+        }
+        
+        const keyParts = key.split(':');
+        const issueId = keyParts[2];
+        const memoryType = keyParts[3] as 'conversation' | 'action' | 'context';
+        
+        console.log(`Processing ${entries.length} entries for ${key}`);
+        
+        // Process entries
+        for (let k = 0; k < entries.length; k++) {
+          try {
+            const entry = entries[k];
+            const memoryEntry = typeof entry === 'string' ? JSON.parse(entry) : entry;
+            
+            // Create standardized memory entry
+            const standardEntry: MemoryEntry = {
+              id: `${key}:${memoryEntry.timestamp}:${k}`,
+              issueId,
+              memoryType,
+              timestamp: memoryEntry.timestamp,
+              type: memoryEntry.type || memoryType,
+              data: memoryEntry.data || memoryEntry,
+              relevanceScore: memoryEntry.relevanceScore
+            };
+            
+            // Apply remaining filters
+            if (filters.dateFrom && standardEntry.timestamp < filters.dateFrom) {
+              console.log(`Filtered out by dateFrom: ${standardEntry.timestamp} < ${filters.dateFrom}`);
+              continue;
+            }
+            if (filters.dateTo && standardEntry.timestamp > filters.dateTo) {
+              console.log(`Filtered out by dateTo: ${standardEntry.timestamp} > ${filters.dateTo}`);
+              continue;
+            }
+            
+            if (filters.slackChannel) {
+              const dataStr = JSON.stringify(standardEntry.data).toLowerCase();
+              if (!dataStr.includes(filters.slackChannel.toLowerCase())) {
+                console.log(`Filtered out by slackChannel: ${filters.slackChannel} not in data`);
+                continue;
+              }
+            }
+            
+            if (filters.searchQuery) {
+              const searchContent = JSON.stringify(standardEntry.data).toLowerCase();
+              if (!searchContent.includes(filters.searchQuery.toLowerCase())) {
+                console.log(`Filtered out by searchQuery: ${filters.searchQuery} not in content`);
+                continue;
+              }
+            }
+            
+            allMemories.push(standardEntry);
+            console.log(`Added memory entry: ${standardEntry.id}`);
           } catch (parseError) {
             console.error(`Error parsing memory entry:`, parseError);
             continue;
@@ -240,6 +399,7 @@ async function getAllFilteredMemories(
         }
       }
     }
+    */
 
     // Sort by timestamp (newest first)
     allMemories.sort((a, b) => b.timestamp - a.timestamp);
