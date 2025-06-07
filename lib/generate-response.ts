@@ -766,9 +766,6 @@ const generateResponseInternal = async (
     messages,
     maxSteps: 30,
     tools: {
-      // Disabled for now as they removed support for it
-      // webSearch: openai.tools.webSearchPreview(),
-
       // Execution Strategy Tools
       createExecutionPlan: tool({
         description:
