@@ -761,7 +761,7 @@ const generateResponseInternal = async (
   };
 
   const { text } = await generateText({
-    model: openai.responses('gpt-4.1'),
+    model: openai('gpt-4.1'),
     system: systemPrompt,
     messages,
     maxSteps: 30,
