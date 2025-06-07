@@ -49,16 +49,6 @@ export class GoalEvaluator {
         model: openai('gpt-4.1-mini'),
         system: `You are an AI request analyzer. Analyze the user's request to understand its type and requirements.
 
-CONTEXT:
-${fullContext}
-
-USER'S REQUEST:
-${userRequest}
-
-AGENT'S EXECUTION:
-- Tools used: ${executionSummary.toolsUsed.join(', ')}
-- Actions performed: ${executionSummary.actionsPerformed.join('; ')}
-
 Categorize this request and respond with a JSON object:
 {
   "type": "casual_conversation" | "information_request" | "task_execution" | "issue_management" | "code_development",
@@ -81,7 +71,17 @@ Guidelines:
 
 - requiresTools: true if the request inherently needs tool usage to be complete
 - platform: where the interaction is happening or where action is needed
-- urgency: based on language used and context`,
+- urgency: based on language used and context
+
+CONTEXT:
+${fullContext}
+
+USER'S REQUEST:
+${userRequest}
+
+AGENT'S EXECUTION:
+- Tools used: ${executionSummary.toolsUsed.join(', ')}
+- Actions performed: ${executionSummary.actionsPerformed.join('; ')}`,
         messages: [
           {
             role: 'user',

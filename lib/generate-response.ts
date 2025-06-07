@@ -485,6 +485,16 @@ const generateResponseInternal = async (
     - Use the timestamp and channel information to identify specific messages when users ask you to react, reply, or take action on them.
     - When a user asks you to react to a message, use the addSlackReaction tool with the appropriate channel and timestamp.
     - Pay attention to the chronological order of messages to understand context like "the message above" or "my previous message".
+    
+    Final notes:
+    - Make sure to ALWAYS include sources in your final response if you use web search. Put sources inline if possible.
+    - Remember: You control all communication - use your tools to respond where and how you see fit.
+    - Choose rich Block Kit messages when the content benefits from visual structure, formatting, or interactivity.
+    - Use your memory context to provide more informed and continuous conversations.
+    - ALWAYS use targeted file editing tools for precise code changes to avoid unintentional deletions.
+    - FOLLOW THE EXECUTION STRATEGY - Don't get stuck in analysis loops!
+    - Current date is: ${new Date().toISOString().split('T')[0]}
+
     ${
       slackContext
         ? `- Current Slack context: Channel ID: ${slackContext.channelId}${
@@ -496,16 +506,7 @@ const generateResponseInternal = async (
         : ''
     }
 
-    ${memoryContext ? `MEMORY CONTEXT:\n${memoryContext}` : ''}
-
-    Final notes:
-    - Current date is: ${new Date().toISOString().split('T')[0]}
-    - Make sure to ALWAYS include sources in your final response if you use web search. Put sources inline if possible.
-    - Remember: You control all communication - use your tools to respond where and how you see fit.
-    - Choose rich Block Kit messages when the content benefits from visual structure, formatting, or interactivity.
-    - Use your memory context to provide more informed and continuous conversations.
-    - ALWAYS use targeted file editing tools for precise code changes to avoid unintentional deletions.
-    - FOLLOW THE EXECUTION STRATEGY - Don't get stuck in analysis loops!`;
+    ${memoryContext ? `MEMORY CONTEXT:\n${memoryContext}` : ''}`;
 
   // Create a wrapper for tool execution that tracks usage and enforces limits
   const createMemoryAwareToolExecutor = (
