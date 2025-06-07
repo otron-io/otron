@@ -196,7 +196,6 @@ KV_REST_API_TOKEN=your_upstash_redis_token
 
 # Repository Configuration
 REPO_BASE_BRANCH=main
-ALLOWED_REPOSITORIES=owner1/repo1,owner2/repo2
 
 # Admin Access
 ADMIN_PASSWORD=your_admin_interface_password
@@ -243,16 +242,8 @@ npm run fix
 1. **Install Linear App**: Visit `https://your-domain.vercel.app/linear-app` and authorize
 2. **Configure Slack App**: Install the Slack app in your workspace
 3. **Install GitHub App**: Install the GitHub app on your repositories
-4. **Access Dashboard**: Visit `https://your-domain.vercel.app/` for the main dashboard
-
-### Dashboard Interface
-
-The Otron dashboard provides several interfaces:
-
-- **Main Dashboard** (`/`): Overview and navigation
-- **Agent Monitor** (`/pages/agent`): Real-time agent activity and tool usage
-- **Repository Embeddings** (`/pages/embed`): Manage code embeddings for semantic search
-- **Linear App Install** (`/linear-app`): Install and authorize Linear integration
+4. **Access Dashboard**: Visit `https://otron.io/dashboard` for the main dashboard. User and server info is stored in your browser and is not sent to our servers
+5. 5. **Set up repository embeddings**: Click the `Repository Embeddings` tile to add repos to the agent to work on and analyse
 
 ### Common Commands
 
@@ -304,10 +295,11 @@ Otron creates rich, interactive messages with buttons and menus that you can cli
 
 To enable semantic code search, embed your repositories:
 
-1. Visit `https://your-domain.vercel.app/pages/embed`
-2. Enter repository names in `owner/repo` format
-3. Click "Start Embedding" to process the codebase
-4. Monitor progress and resume if needed
+1. Visit `https://otron.io/dashboard`
+2. Click "Repository embeddings"
+3. Enter repository names in `owner/repo` format
+4. Click "Start Embedding" to process the codebase
+5. Monitor progress and resume if timeout occurs
 
 ### Automated Re-embedding
 
@@ -487,17 +479,17 @@ Otron implements multiple security layers:
 | -------------------- | ---------------- | ------------------------------ |
 | `/webhook`           | Webhook Verified | Linear webhook receiver        |
 | `/api/events`        | Webhook Verified | Slack event receiver           |
-| `/oauth/callback`    | OAuth Flow       | Linear OAuth callback handler  |
-| `/pages/embed`       | Basic Auth       | Repository embedding interface |
-| `/pages/agent`       | Basic Auth       | Agent monitoring dashboard     |
-| `/pages/dashboard`   | Basic Auth       | Main dashboard                 |
 | `/api/code-search`   | Token Protected  | Semantic code search           |
 | `/api/embed-repo`    | Token Protected  | Repository embedding API       |
 | `/api/agent-monitor` | Token Protected  | Agent monitoring API           |
+| `/oauth/callback`    | OAuth Flow       | Linear OAuth callback handler  |
+| `/pages/embed`       | Basic Auth       | Legacy embedding interface     |
+| `/pages/agent`       | Basic Auth       | Legacy monitoring dashboard    |
+| `/pages/dashboard`   | Basic Auth       | Legacy dashboard               |
 
 ## 🎛 Admin Dashboard
 
-Access the admin dashboard at `https://your-domain.vercel.app/` to:
+Access the admin dashboard at `https://otron.io/dashboard/` to:
 
 - Monitor agent activity and performance
 - View conversation history and context
