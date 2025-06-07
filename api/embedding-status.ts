@@ -21,6 +21,10 @@ interface EmbeddingStatus {
   lastCommitSha?: string;
 }
 
+// Helper function to get processed files key
+const getProcessedFilesKey = (repo: string) =>
+  `embedding:repo:${repo}:processed_files`;
+
 async function handler(req: VercelRequest, res: VercelResponse) {
   // Only accept GET requests
   if (req.method !== 'GET') {
@@ -76,13 +80,45 @@ async function handler(req: VercelRequest, res: VercelResponse) {
           continue;
         }
 
+        // Get actual processed files count from Redis set
+        let actualProcessedFiles = 0;
+        let actualTotalFiles = parsedStatus.totalFiles;
+
+        try {
+          const processedFilesSet = await redis.smembers(
+            getProcessedFilesKey(parsedStatus.repository)
+          );
+          actualProcessedFiles = processedFilesSet
+            ? processedFilesSet.length
+            : 0;
+
+          // For completed repositories, set totalFiles to match processedFiles
+          // This fixes the count discrepancy after re-embedding operations
+          if (parsedStatus.status === 'completed') {
+            actualTotalFiles = actualProcessedFiles;
+          } else if (parsedStatus.status === 'in_progress') {
+            // For in-progress repos, use the larger of the two values to avoid showing more processed than total
+            actualTotalFiles = Math.max(
+              actualProcessedFiles,
+              parsedStatus.totalFiles || 0
+            );
+          }
+        } catch (error) {
+          console.error(
+            `Error getting processed files count for ${parsedStatus.repository}:`,
+            error
+          );
+          // Fall back to stored values if Redis query fails
+          actualProcessedFiles = parsedStatus.processedFiles || 0;
+        }
+
         // Transform to our interface format
         const status: EmbeddingStatus = {
           repository: parsedStatus.repository,
           status: parsedStatus.status,
           progress: parsedStatus.progress || 0,
-          processedFiles: parsedStatus.processedFiles || 0,
-          totalFiles: parsedStatus.totalFiles,
+          processedFiles: actualProcessedFiles,
+          totalFiles: actualTotalFiles,
           lastProcessedAt: parsedStatus.lastProcessedAt || Date.now(),
           startedAt: parsedStatus.startedAt,
           errors: parsedStatus.errors,
