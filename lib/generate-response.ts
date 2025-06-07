@@ -493,6 +493,7 @@ const generateResponseInternal = async (
     - Use your memory context to provide more informed and continuous conversations.
     - ALWAYS use targeted file editing tools for precise code changes to avoid unintentional deletions.
     - FOLLOW THE EXECUTION STRATEGY - Don't get stuck in analysis loops!
+    - Remember to respond to the user you're talking to on the same platform, in the same channel, in the same thread. Users cannot see your outputs that are not tool outputs.
     - Current date is: ${new Date().toISOString().split('T')[0]}
 
     ${
