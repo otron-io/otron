@@ -189,21 +189,61 @@ async function getAllFilteredMemories(
         continue;
       }
 
+      console.log(
+        `Pipeline returned ${typeResults.length} type results for ${batch.length} keys`
+      );
+      console.log('Sample type result:', typeResults[0]);
+
       // Step 2: Get data only for valid list keys
       const validBatchKeys: string[] = [];
       for (let j = 0; j < batch.length; j++) {
         const key = batch[j];
-        const typeResult = typeResults[j] as [Error | null, string];
+        const typeResult = typeResults[j];
 
-        if (!typeResult || typeResult[0]) {
-          console.log(`Error checking type for ${key}:`, typeResult?.[0]);
-          continue;
+        console.log(`Type result for ${key}:`, typeResult);
+
+        // Handle different possible formats
+        let keyType: string;
+        if (Array.isArray(typeResult) && typeResult.length >= 2) {
+          const [error, result] = typeResult as [Error | null, string];
+          if (error) {
+            console.log(`Error checking type for ${key}:`, error);
+
+            // Fallback: try individual type check
+            try {
+              keyType = await redis.type(key);
+              console.log(`Fallback type check for ${key}: ${keyType}`);
+            } catch (fallbackError) {
+              console.log(
+                `Fallback type check failed for ${key}:`,
+                fallbackError
+              );
+              continue;
+            }
+          } else {
+            keyType = result;
+          }
+        } else {
+          console.log(`Unexpected type result format for ${key}:`, typeResult);
+
+          // Fallback: try individual type check
+          try {
+            keyType = await redis.type(key);
+            console.log(`Fallback type check for ${key}: ${keyType}`);
+          } catch (fallbackError) {
+            console.log(
+              `Fallback type check failed for ${key}:`,
+              fallbackError
+            );
+            continue;
+          }
         }
 
-        if (typeResult[1] === 'list') {
+        if (keyType === 'list') {
           validBatchKeys.push(key);
+          console.log(`Added ${key} to valid batch keys (type: ${keyType})`);
         } else {
-          console.log(`Skipping key ${key} - wrong type: ${typeResult[1]}`);
+          console.log(`Skipping key ${key} - wrong type: ${keyType}`);
         }
       }
 
