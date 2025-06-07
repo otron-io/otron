@@ -761,7 +761,12 @@ const generateResponseInternal = async (
   };
 
   const { text } = await generateText({
-    model: openai('gpt-4.1'),
+    model: openai.responses('o4-mini'),
+    providerOptions: {
+      openai: {
+        reasoningEffort: 'low',
+      },
+    },
     system: systemPrompt,
     messages,
     maxSteps: 30,
