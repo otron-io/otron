@@ -516,27 +516,43 @@ async function deleteMemories(req: VercelRequest, res: VercelResponse) {
 
   if (memoryId) {
     // Delete specific memory by ID
-    const [key, index] = (memoryId as string).split(':').slice(-2);
-    const fullKey = (memoryId as string).replace(`:${index}`, '');
+    // Memory ID format: memory:issue:ISSUE_ID:TYPE:TIMESTAMP:INDEX
+    const memoryIdStr = memoryId as string;
+    const parts = memoryIdStr.split(':');
+
+    if (parts.length < 6) {
+      return res.status(400).json({ error: 'Invalid memory ID format' });
+    }
+
+    // Extract the index (last part) and reconstruct the Redis key (all parts except last 2)
+    const index = parts[parts.length - 1];
+    const timestamp = parts[parts.length - 2];
+    const redisKey = parts.slice(0, -2).join(':'); // memory:issue:ISSUE_ID:TYPE
+
+    console.log(
+      `Deleting memory: ID=${memoryIdStr}, RedisKey=${redisKey}, Index=${index}`
+    );
 
     try {
       // Get the memory list
-      const memories = await redis.lrange(fullKey, 0, -1);
+      const memories = await redis.lrange(redisKey, 0, -1);
       const indexNum = parseInt(index, 10);
 
-      if (indexNum >= 0 && indexNum < memories.length) {
-        // Remove the specific memory (Redis doesn't have direct index deletion)
-        // So we'll use a placeholder and then remove it
-        await redis.lset(fullKey, indexNum, '__DELETED__');
-        await redis.lrem(fullKey, 1, '__DELETED__');
-
-        return res.json({
-          success: true,
-          message: 'Memory deleted successfully',
-        });
-      } else {
-        return res.status(404).json({ error: 'Memory not found' });
+      if (isNaN(indexNum) || indexNum < 0 || indexNum >= memories.length) {
+        return res
+          .status(404)
+          .json({ error: 'Memory not found or invalid index' });
       }
+
+      // Remove the specific memory (Redis doesn't have direct index deletion)
+      // So we'll use a placeholder and then remove it
+      await redis.lset(redisKey, indexNum, '__DELETED__');
+      await redis.lrem(redisKey, 1, '__DELETED__');
+
+      return res.json({
+        success: true,
+        message: 'Memory deleted successfully',
+      });
     } catch (error) {
       console.error('Error deleting specific memory:', error);
       return res.status(500).json({ error: 'Failed to delete memory' });
@@ -615,13 +631,17 @@ async function bulkDeleteByFilters(
   const keyGroups = new Map<string, number[]>();
 
   for (const memory of memories) {
-    const [key, index] = memory.id.split(':').slice(-2);
-    const fullKey = memory.id.replace(`:${index}`, '');
+    // Memory ID format: memory:issue:ISSUE_ID:TYPE:TIMESTAMP:INDEX
+    const parts = memory.id.split(':');
+    if (parts.length < 6) continue;
 
-    if (!keyGroups.has(fullKey)) {
-      keyGroups.set(fullKey, []);
+    const index = parseInt(parts[parts.length - 1], 10);
+    const redisKey = parts.slice(0, -2).join(':'); // memory:issue:ISSUE_ID:TYPE
+
+    if (!keyGroups.has(redisKey)) {
+      keyGroups.set(redisKey, []);
     }
-    keyGroups.get(fullKey)!.push(parseInt(index, 10));
+    keyGroups.get(redisKey)!.push(index);
   }
 
   // Delete memories from each key
@@ -658,11 +678,22 @@ async function bulkDeleteByIds(memoryIds: string[], res: VercelResponse) {
 
   for (const memoryId of memoryIds) {
     try {
-      const [key, index] = memoryId.split(':').slice(-2);
-      const fullKey = memoryId.replace(`:${index}`, '');
-      const indexNum = parseInt(index, 10);
+      // Memory ID format: memory:issue:ISSUE_ID:TYPE:TIMESTAMP:INDEX
+      const parts = memoryId.split(':');
+      if (parts.length < 6) {
+        console.error(`Invalid memory ID format: ${memoryId}`);
+        continue;
+      }
 
-      await redis.lset(fullKey, indexNum, '__DELETED__');
+      const index = parseInt(parts[parts.length - 1], 10);
+      const redisKey = parts.slice(0, -2).join(':'); // memory:issue:ISSUE_ID:TYPE
+
+      if (isNaN(index)) {
+        console.error(`Invalid index in memory ID: ${memoryId}`);
+        continue;
+      }
+
+      await redis.lset(redisKey, index, '__DELETED__');
       deletedCount++;
     } catch (error) {
       console.error(`Error deleting memory ${memoryId}:`, error);
