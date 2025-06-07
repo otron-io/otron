@@ -244,84 +244,137 @@ async function getAllFilteredMemories(
 
 async function getMemoryStatistics() {
   try {
-    const keys = await redis.keys('memory:issue:*');
-    const stats = {
-      totalMemories: 0,
-      conversationMemories: 0,
-      actionMemories: 0,
-      contextMemories: 0,
-      totalIssues: new Set<string>(),
-      oldestMemory: null as number | null,
-      newestMemory: null as number | null,
-    };
+    const pattern = 'memory:issue:*';
+    const keys = await redis.keys(pattern);
+
+    console.log(`Found ${keys.length} total memory keys for statistics`);
+
+    let totalMemories = 0;
+    let conversationMemories = 0;
+    let actionMemories = 0;
+    let contextMemories = 0;
+    const uniqueIssues = new Set<string>();
+    let oldestMemory: number | null = null;
+    let newestMemory: number | null = null;
 
     for (const key of keys) {
-      const keyParts = key.split(':');
-      if (keyParts.length >= 4) {
+      try {
+        // Skip tool-specific memory keys (these are hashes, not lists)
+        if (key.includes(':tools:')) {
+          continue;
+        }
+
+        // Skip relationship keys
+        if (key.includes(':file:') || key.includes(':related:')) {
+          continue;
+        }
+
+        // Only process standard memory type keys (conversation, action, context)
+        const keyParts = key.split(':');
+        if (keyParts.length < 4) {
+          continue;
+        }
+
+        const memoryType = keyParts[3]; // memory:issue:{issueId}:{memoryType}
+        if (!['conversation', 'action', 'context'].includes(memoryType)) {
+          continue;
+        }
+
+        // Check Redis key type before attempting to read
+        const keyType = await redis.type(key);
+        if (keyType !== 'list') {
+          console.log(
+            `Skipping statistics key ${key} - wrong type: ${keyType}`
+          );
+          continue;
+        }
+
         const issueId = keyParts[2];
-        const memoryType = keyParts[3];
+        uniqueIssues.add(issueId);
 
-        stats.totalIssues.add(issueId);
+        console.log(`Processing statistics for key: ${key}`);
 
-        const memoryCount = await redis.llen(key);
-        stats.totalMemories += memoryCount;
+        // Get the count of entries in this list
+        const listLength = await redis.llen(key);
+        totalMemories += listLength;
 
-        if (memoryType === 'conversation')
-          stats.conversationMemories += memoryCount;
-        else if (memoryType === 'action') stats.actionMemories += memoryCount;
-        else if (memoryType === 'context') stats.contextMemories += memoryCount;
+        // Count by memory type
+        switch (memoryType) {
+          case 'conversation':
+            conversationMemories += listLength;
+            break;
+          case 'action':
+            actionMemories += listLength;
+            break;
+          case 'context':
+            contextMemories += listLength;
+            break;
+        }
 
-        // Get timestamp of newest and oldest memories
-        if (memoryCount > 0) {
+        // Get timestamps for oldest/newest calculation
+        // Get first (newest) and last (oldest) entries
+        if (listLength > 0) {
           try {
-            const newest = await redis.lindex(key, 0);
-            const oldest = await redis.lindex(key, -1);
+            const newestEntry = await redis.lindex(key, 0);
+            const oldestEntry = await redis.lindex(key, -1);
 
-            if (newest) {
-              const newestMemory = JSON.parse(
-                typeof newest === 'string' ? newest : JSON.stringify(newest)
-              );
+            if (newestEntry) {
+              const newestParsed =
+                typeof newestEntry === 'string'
+                  ? JSON.parse(newestEntry)
+                  : newestEntry;
+              const newestTimestamp = newestParsed.timestamp;
               if (
-                !stats.newestMemory ||
-                newestMemory.timestamp > stats.newestMemory
+                newestTimestamp &&
+                (newestMemory === null || newestTimestamp > newestMemory)
               ) {
-                stats.newestMemory = newestMemory.timestamp;
+                newestMemory = newestTimestamp;
               }
             }
 
-            if (oldest) {
-              const oldestMemory = JSON.parse(
-                typeof oldest === 'string' ? oldest : JSON.stringify(oldest)
-              );
+            if (oldestEntry) {
+              const oldestParsed =
+                typeof oldestEntry === 'string'
+                  ? JSON.parse(oldestEntry)
+                  : oldestEntry;
+              const oldestTimestamp = oldestParsed.timestamp;
               if (
-                !stats.oldestMemory ||
-                oldestMemory.timestamp < stats.oldestMemory
+                oldestTimestamp &&
+                (oldestMemory === null || oldestTimestamp < oldestMemory)
               ) {
-                stats.oldestMemory = oldestMemory.timestamp;
+                oldestMemory = oldestTimestamp;
               }
             }
-          } catch (error) {
-            console.error('Error parsing timestamps for stats:', error);
+          } catch (parseError) {
+            console.error(
+              `Error parsing timestamp entries for ${key}:`,
+              parseError
+            );
+            // Continue without failing the entire statistics operation
           }
         }
+      } catch (keyError) {
+        console.error(`Error processing statistics key: ${key}`, keyError);
+        continue; // Skip this key and continue with others
       }
     }
 
+    console.log(
+      `Statistics processed: ${totalMemories} total memories from ${uniqueIssues.size} unique issues`
+    );
+
     return {
-      ...stats,
-      totalIssues: stats.totalIssues.size,
+      totalMemories,
+      conversationMemories,
+      actionMemories,
+      contextMemories,
+      totalIssues: uniqueIssues.size,
+      oldestMemory,
+      newestMemory,
     };
   } catch (error) {
     console.error('Error getting memory statistics:', error);
-    return {
-      totalMemories: 0,
-      conversationMemories: 0,
-      actionMemories: 0,
-      contextMemories: 0,
-      totalIssues: 0,
-      oldestMemory: null,
-      newestMemory: null,
-    };
+    throw error;
   }
 }
 
