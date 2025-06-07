@@ -18,7 +18,7 @@ async function handler(req: VercelRequest, res: VercelResponse) {
       title: 'Otron AI Agent API',
       description:
         'Autonomous AI agent for Linear issue management, GitHub repository integration, and Slack automation',
-      version: '1.0.0',
+      version: '0.0.1',
       contact: {
         name: 'Otron',
         url: 'https://github.com/otron-io/otron',

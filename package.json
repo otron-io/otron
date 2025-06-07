@@ -1,6 +1,6 @@
 {
   "name": "linear-agent",
-  "version": "1.0.0",
+  "version": "0.0.1",
   "description": "Linear AI agent that responds with hello world",
   "type": "module",
   "scripts": {

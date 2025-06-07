@@ -87,7 +87,7 @@ async function handler(req: VercelRequest, res: VercelResponse) {
           <div>
             <h3 class="text-lg font-medium text-gray-700">Otron Agent</h3>
             <ul class="mt-2 space-y-1 text-gray-600">
-              <li>Version: ${process.env.npm_package_version || '1.0.0'}</li>
+              <li>Version: ${'0.0.1'}</li>
               <li>Environment: ${process.env.NODE_ENV || 'development'}</li>
             </ul>
           </div>

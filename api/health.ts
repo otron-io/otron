@@ -22,7 +22,7 @@ async function handler(req: VercelRequest, res: VercelResponse) {
   const healthData = {
     status: 'healthy' as 'healthy' | 'degraded' | 'unhealthy',
     uptime: process.uptime(),
-    version: process.env.npm_package_version || '1.0.0',
+    version: '0.0.1',
     environment: process.env.NODE_ENV || 'development',
     checks: {} as Record<string, { status: string; message: string }>,
   };
