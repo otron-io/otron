@@ -258,25 +258,22 @@ async function getAllFilteredMemories(
         );
 
         // Handle Upstash Redis pipeline format for lrange results
-        let entries: string[];
+        let entries: any[];
         if (
           Array.isArray(dataResult) &&
           dataResult.length >= 2 &&
           dataResult[0] === null
         ) {
           // Standard Redis format: [error, result]
-          const [error, result] = dataResult as [Error | null, string[]];
+          const [error, result] = dataResult as [Error | null, any[]];
           if (error) {
             console.log(`Error getting data for ${key}:`, error);
             continue;
           }
           entries = result;
-        } else if (
-          Array.isArray(dataResult) &&
-          typeof dataResult[0] === 'string'
-        ) {
-          // Upstash direct format: just the array of entries
-          entries = dataResult as string[];
+        } else if (Array.isArray(dataResult)) {
+          // Upstash direct format: just the array of entries (could be strings or objects)
+          entries = dataResult;
         } else {
           console.log(`Unexpected data result format for ${key}:`, dataResult);
           continue;
@@ -297,8 +294,33 @@ async function getAllFilteredMemories(
         for (let k = 0; k < entries.length; k++) {
           try {
             const entry = entries[k];
-            const memoryEntry =
-              typeof entry === 'string' ? JSON.parse(entry) : entry;
+
+            console.log(
+              `Entry ${k} type:`,
+              typeof entry,
+              entry ? 'has data' : 'no data'
+            );
+
+            // Handle both string (JSON) and object formats
+            let memoryEntry: any;
+            if (typeof entry === 'string') {
+              // Entry is a JSON string that needs parsing
+              memoryEntry = JSON.parse(entry);
+              console.log(`Parsed JSON entry ${k}:`, {
+                timestamp: memoryEntry.timestamp,
+                type: memoryEntry.type,
+              });
+            } else if (typeof entry === 'object' && entry !== null) {
+              // Entry is already an object (Upstash direct format)
+              memoryEntry = entry;
+              console.log(`Direct object entry ${k}:`, {
+                timestamp: memoryEntry.timestamp,
+                type: memoryEntry.type,
+              });
+            } else {
+              console.log(`Skipping invalid entry ${k}:`, entry);
+              continue;
+            }
 
             // Create standardized memory entry
             const standardEntry: MemoryEntry = {
