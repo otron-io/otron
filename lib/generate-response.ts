@@ -513,9 +513,9 @@ const generateResponseInternal = async (
     originalExecutor: Function
   ) => {
     return async (...args: any[]) => {
-      const startTime = Date.now();
       let success = false;
       let response = '';
+      let detailedOutput: any = null;
 
       // Track tool usage counts
       const currentCount = executionStrategy.toolUsageCounts.get(toolName) || 0;
@@ -620,6 +620,14 @@ const generateResponseInternal = async (
         success = true;
         response = typeof result === 'string' ? result : JSON.stringify(result);
 
+        // Extract detailed output for specific tools
+        if (typeof result === 'object' && result !== null) {
+          detailedOutput = result;
+        } else if (typeof result === 'string') {
+          // Try to extract structured data from string responses
+          detailedOutput = extractDetailedOutput(toolName, result, args[0]);
+        }
+
         // Add execution guidance to response for information gathering tools
         if (
           (searchTools.includes(toolName) ||
@@ -664,11 +672,12 @@ const generateResponseInternal = async (
           executionTracker.endedExplicitly = true;
         }
 
-        // Track tool usage in memory
+        // Track tool usage in memory with detailed output
         await memoryManager.trackToolUsage(toolName, success, {
           issueId: contextId,
-          input: args,
+          input: args[0],
           response: response.substring(0, 500), // Limit response length for storage
+          detailedOutput,
         });
 
         return result;
@@ -679,8 +688,9 @@ const generateResponseInternal = async (
         // Track failed tool usage
         await memoryManager.trackToolUsage(toolName, success, {
           issueId: contextId,
-          input: args,
+          input: args[0],
           response,
+          detailedOutput: null,
         });
 
         return error;
@@ -688,13 +698,70 @@ const generateResponseInternal = async (
     };
   };
 
+  // Helper function to extract detailed output from string responses
+  const extractDetailedOutput = (
+    toolName: string,
+    response: string,
+    input: any
+  ): any => {
+    const output: any = {};
+
+    switch (toolName) {
+      case 'createPullRequest':
+        // Extract PR number and URL from response
+        const prMatch =
+          response.match(/PR #(\d+)/i) ||
+          response.match(/pull request #(\d+)/i);
+        const urlMatch = response.match(
+          /https:\/\/github\.com\/[^\/\s]+\/[^\/\s]+\/pull\/(\d+)/
+        );
+        if (prMatch) output.pullRequestNumber = parseInt(prMatch[1]);
+        if (urlMatch) output.url = urlMatch[0];
+        break;
+
+      case 'createBranch':
+        // Branch creation is usually just a success message
+        output.branchName = input?.branch;
+        output.repository = input?.repository;
+        break;
+
+      case 'createIssue':
+        // Try to extract issue ID from Linear responses
+        const issueMatch = response.match(/([A-Z]{2,}-\d+)/);
+        if (issueMatch) output.issueId = issueMatch[1];
+        break;
+
+      case 'searchEmbeddedCode':
+        // Extract search result count
+        const resultMatch = response.match(/found (\d+) results?/i);
+        if (resultMatch) output.resultCount = parseInt(resultMatch[1]);
+        break;
+
+      case 'sendSlackMessage':
+      case 'sendChannelMessage':
+      case 'sendDirectMessage':
+        // Extract message timestamp if available
+        const tsMatch = response.match(/timestamp[:\s]+([0-9.]+)/i);
+        if (tsMatch) output.messageTimestamp = tsMatch[1];
+        break;
+
+      default:
+        // For other tools, just capture basic info
+        if (input) {
+          output.inputSummary = {
+            keys: Object.keys(input),
+            hasContent: !!input.content,
+            hasPath: !!input.path,
+          };
+        }
+        break;
+    }
+
+    return Object.keys(output).length > 0 ? output : null;
+  };
+
   const { text } = await generateText({
-    model: openai.responses('o4-mini'),
-    providerOptions: {
-      openai: {
-        reasoningEffort: 'high',
-      },
-    },
+    model: openai.responses('gpt-4.1'),
     system: systemPrompt,
     messages,
     maxSteps: 30,

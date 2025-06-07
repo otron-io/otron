@@ -358,7 +358,14 @@ export const createPullRequest = async (
   head: string,
   base: string,
   repository: string
-): Promise<{ url: string; number: number }> => {
+): Promise<{
+  url: string;
+  number: number;
+  id: number;
+  state: string;
+  mergeable: boolean | null;
+  draft: boolean;
+}> => {
   const [owner, repo] = repository.split('/');
 
   try {
@@ -392,7 +399,14 @@ export const createPullRequest = async (
     });
 
     console.log(`Created pull request #${data.number} in ${repository}`);
-    return { url: data.html_url, number: data.number };
+    return {
+      url: data.html_url,
+      number: data.number,
+      id: data.id,
+      state: data.state,
+      mergeable: data.mergeable,
+      draft: data.draft || false,
+    };
   } catch (error) {
     console.error(`Error creating pull request in ${repository}:`, error);
     throw error;
