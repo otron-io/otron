@@ -125,8 +125,7 @@ async function getAllFilteredMemories(
     const pattern = 'memory:issue:*';
     const allKeys = await redis.keys(pattern);
 
-    console.log(`Found ${allKeys.length} total keys:`);
-    console.log('Sample keys:', allKeys.slice(0, 5));
+    console.log(`Found ${allKeys.length} total keys`);
 
     // Filter keys by pattern to avoid wrong data types
     const validKeys = allKeys.filter((key) => {
@@ -141,36 +140,17 @@ async function getAllFilteredMemories(
 
       const keyParts = key.split(':');
       if (keyParts.length < 4) {
-        console.log(
-          `Skipping key with wrong format: ${key} (parts: ${keyParts.length})`
-        );
         return false;
       }
 
       const issueId = keyParts[2];
       const memoryType = keyParts[3];
 
-      console.log(
-        `Checking key: ${key} -> issueId: ${issueId}, memoryType: ${memoryType}`
-      );
-
       // Apply filters early
-      if (filters.issueId && issueId !== filters.issueId) {
-        console.log(
-          `Filtered out by issueId: ${issueId} !== ${filters.issueId}`
-        );
+      if (filters.issueId && issueId !== filters.issueId) return false;
+      if (filters.memoryType && memoryType !== filters.memoryType) return false;
+      if (!['conversation', 'action', 'context'].includes(memoryType))
         return false;
-      }
-      if (filters.memoryType && memoryType !== filters.memoryType) {
-        console.log(
-          `Filtered out by memoryType: ${memoryType} !== ${filters.memoryType}`
-        );
-        return false;
-      }
-      if (!['conversation', 'action', 'context'].includes(memoryType)) {
-        console.log(`Filtered out by invalid memoryType: ${memoryType}`);
-        return false;
-      }
 
       return true;
     });
@@ -178,34 +158,83 @@ async function getAllFilteredMemories(
     console.log(
       `Filtered ${allKeys.length} keys down to ${validKeys.length} valid keys`
     );
-    console.log('Valid keys sample:', validKeys.slice(0, 3));
 
     if (validKeys.length === 0) {
       console.timeEnd('getAllFilteredMemories');
       return [];
     }
 
-    // Process keys in batches for better performance
-    const batchSize = 10;
+    // Process keys in optimized batches
+    const batchSize = 5; // Smaller batches for better reliability
     const allMemories: MemoryEntry[] = [];
 
-    // TEMPORARY: Use original approach to debug
-    for (const key of validKeys.slice(0, 5)) {
-      // Limit to first 5 keys for debugging
-      try {
-        console.log(`Processing individual key: ${key}`);
+    for (let i = 0; i < validKeys.length; i += batchSize) {
+      const batch = validKeys.slice(i, i + batchSize);
 
-        const keyType = await redis.type(key);
-        console.log(`Key ${key} type: ${keyType}`);
+      console.log(
+        `Processing batch ${Math.floor(i / batchSize) + 1}: ${
+          batch.length
+        } keys`
+      );
 
-        if (keyType !== 'list') {
-          console.log(`Skipping key ${key} - wrong type: ${keyType}`);
+      // Step 1: Check types first
+      const typesPipeline = redis.pipeline();
+      batch.forEach((key) => {
+        typesPipeline.type(key);
+      });
+
+      const typeResults = await typesPipeline.exec();
+      if (!typeResults) {
+        console.error('No type results from pipeline');
+        continue;
+      }
+
+      // Step 2: Get data only for valid list keys
+      const validBatchKeys: string[] = [];
+      for (let j = 0; j < batch.length; j++) {
+        const key = batch[j];
+        const typeResult = typeResults[j] as [Error | null, string];
+
+        if (!typeResult || typeResult[0]) {
+          console.log(`Error checking type for ${key}:`, typeResult?.[0]);
           continue;
         }
 
-        const entries = await redis.lrange(key, 0, -1);
-        console.log(`Key ${key} has ${entries.length} entries`);
+        if (typeResult[1] === 'list') {
+          validBatchKeys.push(key);
+        } else {
+          console.log(`Skipping key ${key} - wrong type: ${typeResult[1]}`);
+        }
+      }
 
+      if (validBatchKeys.length === 0) {
+        console.log('No valid list keys in this batch');
+        continue;
+      }
+
+      // Step 3: Get data for valid keys
+      const dataPipeline = redis.pipeline();
+      validBatchKeys.forEach((key) => {
+        dataPipeline.lrange(key, 0, -1);
+      });
+
+      const dataResults = await dataPipeline.exec();
+      if (!dataResults) {
+        console.error('No data results from pipeline');
+        continue;
+      }
+
+      // Step 4: Process the data
+      for (let j = 0; j < validBatchKeys.length; j++) {
+        const key = validBatchKeys[j];
+        const dataResult = dataResults[j] as [Error | null, string[]];
+
+        if (!dataResult || dataResult[0]) {
+          console.log(`Error getting data for ${key}:`, dataResult?.[0]);
+          continue;
+        }
+
+        const entries = dataResult[1] as string[];
         if (!entries || entries.length === 0) {
           console.log(`No entries found for key: ${key}`);
           continue;
@@ -215,26 +244,14 @@ async function getAllFilteredMemories(
         const issueId = keyParts[2];
         const memoryType = keyParts[3] as 'conversation' | 'action' | 'context';
 
-        console.log(
-          `Processing ${entries.length} entries for ${key} (issueId: ${issueId}, type: ${memoryType})`
-        );
+        console.log(`Processing ${entries.length} entries for ${key}`);
 
         // Process entries
         for (let k = 0; k < entries.length; k++) {
           try {
             const entry = entries[k];
-            console.log(
-              `Processing entry ${k}:`,
-              typeof entry,
-              entry ? 'has data' : 'no data'
-            );
-
             const memoryEntry =
               typeof entry === 'string' ? JSON.parse(entry) : entry;
-            console.log(`Parsed entry:`, {
-              timestamp: memoryEntry.timestamp,
-              type: memoryEntry.type,
-            });
 
             // Create standardized memory entry
             const standardEntry: MemoryEntry = {
@@ -247,159 +264,34 @@ async function getAllFilteredMemories(
               relevanceScore: memoryEntry.relevanceScore,
             };
 
-            console.log(`Created standard entry:`, {
-              id: standardEntry.id,
-              timestamp: standardEntry.timestamp,
-            });
-
             // Apply remaining filters
-            if (
-              filters.dateFrom &&
-              standardEntry.timestamp < filters.dateFrom
-            ) {
-              console.log(
-                `Filtered out by dateFrom: ${standardEntry.timestamp} < ${filters.dateFrom}`
-              );
+            if (filters.dateFrom && standardEntry.timestamp < filters.dateFrom)
               continue;
-            }
-            if (filters.dateTo && standardEntry.timestamp > filters.dateTo) {
-              console.log(
-                `Filtered out by dateTo: ${standardEntry.timestamp} > ${filters.dateTo}`
-              );
+            if (filters.dateTo && standardEntry.timestamp > filters.dateTo)
               continue;
-            }
 
             if (filters.slackChannel) {
               const dataStr = JSON.stringify(standardEntry.data).toLowerCase();
-              if (!dataStr.includes(filters.slackChannel.toLowerCase())) {
-                console.log(
-                  `Filtered out by slackChannel: ${filters.slackChannel} not in data`
-                );
+              if (!dataStr.includes(filters.slackChannel.toLowerCase()))
                 continue;
-              }
             }
 
             if (filters.searchQuery) {
               const searchContent = JSON.stringify(
                 standardEntry.data
               ).toLowerCase();
-              if (!searchContent.includes(filters.searchQuery.toLowerCase())) {
-                console.log(
-                  `Filtered out by searchQuery: ${filters.searchQuery} not in content`
-                );
+              if (!searchContent.includes(filters.searchQuery.toLowerCase()))
                 continue;
-              }
             }
 
             allMemories.push(standardEntry);
-            console.log(`Added memory entry: ${standardEntry.id}`);
           } catch (parseError) {
             console.error(`Error parsing memory entry ${k}:`, parseError);
             continue;
           }
         }
-      } catch (keyError) {
-        console.error(`Error processing key: ${key}`, keyError);
-        continue;
       }
     }
-
-    /* ORIGINAL PIPELINE CODE - COMMENTED OUT FOR DEBUGGING
-    for (let i = 0; i < validKeys.length; i += batchSize) {
-      const batch = validKeys.slice(i, i + batchSize);
-      
-      console.log(`Processing batch ${Math.floor(i/batchSize) + 1}: ${batch.length} keys`);
-      
-      // Use pipeline for batch operations
-      const pipeline = redis.pipeline();
-      
-      // Check types and get data in parallel
-      batch.forEach(key => {
-        pipeline.type(key);
-        pipeline.lrange(key, 0, -1); // Get all entries for now, we'll optimize this later
-      });
-      
-      const results = await pipeline.exec();
-      console.log(`Pipeline results: ${results?.length} results for ${batch.length * 2} operations`);
-      
-      // Process results
-      for (let j = 0; j < batch.length; j++) {
-        const key = batch[j];
-        const typeResult = results[j * 2] as [Error | null, string];
-        const dataResult = results[j * 2 + 1] as [Error | null, string[]];
-        
-        console.log(`Key ${key}: type=${typeResult[1]}, entries=${dataResult[1]?.length || 0}`);
-        
-        if (typeResult[1] !== 'list') {
-          console.log(`Skipping key ${key} - wrong type: ${typeResult[1]}`);
-          continue;
-        }
-        
-        const entries = dataResult[1];
-        if (!entries || entries.length === 0) {
-          console.log(`No entries found for key: ${key}`);
-          continue;
-        }
-        
-        const keyParts = key.split(':');
-        const issueId = keyParts[2];
-        const memoryType = keyParts[3] as 'conversation' | 'action' | 'context';
-        
-        console.log(`Processing ${entries.length} entries for ${key}`);
-        
-        // Process entries
-        for (let k = 0; k < entries.length; k++) {
-          try {
-            const entry = entries[k];
-            const memoryEntry = typeof entry === 'string' ? JSON.parse(entry) : entry;
-            
-            // Create standardized memory entry
-            const standardEntry: MemoryEntry = {
-              id: `${key}:${memoryEntry.timestamp}:${k}`,
-              issueId,
-              memoryType,
-              timestamp: memoryEntry.timestamp,
-              type: memoryEntry.type || memoryType,
-              data: memoryEntry.data || memoryEntry,
-              relevanceScore: memoryEntry.relevanceScore
-            };
-            
-            // Apply remaining filters
-            if (filters.dateFrom && standardEntry.timestamp < filters.dateFrom) {
-              console.log(`Filtered out by dateFrom: ${standardEntry.timestamp} < ${filters.dateFrom}`);
-              continue;
-            }
-            if (filters.dateTo && standardEntry.timestamp > filters.dateTo) {
-              console.log(`Filtered out by dateTo: ${standardEntry.timestamp} > ${filters.dateTo}`);
-              continue;
-            }
-            
-            if (filters.slackChannel) {
-              const dataStr = JSON.stringify(standardEntry.data).toLowerCase();
-              if (!dataStr.includes(filters.slackChannel.toLowerCase())) {
-                console.log(`Filtered out by slackChannel: ${filters.slackChannel} not in data`);
-                continue;
-              }
-            }
-            
-            if (filters.searchQuery) {
-              const searchContent = JSON.stringify(standardEntry.data).toLowerCase();
-              if (!searchContent.includes(filters.searchQuery.toLowerCase())) {
-                console.log(`Filtered out by searchQuery: ${filters.searchQuery} not in content`);
-                continue;
-              }
-            }
-            
-            allMemories.push(standardEntry);
-            console.log(`Added memory entry: ${standardEntry.id}`);
-          } catch (parseError) {
-            console.error(`Error parsing memory entry:`, parseError);
-            continue;
-          }
-        }
-      }
-    }
-    */
 
     // Sort by timestamp (newest first)
     allMemories.sort((a, b) => b.timestamp - a.timestamp);
@@ -419,6 +311,8 @@ async function getMemoryStatistics() {
 
     const pattern = 'memory:issue:*';
     const allKeys = await redis.keys(pattern);
+
+    console.log(`Found ${allKeys.length} total keys for statistics`);
 
     // Filter keys efficiently
     const validKeys = allKeys.filter((key) => {
@@ -452,18 +346,8 @@ async function getMemoryStatistics() {
       };
     }
 
-    // Use pipeline for all length operations
-    const pipeline = redis.pipeline();
-
-    validKeys.forEach((key) => {
-      pipeline.type(key);
-      pipeline.llen(key);
-      pipeline.lindex(key, 0); // newest
-      pipeline.lindex(key, -1); // oldest
-    });
-
-    const results = await pipeline.exec();
-
+    // Use optimized pipeline for statistics
+    const batchSize = 10;
     let totalMemories = 0;
     let conversationMemories = 0;
     let actionMemories = 0;
@@ -472,81 +356,121 @@ async function getMemoryStatistics() {
     let oldestMemory: number | null = null;
     let newestMemory: number | null = null;
 
-    for (let i = 0; i < validKeys.length; i++) {
-      const key = validKeys[i];
-      const keyParts = key.split(':');
-      const issueId = keyParts[2];
-      const memoryType = keyParts[3];
+    for (let i = 0; i < validKeys.length; i += batchSize) {
+      const batch = validKeys.slice(i, i + batchSize);
 
-      const typeResult = results[i * 4] as [Error | null, string];
-      const lenResult = results[i * 4 + 1] as [Error | null, number];
-      const newestResult = results[i * 4 + 2] as [Error | null, string | null];
-      const oldestResult = results[i * 4 + 3] as [Error | null, string | null];
+      // Step 1: Check types
+      const typesPipeline = redis.pipeline();
+      batch.forEach((key) => {
+        typesPipeline.type(key);
+      });
 
-      if (typeResult[1] !== 'list') continue;
+      const typeResults = await typesPipeline.exec();
+      if (!typeResults) continue;
 
-      const listLength = lenResult[1];
-      if (listLength === 0) continue;
+      // Step 2: Get lengths and timestamps for valid keys
+      const validBatchKeys: string[] = [];
+      for (let j = 0; j < batch.length; j++) {
+        const key = batch[j];
+        const typeResult = typeResults[j] as [Error | null, string];
 
-      uniqueIssues.add(issueId);
-      totalMemories += listLength;
+        if (!typeResult || typeResult[0] || typeResult[1] !== 'list') {
+          continue;
+        }
 
-      // Count by memory type
-      switch (memoryType) {
-        case 'conversation':
-          conversationMemories += listLength;
-          break;
-        case 'action':
-          actionMemories += listLength;
-          break;
-        case 'context':
-          contextMemories += listLength;
-          break;
+        validBatchKeys.push(key);
       }
 
-      // Process timestamps
-      try {
-        if (newestResult[1]) {
-          const newestParsed =
-            typeof newestResult[1] === 'string'
-              ? JSON.parse(newestResult[1])
-              : newestResult[1];
-          const newestTimestamp = newestParsed.timestamp;
-          if (
-            newestTimestamp &&
-            (newestMemory === null || newestTimestamp > newestMemory)
-          ) {
-            newestMemory = newestTimestamp;
-          }
+      if (validBatchKeys.length === 0) continue;
+
+      // Step 3: Get stats data
+      const statsPipeline = redis.pipeline();
+      validBatchKeys.forEach((key) => {
+        statsPipeline.llen(key);
+        statsPipeline.lindex(key, 0); // newest
+        statsPipeline.lindex(key, -1); // oldest
+      });
+
+      const statsResults = await statsPipeline.exec();
+      if (!statsResults) continue;
+
+      // Step 4: Process results
+      for (let j = 0; j < validBatchKeys.length; j++) {
+        const key = validBatchKeys[j];
+        const keyParts = key.split(':');
+        const issueId = keyParts[2];
+        const memoryType = keyParts[3];
+
+        const lenResult = statsResults[j * 3] as [Error | null, number];
+        const newestResult = statsResults[j * 3 + 1] as [
+          Error | null,
+          string | null
+        ];
+        const oldestResult = statsResults[j * 3 + 2] as [
+          Error | null,
+          string | null
+        ];
+
+        if (!lenResult || lenResult[0]) continue;
+
+        const listLength = lenResult[1];
+        if (listLength === 0) continue;
+
+        uniqueIssues.add(issueId);
+        totalMemories += listLength;
+
+        // Count by memory type
+        switch (memoryType) {
+          case 'conversation':
+            conversationMemories += listLength;
+            break;
+          case 'action':
+            actionMemories += listLength;
+            break;
+          case 'context':
+            contextMemories += listLength;
+            break;
         }
 
-        if (oldestResult[1]) {
-          const oldestParsed =
-            typeof oldestResult[1] === 'string'
-              ? JSON.parse(oldestResult[1])
-              : oldestResult[1];
-          const oldestTimestamp = oldestParsed.timestamp;
-          if (
-            oldestTimestamp &&
-            (oldestMemory === null || oldestTimestamp < oldestMemory)
-          ) {
-            oldestMemory = oldestTimestamp;
+        // Process timestamps
+        try {
+          if (newestResult && !newestResult[0] && newestResult[1]) {
+            const newestParsed =
+              typeof newestResult[1] === 'string'
+                ? JSON.parse(newestResult[1])
+                : newestResult[1];
+            const newestTimestamp = newestParsed.timestamp;
+            if (
+              newestTimestamp &&
+              (newestMemory === null || newestTimestamp > newestMemory)
+            ) {
+              newestMemory = newestTimestamp;
+            }
           }
+
+          if (oldestResult && !oldestResult[0] && oldestResult[1]) {
+            const oldestParsed =
+              typeof oldestResult[1] === 'string'
+                ? JSON.parse(oldestResult[1])
+                : oldestResult[1];
+            const oldestTimestamp = oldestParsed.timestamp;
+            if (
+              oldestTimestamp &&
+              (oldestMemory === null || oldestTimestamp < oldestMemory)
+            ) {
+              oldestMemory = oldestTimestamp;
+            }
+          }
+        } catch (parseError) {
+          console.error(
+            `Error parsing timestamp entries for ${key}:`,
+            parseError
+          );
         }
-      } catch (parseError) {
-        console.error(
-          `Error parsing timestamp entries for ${key}:`,
-          parseError
-        );
       }
     }
 
-    console.log(
-      `Statistics: ${totalMemories} total memories from ${uniqueIssues.size} unique issues`
-    );
-    console.timeEnd('getMemoryStatistics');
-
-    return {
+    const stats = {
       totalMemories,
       conversationMemories,
       actionMemories,
@@ -555,6 +479,11 @@ async function getMemoryStatistics() {
       oldestMemory,
       newestMemory,
     };
+
+    console.log(`Statistics result:`, stats);
+    console.timeEnd('getMemoryStatistics');
+
+    return stats;
   } catch (error) {
     console.error('Error getting memory statistics:', error);
     throw error;
