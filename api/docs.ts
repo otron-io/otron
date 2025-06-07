@@ -101,6 +101,84 @@ async function handler(req: VercelRequest, res: VercelResponse) {
             },
           },
         },
+        MemoryEntry: {
+          type: 'object',
+          properties: {
+            id: {
+              type: 'string',
+              description: 'Unique memory entry identifier',
+            },
+            issueId: {
+              type: 'string',
+              description: 'Associated issue or context ID',
+            },
+            memoryType: {
+              type: 'string',
+              enum: ['conversation', 'action', 'context'],
+              description: 'Type of memory entry',
+            },
+            timestamp: {
+              type: 'number',
+              description: 'Unix timestamp when memory was created',
+            },
+            type: {
+              type: 'string',
+              description: 'Specific memory type (e.g., tool name for actions)',
+            },
+            data: {
+              type: 'object',
+              description: 'Memory content data',
+              additionalProperties: true,
+            },
+            relevanceScore: {
+              type: 'number',
+              description: 'Relevance score for memory ranking',
+            },
+          },
+          required: [
+            'id',
+            'issueId',
+            'memoryType',
+            'timestamp',
+            'type',
+            'data',
+          ],
+        },
+        MemoryStatistics: {
+          type: 'object',
+          properties: {
+            totalMemories: {
+              type: 'number',
+              description: 'Total number of memory entries',
+            },
+            conversationMemories: {
+              type: 'number',
+              description: 'Number of conversation memory entries',
+            },
+            actionMemories: {
+              type: 'number',
+              description: 'Number of action memory entries',
+            },
+            contextMemories: {
+              type: 'number',
+              description: 'Number of context memory entries',
+            },
+            totalIssues: {
+              type: 'number',
+              description: 'Number of unique issues with memories',
+            },
+            oldestMemory: {
+              type: 'number',
+              description: 'Timestamp of oldest memory entry',
+              nullable: true,
+            },
+            newestMemory: {
+              type: 'number',
+              description: 'Timestamp of newest memory entry',
+              nullable: true,
+            },
+          },
+        },
         AgentContext: {
           type: 'object',
           properties: {
@@ -977,6 +1055,343 @@ async function handler(req: VercelRequest, res: VercelResponse) {
           },
         },
       },
+      '/api/memory-browser': {
+        get: {
+          summary: 'Browse Memory Entries',
+          description:
+            'Retrieve paginated memory entries with filtering and search capabilities',
+          tags: ['Memory'],
+          security: [{ InternalToken: [] }],
+          parameters: [
+            {
+              name: 'page',
+              in: 'query',
+              description: 'Page number for pagination (1-based)',
+              required: false,
+              schema: {
+                type: 'integer',
+                minimum: 1,
+                default: 1,
+              },
+            },
+            {
+              name: 'limit',
+              in: 'query',
+              description: 'Number of items per page',
+              required: false,
+              schema: {
+                type: 'integer',
+                minimum: 1,
+                maximum: 100,
+                default: 20,
+              },
+            },
+            {
+              name: 'issueId',
+              in: 'query',
+              description: 'Filter by specific issue ID',
+              required: false,
+              schema: {
+                type: 'string',
+              },
+            },
+            {
+              name: 'memoryType',
+              in: 'query',
+              description: 'Filter by memory type',
+              required: false,
+              schema: {
+                type: 'string',
+                enum: ['conversation', 'action', 'context'],
+              },
+            },
+            {
+              name: 'dateFrom',
+              in: 'query',
+              description:
+                'Filter memories from this timestamp (Unix timestamp)',
+              required: false,
+              schema: {
+                type: 'number',
+              },
+            },
+            {
+              name: 'dateTo',
+              in: 'query',
+              description:
+                'Filter memories until this timestamp (Unix timestamp)',
+              required: false,
+              schema: {
+                type: 'number',
+              },
+            },
+            {
+              name: 'slackChannel',
+              in: 'query',
+              description: 'Filter by Slack channel ID',
+              required: false,
+              schema: {
+                type: 'string',
+              },
+            },
+            {
+              name: 'searchQuery',
+              in: 'query',
+              description: 'Search within memory content',
+              required: false,
+              schema: {
+                type: 'string',
+              },
+            },
+          ],
+          responses: {
+            '200': {
+              description: 'Memory entries with pagination and statistics',
+              content: {
+                'application/json': {
+                  schema: {
+                    type: 'object',
+                    properties: {
+                      memories: {
+                        type: 'array',
+                        items: { $ref: '#/components/schemas/MemoryEntry' },
+                        description: 'Array of memory entries',
+                      },
+                      pagination: {
+                        type: 'object',
+                        properties: {
+                          page: {
+                            type: 'integer',
+                            description: 'Current page number',
+                          },
+                          limit: {
+                            type: 'integer',
+                            description: 'Items per page',
+                          },
+                          total: {
+                            type: 'integer',
+                            description: 'Total number of items',
+                          },
+                          totalPages: {
+                            type: 'integer',
+                            description: 'Total number of pages',
+                          },
+                        },
+                      },
+                      statistics: {
+                        $ref: '#/components/schemas/MemoryStatistics',
+                        description: 'Memory statistics',
+                      },
+                    },
+                  },
+                },
+              },
+            },
+            '403': {
+              description: 'Forbidden - Invalid or missing internal token',
+              content: {
+                'application/json': {
+                  schema: { $ref: '#/components/schemas/Error' },
+                },
+              },
+            },
+            '500': {
+              description: 'Internal server error',
+              content: {
+                'application/json': {
+                  schema: { $ref: '#/components/schemas/Error' },
+                },
+              },
+            },
+          },
+        },
+        delete: {
+          summary: 'Delete Memory Entry',
+          description: 'Delete a specific memory entry by ID',
+          tags: ['Memory'],
+          security: [{ InternalToken: [] }],
+          parameters: [
+            {
+              name: 'id',
+              in: 'query',
+              description: 'Memory entry ID to delete',
+              required: true,
+              schema: {
+                type: 'string',
+              },
+            },
+          ],
+          responses: {
+            '200': {
+              description: 'Memory entry deleted successfully',
+              content: {
+                'application/json': {
+                  schema: {
+                    type: 'object',
+                    properties: {
+                      success: {
+                        type: 'boolean',
+                      },
+                      message: {
+                        type: 'string',
+                      },
+                    },
+                  },
+                },
+              },
+            },
+            '400': {
+              description: 'Bad request - missing memory ID',
+              content: {
+                'application/json': {
+                  schema: { $ref: '#/components/schemas/Error' },
+                },
+              },
+            },
+            '404': {
+              description: 'Memory entry not found',
+              content: {
+                'application/json': {
+                  schema: { $ref: '#/components/schemas/Error' },
+                },
+              },
+            },
+            '403': {
+              description: 'Forbidden - Invalid or missing internal token',
+              content: {
+                'application/json': {
+                  schema: { $ref: '#/components/schemas/Error' },
+                },
+              },
+            },
+            '500': {
+              description: 'Internal server error',
+              content: {
+                'application/json': {
+                  schema: { $ref: '#/components/schemas/Error' },
+                },
+              },
+            },
+          },
+        },
+        post: {
+          summary: 'Bulk Memory Operations',
+          description:
+            'Perform bulk operations on memory entries (delete by filters, delete by IDs, cleanup)',
+          tags: ['Memory'],
+          security: [{ InternalToken: [] }],
+          requestBody: {
+            required: true,
+            content: {
+              'application/json': {
+                schema: {
+                  type: 'object',
+                  required: ['operation'],
+                  properties: {
+                    operation: {
+                      type: 'string',
+                      enum: ['deleteByFilters', 'deleteByIds', 'cleanup'],
+                      description: 'Type of bulk operation to perform',
+                    },
+                    filters: {
+                      type: 'object',
+                      description: 'Filters for deleteByFilters operation',
+                      properties: {
+                        issueId: {
+                          type: 'string',
+                          description: 'Filter by issue ID',
+                        },
+                        memoryType: {
+                          type: 'string',
+                          enum: ['conversation', 'action', 'context'],
+                          description: 'Filter by memory type',
+                        },
+                        dateFrom: {
+                          type: 'number',
+                          description: 'Filter from timestamp',
+                        },
+                        dateTo: {
+                          type: 'number',
+                          description: 'Filter until timestamp',
+                        },
+                        slackChannel: {
+                          type: 'string',
+                          description: 'Filter by Slack channel',
+                        },
+                        searchQuery: {
+                          type: 'string',
+                          description: 'Search query for content',
+                        },
+                      },
+                    },
+                    memoryIds: {
+                      type: 'array',
+                      items: {
+                        type: 'string',
+                      },
+                      description:
+                        'Array of memory IDs for deleteByIds operation',
+                    },
+                    olderThanDays: {
+                      type: 'number',
+                      description: 'Number of days for cleanup operation',
+                      minimum: 1,
+                    },
+                  },
+                },
+              },
+            },
+          },
+          responses: {
+            '200': {
+              description: 'Bulk operation completed successfully',
+              content: {
+                'application/json': {
+                  schema: {
+                    type: 'object',
+                    properties: {
+                      success: {
+                        type: 'boolean',
+                      },
+                      message: {
+                        type: 'string',
+                      },
+                      deletedCount: {
+                        type: 'integer',
+                        description: 'Number of memories deleted',
+                      },
+                    },
+                  },
+                },
+              },
+            },
+            '400': {
+              description: 'Bad request - invalid operation or parameters',
+              content: {
+                'application/json': {
+                  schema: { $ref: '#/components/schemas/Error' },
+                },
+              },
+            },
+            '403': {
+              description: 'Forbidden - Invalid or missing internal token',
+              content: {
+                'application/json': {
+                  schema: { $ref: '#/components/schemas/Error' },
+                },
+              },
+            },
+            '500': {
+              description: 'Internal server error',
+              content: {
+                'application/json': {
+                  schema: { $ref: '#/components/schemas/Error' },
+                },
+              },
+            },
+          },
+        },
+      },
       '/webhook': {
         post: {
           summary: 'Linear Webhook Handler',
@@ -1154,6 +1569,10 @@ async function handler(req: VercelRequest, res: VercelResponse) {
       {
         name: 'Issues',
         description: 'Issue tracking and action endpoints',
+      },
+      {
+        name: 'Memory',
+        description: 'Memory management and browsing endpoints',
       },
       {
         name: 'Webhooks',

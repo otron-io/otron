@@ -52,6 +52,7 @@ Otron is an intelligent AI agent that:
 
 - **Semantic Code Search**: Vector-based code understanding that goes beyond keyword matching
 - **Memory System**: Persistent context across conversations and issues
+- **Memory Browser**: Advanced interface for browsing, filtering, and managing agent memories
 - **Multi-Platform Orchestration**: Coordinates actions across GitHub, Slack, and Linear
 - **Goal-Oriented Execution**: Self-evaluates progress and adjusts strategies
 - **Interactive Components**: Responds to user interactions and button clicks
@@ -70,6 +71,7 @@ Built with modern technologies for reliability and performance:
 
 - **Response Generator**: Advanced AI prompt engineering with tool execution
 - **Memory Manager**: Persistent context and conversation history
+- **Memory Browser**: Interactive interface for memory management and analysis
 - **Tool Executors**: 50+ tools for cross-platform actions
 - **Vector Search**: Semantic code search using OpenAI embeddings
 - **Goal Evaluator**: Self-assessment and strategy adjustment
@@ -475,17 +477,17 @@ Otron implements multiple security layers:
 
 ### Protected Endpoints
 
-| Endpoint             | Access Level     | Description                    |
-| -------------------- | ---------------- | ------------------------------ |
-| `/webhook`           | Webhook Verified | Linear webhook receiver        |
-| `/api/events`        | Webhook Verified | Slack event receiver           |
-| `/api/code-search`   | Token Protected  | Semantic code search           |
-| `/api/embed-repo`    | Token Protected  | Repository embedding API       |
-| `/api/agent-monitor` | Token Protected  | Agent monitoring API           |
-| `/oauth/callback`    | OAuth Flow       | Linear OAuth callback handler  |
-| `/pages/embed`       | Basic Auth       | Legacy embedding interface     |
-| `/pages/agent`       | Basic Auth       | Legacy monitoring dashboard    |
-| `/pages/dashboard`   | Basic Auth       | Legacy dashboard               |
+| Endpoint             | Access Level     | Description                   |
+| -------------------- | ---------------- | ----------------------------- |
+| `/webhook`           | Webhook Verified | Linear webhook receiver       |
+| `/api/events`        | Webhook Verified | Slack event receiver          |
+| `/api/code-search`   | Token Protected  | Semantic code search          |
+| `/api/embed-repo`    | Token Protected  | Repository embedding API      |
+| `/api/agent-monitor` | Token Protected  | Agent monitoring API          |
+| `/oauth/callback`    | OAuth Flow       | Linear OAuth callback handler |
+| `/pages/embed`       | Basic Auth       | Legacy embedding interface    |
+| `/pages/agent`       | Basic Auth       | Legacy monitoring dashboard   |
+| `/pages/dashboard`   | Basic Auth       | Legacy dashboard              |
 
 ## 🎛 Admin Dashboard
 
@@ -504,6 +506,39 @@ The dashboard includes:
 - **Repository Embeddings**: Code embedding management and search interface
 - **Linear App Installation**: Easy OAuth setup for Linear integration
 - **System Information**: Configuration status and health monitoring
+- **Memory Browser**: Advanced interface for browsing, filtering, and managing agent memories
+
+### Dashboard Features
+
+#### Agent Monitor
+
+- Real-time activity tracking and performance metrics
+- Tool usage statistics and success rates
+- Active and completed context management
+- System activity feed and health monitoring
+
+#### Repository Embeddings
+
+- Code embedding management and status tracking
+- Semantic search interface with advanced filtering
+- Repository embedding progress monitoring
+- Bulk embedding operations and cleanup tools
+
+#### Memory Browser
+
+- **Advanced Memory Search**: Filter memories by issue, type, date range, and content
+- **Bulk Operations**: Delete multiple memories or cleanup old data
+- **Memory Analytics**: View memory distribution and usage statistics
+- **Issue-Specific Views**: Browse memories related to specific Linear issues or Slack threads
+- **Content Preview**: Inspect memory content including conversations, actions, and context data
+- **Pagination**: Efficient browsing of large memory datasets
+
+The Memory Browser provides comprehensive visibility into Otron's memory system, allowing administrators to:
+
+- Monitor memory usage and growth patterns
+- Clean up outdated or irrelevant memories
+- Debug agent behavior by examining memory context
+- Understand conversation flow and decision-making patterns
 
 ## 🔍 Monitoring & Debugging
 

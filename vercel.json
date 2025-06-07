@@ -17,6 +17,10 @@
     { "source": "/api/agent-monitor", "destination": "/api/agent-monitor.ts" },
     { "source": "/api/issue-actions", "destination": "/api/issue-actions.ts" },
     { "source": "/api/issue-details", "destination": "/api/issue-details.ts" },
+    {
+      "source": "/api/memory-browser",
+      "destination": "/api/memory-browser.ts"
+    },
     { "source": "/pages/embed", "destination": "/api/embed-ui.ts" },
     { "source": "/pages/agent", "destination": "/api/agent-ui.ts" },
     { "source": "/pages/dashboard", "destination": "/api/dashboard.ts" },
