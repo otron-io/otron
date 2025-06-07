@@ -477,17 +477,18 @@ Otron implements multiple security layers:
 
 ### Protected Endpoints
 
-| Endpoint             | Access Level     | Description                   |
-| -------------------- | ---------------- | ----------------------------- |
-| `/webhook`           | Webhook Verified | Linear webhook receiver       |
-| `/api/events`        | Webhook Verified | Slack event receiver          |
-| `/api/code-search`   | Token Protected  | Semantic code search          |
-| `/api/embed-repo`    | Token Protected  | Repository embedding API      |
-| `/api/agent-monitor` | Token Protected  | Agent monitoring API          |
-| `/oauth/callback`    | OAuth Flow       | Linear OAuth callback handler |
-| `/pages/embed`       | Basic Auth       | Legacy embedding interface    |
-| `/pages/agent`       | Basic Auth       | Legacy monitoring dashboard   |
-| `/pages/dashboard`   | Basic Auth       | Legacy dashboard              |
+| Endpoint              | Access Level     | Description                   |
+| --------------------- | ---------------- | ----------------------------- |
+| `/webhook`            | Webhook Verified | Linear webhook receiver       |
+| `/api/events`         | Webhook Verified | Slack event receiver          |
+| `/api/code-search`    | Token Protected  | Semantic code search          |
+| `/api/embed-repo`     | Token Protected  | Repository embedding API      |
+| `/api/agent-monitor`  | Token Protected  | Agent monitoring API          |
+| `/api/memory-browser` | Token Protected  | Memory management API         |
+| `/oauth/callback`     | OAuth Flow       | Linear OAuth callback handler |
+| `/pages/embed`        | Basic Auth       | Legacy embedding interface    |
+| `/pages/agent`        | Basic Auth       | Legacy monitoring dashboard   |
+| `/pages/dashboard`    | Basic Auth       | Legacy dashboard              |
 
 ## 🎛 Admin Dashboard
 

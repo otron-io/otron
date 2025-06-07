@@ -118,75 +118,128 @@ async function getMemories(req: VercelRequest, res: VercelResponse) {
 async function getAllFilteredMemories(
   filters: MemoryFilters
 ): Promise<MemoryEntry[]> {
-  const allMemories: MemoryEntry[] = [];
+  try {
+    const pattern = 'memory:issue:*';
+    const keys = await redis.keys(pattern);
 
-  // Get all memory keys
-  const keys = await redis.keys('memory:issue:*');
+    console.log(`Found ${keys.length} memory keys`);
 
-  for (const key of keys) {
-    try {
-      // Parse key to extract issue ID and memory type
-      const keyParts = key.split(':');
-      if (keyParts.length < 4) continue;
+    const allMemories: MemoryEntry[] = [];
 
-      const issueId = keyParts[2];
-      const memoryType = keyParts[3] as 'conversation' | 'action' | 'context';
-
-      // Apply filters
-      if (filters.issueId && issueId !== filters.issueId) continue;
-      if (filters.memoryType && memoryType !== filters.memoryType) continue;
-
-      // Get all memories from this key
-      const memoryList = await redis.lrange(key, 0, -1);
-
-      for (let i = 0; i < memoryList.length; i++) {
-        try {
-          const memoryStr =
-            typeof memoryList[i] === 'string'
-              ? memoryList[i]
-              : JSON.stringify(memoryList[i]);
-          const memory = JSON.parse(memoryStr);
-
-          // Apply timestamp filters
-          if (filters.dateFrom && memory.timestamp < filters.dateFrom) continue;
-          if (filters.dateTo && memory.timestamp > filters.dateTo) continue;
-
-          // Apply Slack channel filter
-          if (filters.slackChannel) {
-            const slackChannelMatch =
-              memory.data?.slackDetails?.channelId === filters.slackChannel ||
-              (memory.data?.content &&
-                typeof memory.data.content === 'string' &&
-                memory.data.content.includes(filters.slackChannel));
-            if (!slackChannelMatch) continue;
-          }
-
-          // Apply search query filter
-          if (filters.searchQuery) {
-            const searchableContent = JSON.stringify(memory.data).toLowerCase();
-            if (!searchableContent.includes(filters.searchQuery.toLowerCase()))
-              continue;
-          }
-
-          allMemories.push({
-            id: `${key}:${i}`,
-            issueId,
-            memoryType,
-            timestamp: memory.timestamp,
-            type: memory.type,
-            data: memory.data,
-            relevanceScore: memory.relevanceScore,
-          });
-        } catch (error) {
-          console.error('Error parsing memory entry:', error);
+    for (const key of keys) {
+      try {
+        // Skip tool-specific memory keys (these are hashes, not lists)
+        if (key.includes(':tools:')) {
+          continue;
         }
-      }
-    } catch (error) {
-      console.error('Error processing memory key:', key, error);
-    }
-  }
 
-  return allMemories;
+        // Skip relationship keys
+        if (key.includes(':file:') || key.includes(':related:')) {
+          continue;
+        }
+
+        // Only process standard memory type keys (conversation, action, context)
+        const keyParts = key.split(':');
+        if (keyParts.length < 4) {
+          continue;
+        }
+
+        const memoryType = keyParts[3]; // memory:issue:{issueId}:{memoryType}
+        if (!['conversation', 'action', 'context'].includes(memoryType)) {
+          continue;
+        }
+
+        // Check Redis key type before attempting to read
+        const keyType = await redis.type(key);
+        if (keyType !== 'list') {
+          console.log(`Skipping key ${key} - wrong type: ${keyType}`);
+          continue;
+        }
+
+        const issueId = keyParts[2];
+
+        // Apply issue filter early
+        if (filters.issueId && issueId !== filters.issueId) {
+          continue;
+        }
+
+        // Apply memory type filter early
+        if (filters.memoryType && memoryType !== filters.memoryType) {
+          continue;
+        }
+
+        console.log(`Processing memory key: ${key}`);
+
+        // Get all entries from this list
+        const entries = await redis.lrange(key, 0, -1);
+
+        for (const entry of entries) {
+          try {
+            const memoryEntry =
+              typeof entry === 'string' ? JSON.parse(entry) : entry;
+
+            // Create standardized memory entry
+            const standardEntry: MemoryEntry = {
+              id: `${key}:${memoryEntry.timestamp}`, // Create unique ID
+              issueId,
+              memoryType: memoryType as 'conversation' | 'action' | 'context',
+              timestamp: memoryEntry.timestamp,
+              type: memoryEntry.type || memoryType,
+              data: memoryEntry.data || memoryEntry,
+              relevanceScore: memoryEntry.relevanceScore,
+            };
+
+            // Apply filters
+            if (
+              filters.dateFrom &&
+              standardEntry.timestamp < filters.dateFrom
+            ) {
+              continue;
+            }
+
+            if (filters.dateTo && standardEntry.timestamp > filters.dateTo) {
+              continue;
+            }
+
+            if (filters.slackChannel) {
+              // Check if this memory is related to the specified Slack channel
+              const dataStr = JSON.stringify(standardEntry.data).toLowerCase();
+              if (!dataStr.includes(filters.slackChannel.toLowerCase())) {
+                continue;
+              }
+            }
+
+            if (filters.searchQuery) {
+              // Search within the memory content
+              const searchContent = JSON.stringify(
+                standardEntry.data
+              ).toLowerCase();
+              if (!searchContent.includes(filters.searchQuery.toLowerCase())) {
+                continue;
+              }
+            }
+
+            allMemories.push(standardEntry);
+          } catch (parseError) {
+            console.error(`Error parsing memory entry:`, parseError);
+            continue;
+          }
+        }
+      } catch (keyError) {
+        console.error(`Error processing memory key: ${key}`, keyError);
+        continue; // Skip this key and continue with others
+      }
+    }
+
+    // Sort by timestamp (newest first)
+    allMemories.sort((a, b) => b.timestamp - a.timestamp);
+
+    console.log(`Filtered memories: ${allMemories.length}`);
+    return allMemories;
+  } catch (error) {
+    console.error('Error getting filtered memories:', error);
+    throw error;
+  }
 }
 
 async function getMemoryStatistics() {
@@ -335,11 +388,9 @@ async function deleteMemories(req: VercelRequest, res: VercelResponse) {
       return res.status(500).json({ error: 'Failed to delete memories' });
     }
   } else {
-    return res
-      .status(400)
-      .json({
-        error: 'Must specify memoryId, or issueId with optional memoryType',
-      });
+    return res.status(400).json({
+      error: 'Must specify memoryId, or issueId with optional memoryType',
+    });
   }
 }
 
