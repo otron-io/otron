@@ -202,41 +202,22 @@ async function getAllFilteredMemories(
 
         console.log(`Type result for ${key}:`, typeResult);
 
-        // Handle different possible formats
+        // Handle Upstash Redis pipeline format - results can be direct values or [error, result] tuples
         let keyType: string;
         if (Array.isArray(typeResult) && typeResult.length >= 2) {
+          // Standard Redis format: [error, result]
           const [error, result] = typeResult as [Error | null, string];
           if (error) {
             console.log(`Error checking type for ${key}:`, error);
-
-            // Fallback: try individual type check
-            try {
-              keyType = await redis.type(key);
-              console.log(`Fallback type check for ${key}: ${keyType}`);
-            } catch (fallbackError) {
-              console.log(
-                `Fallback type check failed for ${key}:`,
-                fallbackError
-              );
-              continue;
-            }
-          } else {
-            keyType = result;
-          }
-        } else {
-          console.log(`Unexpected type result format for ${key}:`, typeResult);
-
-          // Fallback: try individual type check
-          try {
-            keyType = await redis.type(key);
-            console.log(`Fallback type check for ${key}: ${keyType}`);
-          } catch (fallbackError) {
-            console.log(
-              `Fallback type check failed for ${key}:`,
-              fallbackError
-            );
             continue;
           }
+          keyType = result;
+        } else if (typeof typeResult === 'string') {
+          // Upstash direct format: just the result
+          keyType = typeResult;
+        } else {
+          console.log(`Unexpected type result format for ${key}:`, typeResult);
+          continue;
         }
 
         if (keyType === 'list') {
@@ -267,14 +248,40 @@ async function getAllFilteredMemories(
       // Step 4: Process the data
       for (let j = 0; j < validBatchKeys.length; j++) {
         const key = validBatchKeys[j];
-        const dataResult = dataResults[j] as [Error | null, string[]];
+        const dataResult = dataResults[j];
 
-        if (!dataResult || dataResult[0]) {
-          console.log(`Error getting data for ${key}:`, dataResult?.[0]);
+        console.log(
+          `Data result for ${key}:`,
+          Array.isArray(dataResult)
+            ? `${dataResult.length} entries`
+            : typeof dataResult
+        );
+
+        // Handle Upstash Redis pipeline format for lrange results
+        let entries: string[];
+        if (
+          Array.isArray(dataResult) &&
+          dataResult.length >= 2 &&
+          dataResult[0] === null
+        ) {
+          // Standard Redis format: [error, result]
+          const [error, result] = dataResult as [Error | null, string[]];
+          if (error) {
+            console.log(`Error getting data for ${key}:`, error);
+            continue;
+          }
+          entries = result;
+        } else if (
+          Array.isArray(dataResult) &&
+          typeof dataResult[0] === 'string'
+        ) {
+          // Upstash direct format: just the array of entries
+          entries = dataResult as string[];
+        } else {
+          console.log(`Unexpected data result format for ${key}:`, dataResult);
           continue;
         }
 
-        const entries = dataResult[1] as string[];
         if (!entries || entries.length === 0) {
           console.log(`No entries found for key: ${key}`);
           continue;
@@ -412,13 +419,27 @@ async function getMemoryStatistics() {
       const validBatchKeys: string[] = [];
       for (let j = 0; j < batch.length; j++) {
         const key = batch[j];
-        const typeResult = typeResults[j] as [Error | null, string];
+        const typeResult = typeResults[j];
 
-        if (!typeResult || typeResult[0] || typeResult[1] !== 'list') {
+        // Handle Upstash Redis pipeline format
+        let keyType: string;
+        if (Array.isArray(typeResult) && typeResult.length >= 2) {
+          // Standard Redis format: [error, result]
+          const [error, result] = typeResult as [Error | null, string];
+          if (error || result !== 'list') {
+            continue;
+          }
+          keyType = result;
+        } else if (typeof typeResult === 'string') {
+          // Upstash direct format: just the result
+          keyType = typeResult;
+        } else {
           continue;
         }
 
-        validBatchKeys.push(key);
+        if (keyType === 'list') {
+          validBatchKeys.push(key);
+        }
       }
 
       if (validBatchKeys.length === 0) continue;
@@ -441,19 +462,29 @@ async function getMemoryStatistics() {
         const issueId = keyParts[2];
         const memoryType = keyParts[3];
 
-        const lenResult = statsResults[j * 3] as [Error | null, number];
-        const newestResult = statsResults[j * 3 + 1] as [
-          Error | null,
-          string | null
-        ];
-        const oldestResult = statsResults[j * 3 + 2] as [
-          Error | null,
-          string | null
-        ];
+        // Handle Upstash Redis pipeline format for multiple operations
+        const lenIndex = j * 3;
+        const newestIndex = j * 3 + 1;
+        const oldestIndex = j * 3 + 2;
 
-        if (!lenResult || lenResult[0]) continue;
+        const lenResult = statsResults[lenIndex];
+        const newestResult = statsResults[newestIndex];
+        const oldestResult = statsResults[oldestIndex];
 
-        const listLength = lenResult[1];
+        // Parse length result
+        let listLength: number;
+        if (Array.isArray(lenResult) && lenResult.length >= 2) {
+          // Standard Redis format: [error, result]
+          const [error, result] = lenResult as [Error | null, number];
+          if (error) continue;
+          listLength = result;
+        } else if (typeof lenResult === 'number') {
+          // Upstash direct format: just the number
+          listLength = lenResult;
+        } else {
+          continue;
+        }
+
         if (listLength === 0) continue;
 
         uniqueIssues.add(issueId);
@@ -474,11 +505,46 @@ async function getMemoryStatistics() {
 
         // Process timestamps
         try {
-          if (newestResult && !newestResult[0] && newestResult[1]) {
+          // Parse newest result
+          let newestData: string | null = null;
+          if (Array.isArray(newestResult) && newestResult.length >= 2) {
+            // Standard Redis format: [error, result]
+            const [error, result] = newestResult as [
+              Error | null,
+              string | null
+            ];
+            if (!error) newestData = result;
+          } else if (
+            typeof newestResult === 'string' ||
+            newestResult === null
+          ) {
+            // Upstash direct format: just the string or null
+            newestData = newestResult;
+          }
+
+          // Parse oldest result
+          let oldestData: string | null = null;
+          if (Array.isArray(oldestResult) && oldestResult.length >= 2) {
+            // Standard Redis format: [error, result]
+            const [error, result] = oldestResult as [
+              Error | null,
+              string | null
+            ];
+            if (!error) oldestData = result;
+          } else if (
+            typeof oldestResult === 'string' ||
+            oldestResult === null
+          ) {
+            // Upstash direct format: just the string or null
+            oldestData = oldestResult;
+          }
+
+          // Process timestamps
+          if (newestData) {
             const newestParsed =
-              typeof newestResult[1] === 'string'
-                ? JSON.parse(newestResult[1])
-                : newestResult[1];
+              typeof newestData === 'string'
+                ? JSON.parse(newestData)
+                : newestData;
             const newestTimestamp = newestParsed.timestamp;
             if (
               newestTimestamp &&
@@ -488,11 +554,11 @@ async function getMemoryStatistics() {
             }
           }
 
-          if (oldestResult && !oldestResult[0] && oldestResult[1]) {
+          if (oldestData) {
             const oldestParsed =
-              typeof oldestResult[1] === 'string'
-                ? JSON.parse(oldestResult[1])
-                : oldestResult[1];
+              typeof oldestData === 'string'
+                ? JSON.parse(oldestData)
+                : oldestData;
             const oldestTimestamp = oldestParsed.timestamp;
             if (
               oldestTimestamp &&
