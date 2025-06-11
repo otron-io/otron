@@ -235,26 +235,171 @@ async function handler(req: VercelRequest, res: VercelResponse) {
             },
           },
         },
+        ActiveSession: {
+          type: 'object',
+          properties: {
+            sessionId: {
+              type: 'string',
+              description: 'Unique session identifier',
+            },
+            contextId: {
+              type: 'string',
+              description: 'Context or issue ID being worked on',
+            },
+            startTime: {
+              type: 'number',
+              description: 'Unix timestamp when session started',
+            },
+            platform: {
+              type: 'string',
+              enum: ['slack', 'linear', 'github', 'general'],
+              description: 'Platform where the session originated',
+            },
+            status: {
+              type: 'string',
+              enum: [
+                'initializing',
+                'planning',
+                'gathering',
+                'acting',
+                'completing',
+              ],
+              description: 'Current session status',
+            },
+            currentTool: {
+              type: 'string',
+              description: 'Currently executing tool',
+              nullable: true,
+            },
+            toolsUsed: {
+              type: 'array',
+              items: { type: 'string' },
+              description: 'List of tools used in this session',
+            },
+            actionsPerformed: {
+              type: 'array',
+              items: { type: 'string' },
+              description: 'List of actions performed in this session',
+            },
+            metadata: {
+              type: 'object',
+              properties: {
+                issueId: { type: 'string' },
+                channelId: { type: 'string' },
+                threadTs: { type: 'string' },
+                userId: { type: 'string' },
+              },
+              description: 'Additional session metadata',
+            },
+          },
+          required: [
+            'sessionId',
+            'contextId',
+            'startTime',
+            'platform',
+            'status',
+            'toolsUsed',
+            'actionsPerformed',
+          ],
+        },
+        CompletedSession: {
+          type: 'object',
+          allOf: [
+            { $ref: '#/components/schemas/ActiveSession' },
+            {
+              type: 'object',
+              properties: {
+                status: {
+                  type: 'string',
+                  enum: ['completed', 'cancelled', 'error'],
+                  description: 'Final session status',
+                },
+                endTime: {
+                  type: 'number',
+                  description: 'Unix timestamp when session ended',
+                },
+                duration: {
+                  type: 'number',
+                  description: 'Session duration in milliseconds',
+                },
+                error: {
+                  type: 'string',
+                  description: 'Error message if session failed',
+                  nullable: true,
+                },
+              },
+              required: ['endTime', 'duration'],
+            },
+          ],
+        },
+        ActiveSessionsResponse: {
+          type: 'object',
+          properties: {
+            activeSessions: {
+              type: 'array',
+              items: { $ref: '#/components/schemas/ActiveSession' },
+              description: 'Currently running sessions',
+            },
+            completedSessions: {
+              type: 'array',
+              items: { $ref: '#/components/schemas/CompletedSession' },
+              description: 'Recently completed sessions',
+            },
+            pagination: {
+              type: 'object',
+              properties: {
+                limit: { type: 'number' },
+                offset: { type: 'number' },
+                hasMore: { type: 'boolean' },
+              },
+              description: 'Pagination information for completed sessions',
+            },
+            counts: {
+              type: 'object',
+              properties: {
+                totalActive: { type: 'number' },
+                totalCompleted: { type: 'number' },
+              },
+              description: 'Session count statistics',
+            },
+          },
+        },
         AgentMonitorResponse: {
           type: 'object',
           properties: {
-            activeContexts: {
+            activeIssues: {
               type: 'array',
               items: { $ref: '#/components/schemas/AgentContext' },
-              description: 'Currently active contexts',
+              description:
+                'Currently active contexts (deprecated, use /api/active-sessions)',
             },
-            completedContexts: {
+            completedIssues: {
               type: 'array',
               items: { $ref: '#/components/schemas/AgentContext' },
-              description: 'Recently completed contexts',
+              description:
+                'Recently completed contexts (deprecated, use /api/active-sessions)',
             },
             toolStats: {
               $ref: '#/components/schemas/ToolStats',
               description: 'Tool usage statistics',
             },
             systemActivity: {
-              type: 'object',
-              description: 'System activity metrics',
+              type: 'array',
+              items: {
+                type: 'object',
+                properties: {
+                  timestamp: { type: 'number' },
+                  issueId: { type: 'string' },
+                  data: {
+                    type: 'object',
+                    properties: {
+                      tool: { type: 'string' },
+                      success: { type: 'boolean' },
+                    },
+                  },
+                },
+              },
+              description: 'Recent system activity',
             },
             timestamp: {
               type: 'integer',
@@ -263,6 +408,18 @@ async function handler(req: VercelRequest, res: VercelResponse) {
             linearConnected: {
               type: 'boolean',
               description: 'Whether Linear integration is connected',
+            },
+            summary: {
+              type: 'object',
+              properties: {
+                totalActiveContexts: { type: 'number' },
+                totalCompletedContexts: { type: 'number' },
+                totalSlackContexts: { type: 'number' },
+                totalLinearIssues: { type: 'number' },
+                totalToolOperations: { type: 'number' },
+                totalSuccessfulOperations: { type: 'number' },
+              },
+              description: 'Summary statistics',
             },
           },
         },
@@ -366,43 +523,221 @@ async function handler(req: VercelRequest, res: VercelResponse) {
       },
       '/api/agent-monitor': {
         get: {
-          summary: 'Agent Monitor',
+          summary: 'Agent Monitor (Legacy)',
           description:
-            'Get real-time agent activity, contexts, and tool usage statistics',
+            'Get lightweight agent statistics and tool usage. For real-time session monitoring, use /api/active-sessions instead.',
           tags: ['Agent'],
           security: [{ InternalToken: [] }],
-          parameters: [
-            {
-              name: 'activeDays',
-              in: 'query',
-              description:
-                'Number of days to consider as "active" (default: 7)',
-              required: false,
-              schema: {
-                type: 'integer',
-                minimum: 1,
-                maximum: 30,
-                default: 7,
-              },
-            },
-            {
-              name: 'includeAll',
-              in: 'query',
-              description:
-                'Whether to include all historical contexts (default: false)',
-              required: false,
-              schema: {
-                type: 'boolean',
-                default: false,
-              },
-            },
-          ],
+          deprecated: true,
           responses: {
             '200': {
               description: 'Agent monitoring data',
               content: {
                 'application/json': {
                   schema: { $ref: '#/components/schemas/AgentMonitorResponse' },
+                },
+              },
+            },
+            '403': {
+              description: 'Forbidden - Invalid or missing internal token',
+              content: {
+                'application/json': {
+                  schema: { $ref: '#/components/schemas/Error' },
+                },
+              },
+            },
+            '500': {
+              description: 'Internal server error',
+              content: {
+                'application/json': {
+                  schema: { $ref: '#/components/schemas/Error' },
+                },
+              },
+            },
+          },
+        },
+      },
+      '/api/active-sessions': {
+        get: {
+          summary: 'Active Sessions Monitor',
+          description:
+            'Get real-time monitoring of active agent sessions with ability to view completed sessions and pagination',
+          tags: ['Agent'],
+          security: [{ InternalToken: [] }],
+          parameters: [
+            {
+              name: 'includeCompleted',
+              in: 'query',
+              description:
+                'Whether to include completed sessions (default: false)',
+              required: false,
+              schema: {
+                type: 'boolean',
+                default: false,
+              },
+            },
+            {
+              name: 'limit',
+              in: 'query',
+              description:
+                'Maximum number of completed sessions to return (default: 20)',
+              required: false,
+              schema: {
+                type: 'integer',
+                minimum: 1,
+                maximum: 100,
+                default: 20,
+              },
+            },
+            {
+              name: 'offset',
+              in: 'query',
+              description:
+                'Offset for completed sessions pagination (default: 0)',
+              required: false,
+              schema: {
+                type: 'integer',
+                minimum: 0,
+                default: 0,
+              },
+            },
+            {
+              name: 'days',
+              in: 'query',
+              description:
+                'Number of days to look back for completed sessions (default: 7)',
+              required: false,
+              schema: {
+                type: 'integer',
+                minimum: 1,
+                maximum: 365,
+                default: 7,
+              },
+            },
+            {
+              name: 'status',
+              in: 'query',
+              description: 'Filter completed sessions by status (default: all)',
+              required: false,
+              schema: {
+                type: 'string',
+                enum: ['all', 'completed', 'cancelled', 'error'],
+                default: 'all',
+              },
+            },
+          ],
+          responses: {
+            '200': {
+              description: 'Active and completed sessions data',
+              content: {
+                'application/json': {
+                  schema: {
+                    $ref: '#/components/schemas/ActiveSessionsResponse',
+                  },
+                },
+              },
+            },
+            '403': {
+              description: 'Forbidden - Invalid or missing internal token',
+              content: {
+                'application/json': {
+                  schema: { $ref: '#/components/schemas/Error' },
+                },
+              },
+            },
+            '500': {
+              description: 'Internal server error',
+              content: {
+                'application/json': {
+                  schema: { $ref: '#/components/schemas/Error' },
+                },
+              },
+            },
+          },
+        },
+        delete: {
+          summary: 'Cancel Active Session',
+          description: 'Cancel a specific active session by session ID',
+          tags: ['Agent'],
+          security: [{ InternalToken: [] }],
+          parameters: [
+            {
+              name: 'sessionId',
+              in: 'query',
+              description: 'Session ID to cancel',
+              required: true,
+              schema: {
+                type: 'string',
+              },
+            },
+          ],
+          responses: {
+            '200': {
+              description: 'Session cancelled successfully',
+              content: {
+                'application/json': {
+                  schema: {
+                    type: 'object',
+                    properties: {
+                      success: { type: 'boolean' },
+                      message: { type: 'string' },
+                    },
+                  },
+                },
+              },
+            },
+            '400': {
+              description: 'Bad request - missing session ID',
+              content: {
+                'application/json': {
+                  schema: { $ref: '#/components/schemas/Error' },
+                },
+              },
+            },
+            '403': {
+              description: 'Forbidden - Invalid or missing internal token',
+              content: {
+                'application/json': {
+                  schema: { $ref: '#/components/schemas/Error' },
+                },
+              },
+            },
+            '404': {
+              description: 'Session not found',
+              content: {
+                'application/json': {
+                  schema: { $ref: '#/components/schemas/Error' },
+                },
+              },
+            },
+            '500': {
+              description: 'Internal server error',
+              content: {
+                'application/json': {
+                  schema: { $ref: '#/components/schemas/Error' },
+                },
+              },
+            },
+          },
+        },
+        post: {
+          summary: 'Cancel All Active Sessions',
+          description: 'Cancel all currently active sessions (emergency stop)',
+          tags: ['Agent'],
+          security: [{ InternalToken: [] }],
+          responses: {
+            '200': {
+              description: 'All sessions cancelled successfully',
+              content: {
+                'application/json': {
+                  schema: {
+                    type: 'object',
+                    properties: {
+                      success: { type: 'boolean' },
+                      message: { type: 'string' },
+                      cancelledCount: { type: 'number' },
+                    },
+                  },
                 },
               },
             },
@@ -1560,7 +1895,8 @@ async function handler(req: VercelRequest, res: VercelResponse) {
       },
       {
         name: 'Agent',
-        description: 'AI agent monitoring and activity endpoints',
+        description:
+          'AI agent monitoring, real-time session tracking, and cancellation endpoints',
       },
       {
         name: 'Repository',
