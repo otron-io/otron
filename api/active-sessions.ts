@@ -38,7 +38,13 @@ async function handler(req: VercelRequest, res: VercelResponse) {
         try {
           const sessionData = await redis.get(`active_session:${sessionId}`);
           if (sessionData) {
-            const session = JSON.parse(sessionData as string) as ActiveSession;
+            // Handle both string and object responses from Redis
+            let session: ActiveSession;
+            if (typeof sessionData === 'string') {
+              session = JSON.parse(sessionData) as ActiveSession;
+            } else {
+              session = sessionData as ActiveSession;
+            }
             sessions.push(session);
           } else {
             // Clean up orphaned session ID
@@ -76,7 +82,13 @@ async function handler(req: VercelRequest, res: VercelResponse) {
           return res.status(404).json({ error: 'Session not found' });
         }
 
-        const session = JSON.parse(sessionData as string) as ActiveSession;
+        // Handle both string and object responses from Redis
+        let session: ActiveSession;
+        if (typeof sessionData === 'string') {
+          session = JSON.parse(sessionData) as ActiveSession;
+        } else {
+          session = sessionData as ActiveSession;
+        }
 
         // Mark session as cancelled by storing a cancellation flag
         await redis.setex(`session_cancelled:${sessionId}`, 300, 'true'); // 5 minute TTL
