@@ -74,7 +74,8 @@ export async function handleLinearNotification(
       [{ role: 'user', content: contextMessage }],
       updateStatus,
       linearClient,
-      undefined // No Slack context for Linear notifications
+      undefined, // No Slack context for Linear notifications
+      undefined // No abort signal for notifications
     );
   } catch (error) {
     console.error('Error handling Linear notification:', error);

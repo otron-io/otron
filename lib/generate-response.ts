@@ -81,6 +81,33 @@ import { memoryManager } from './memory/memory-manager.js';
 import { goalEvaluator } from './goal-evaluator.js';
 import { openai } from '@ai-sdk/openai';
 import { linearLogger, logToLinearIssue } from './linear/linear-logger.js';
+import { Redis } from '@upstash/redis';
+import { env } from './env.js';
+
+// Initialize Redis client for tracking active responses
+const redis = new Redis({
+  url: env.KV_REST_API_URL,
+  token: env.KV_REST_API_TOKEN,
+});
+
+// Interface for tracking active response sessions
+interface ActiveSession {
+  sessionId: string;
+  contextId: string;
+  startTime: number;
+  platform: 'slack' | 'linear' | 'github' | 'general';
+  status: 'initializing' | 'planning' | 'gathering' | 'acting' | 'completing';
+  currentTool?: string;
+  toolsUsed: string[];
+  actionsPerformed: string[];
+  messages: CoreMessage[];
+  metadata?: {
+    issueId?: string;
+    channelId?: string;
+    threadTs?: string;
+    userId?: string;
+  };
+}
 
 // Helper function to extract issue ID from context
 function extractIssueIdFromContext(
@@ -115,6 +142,58 @@ function extractIssueIdFromContext(
   return 'general';
 }
 
+// Helper function to generate unique session ID
+function generateSessionId(): string {
+  return `session_${Date.now()}_${Math.random().toString(36).substring(2, 15)}`;
+}
+
+// Helper function to store active session in Redis
+async function storeActiveSession(session: ActiveSession): Promise<void> {
+  try {
+    await redis.setex(
+      `active_session:${session.sessionId}`,
+      3600, // 1 hour TTL
+      JSON.stringify(session)
+    );
+
+    // Also add to a set for easy listing
+    await redis.sadd('active_sessions_list', session.sessionId);
+  } catch (error) {
+    console.error('Error storing active session:', error);
+  }
+}
+
+// Helper function to update active session status
+async function updateActiveSession(
+  sessionId: string,
+  updates: Partial<ActiveSession>
+): Promise<void> {
+  try {
+    const sessionData = await redis.get(`active_session:${sessionId}`);
+    if (sessionData) {
+      const session = JSON.parse(sessionData as string) as ActiveSession;
+      const updatedSession = { ...session, ...updates };
+      await redis.setex(
+        `active_session:${sessionId}`,
+        3600,
+        JSON.stringify(updatedSession)
+      );
+    }
+  } catch (error) {
+    console.error('Error updating active session:', error);
+  }
+}
+
+// Helper function to remove active session
+async function removeActiveSession(sessionId: string): Promise<void> {
+  try {
+    await redis.del(`active_session:${sessionId}`);
+    await redis.srem('active_sessions_list', sessionId);
+  } catch (error) {
+    console.error('Error removing active session:', error);
+  }
+}
+
 export const generateResponse = async (
   messages: CoreMessage[],
   updateStatus?: (status: string) => void,
@@ -122,7 +201,8 @@ export const generateResponse = async (
   slackContext?: {
     channelId: string;
     threadTs?: string;
-  }
+  },
+  abortSignal?: AbortSignal
 ): Promise<string> => {
   const MAX_RETRY_ATTEMPTS = 2;
   let attemptNumber = 1;
@@ -130,6 +210,49 @@ export const generateResponse = async (
   let actionsPerformed: string[] = [];
   let finalResponse = '';
   let endedExplicitly = false;
+
+  // Generate unique session ID for tracking
+  const sessionId = generateSessionId();
+  const contextId = extractIssueIdFromContext(messages, slackContext);
+
+  // Determine platform
+  let platform: 'slack' | 'linear' | 'github' | 'general' = 'general';
+  if (slackContext) {
+    platform = 'slack';
+  } else if (contextId && !contextId.startsWith('slack:')) {
+    platform = 'linear';
+  }
+
+  // Create initial active session
+  const activeSession: ActiveSession = {
+    sessionId,
+    contextId,
+    startTime: Date.now(),
+    platform,
+    status: 'initializing',
+    toolsUsed: [],
+    actionsPerformed: [],
+    messages: [...messages],
+    metadata: {
+      issueId: contextId,
+      channelId: slackContext?.channelId,
+      threadTs: slackContext?.threadTs,
+    },
+  };
+
+  // Store the active session
+  await storeActiveSession(activeSession);
+
+  // Set up abort handling
+  const cleanup = async () => {
+    await removeActiveSession(sessionId);
+  };
+
+  // Check if already aborted
+  if (abortSignal?.aborted) {
+    await cleanup();
+    throw new Error('Request was aborted before processing started');
+  }
 
   // Store original messages for evaluation
   const originalMessages = [...messages];
@@ -140,100 +263,127 @@ export const generateResponse = async (
   }
 
   // Extract issue ID and log initial activity if working on a Linear issue
-  const contextId = extractIssueIdFromContext(messages, slackContext);
   const isLinearIssue = contextId && !contextId.startsWith('slack:');
 
   if (isLinearIssue && linearClient) {
     await logToLinearIssue.info(
       contextId,
       'Otron started working on this issue',
-      `Request from ${slackContext ? 'Slack' : 'Linear'}`
+      `Request from ${
+        slackContext ? 'Slack' : 'Linear'
+      } (Session: ${sessionId})`
     );
   }
 
-  while (attemptNumber <= MAX_RETRY_ATTEMPTS) {
-    try {
-      updateStatus?.(
-        `is thinking... (Attempt ${attemptNumber}/${MAX_RETRY_ATTEMPTS})`
-      );
-
-      // Generate response using the internal function
-      const result = await generateResponseInternal(
-        messages,
-        updateStatus,
-        linearClient,
-        slackContext,
-        attemptNumber
-      );
-
-      finalResponse = result.text;
-      toolsUsed = result.toolsUsed;
-      actionsPerformed = result.actionsPerformed;
-      endedExplicitly = result.endedExplicitly;
-
-      // If this is the last attempt, don't evaluate - just return
-      if (attemptNumber >= MAX_RETRY_ATTEMPTS) {
-        return finalResponse;
+  try {
+    while (attemptNumber <= MAX_RETRY_ATTEMPTS) {
+      // Check for abort before each attempt
+      if (abortSignal?.aborted) {
+        await cleanup();
+        throw new Error('Request was aborted during processing');
       }
 
-      // Evaluate goal completion
-      updateStatus?.(
-        `Evaluating goal completion for attempt ${attemptNumber}...`
-      );
+      try {
+        await updateActiveSession(sessionId, {
+          status: 'planning',
+        });
 
-      const evaluation = await goalEvaluator.evaluateGoalCompletion(
-        originalMessages,
-        {
-          toolsUsed,
-          actionsPerformed,
-          finalResponse,
-          endedExplicitly,
-        },
-        attemptNumber
-      );
+        updateStatus?.(
+          `is thinking... (Attempt ${attemptNumber}/${MAX_RETRY_ATTEMPTS})`
+        );
 
-      // If goal is complete and confidence is high enough, return the response
-      if (evaluation.isComplete && evaluation.confidence >= 0.7) {
+        // Generate response using the internal function with abort signal
+        const result = await generateResponseInternal(
+          messages,
+          updateStatus,
+          linearClient,
+          slackContext,
+          attemptNumber,
+          sessionId,
+          abortSignal
+        );
+
+        finalResponse = result.text;
+        toolsUsed = result.toolsUsed;
+        actionsPerformed = result.actionsPerformed;
+        endedExplicitly = result.endedExplicitly;
+
+        // If this is the last attempt, don't evaluate - just return
+        if (attemptNumber >= MAX_RETRY_ATTEMPTS) {
+          break;
+        }
+
+        // Check for abort before evaluation
+        if (abortSignal?.aborted) {
+          throw new Error('Request was aborted during processing');
+        }
+
+        // Evaluate goal completion
+        await updateActiveSession(sessionId, {
+          status: 'completing',
+        });
+
+        updateStatus?.(
+          `Evaluating goal completion for attempt ${attemptNumber}...`
+        );
+
+        const evaluation = await goalEvaluator.evaluateGoalCompletion(
+          originalMessages,
+          {
+            toolsUsed,
+            actionsPerformed,
+            finalResponse,
+            endedExplicitly,
+          },
+          attemptNumber
+        );
+
+        // If goal is complete and confidence is high enough, return the response
+        if (evaluation.isComplete && evaluation.confidence >= 0.7) {
+          console.log(
+            `Goal evaluation passed on attempt ${attemptNumber}:`,
+            evaluation.reasoning
+          );
+          break;
+        }
+
+        // Goal not complete - prepare for retry
         console.log(
-          `Goal evaluation passed on attempt ${attemptNumber}:`,
+          `Goal evaluation failed on attempt ${attemptNumber}:`,
           evaluation.reasoning
         );
-        return finalResponse;
+
+        // Generate retry feedback
+        const retryFeedback = goalEvaluator.generateRetryFeedback(
+          evaluation,
+          attemptNumber
+        );
+
+        // Add the retry feedback as a new user message
+        messages.push({
+          role: 'user',
+          content: retryFeedback,
+        });
+
+        attemptNumber++;
+      } catch (error) {
+        console.error(`Error in attempt ${attemptNumber}:`, error);
+
+        // If this is the last attempt, throw the error
+        if (attemptNumber >= MAX_RETRY_ATTEMPTS) {
+          throw error;
+        }
+
+        // Otherwise, try again
+        attemptNumber++;
       }
-
-      // Goal not complete - prepare for retry
-      console.log(
-        `Goal evaluation failed on attempt ${attemptNumber}:`,
-        evaluation.reasoning
-      );
-
-      // Generate retry feedback
-      const retryFeedback = goalEvaluator.generateRetryFeedback(
-        evaluation,
-        attemptNumber
-      );
-
-      // Add the retry feedback as a new user message
-      messages.push({
-        role: 'user',
-        content: retryFeedback,
-      });
-
-      attemptNumber++;
-    } catch (error) {
-      console.error(`Error in attempt ${attemptNumber}:`, error);
-
-      // If this is the last attempt, throw the error
-      if (attemptNumber >= MAX_RETRY_ATTEMPTS) {
-        throw error;
-      }
-
-      // Otherwise, try again
-      attemptNumber++;
     }
-  }
 
-  return finalResponse;
+    return finalResponse;
+  } finally {
+    // Always clean up the active session
+    await cleanup();
+  }
 };
 
 // Internal function that does the actual response generation
@@ -245,7 +395,9 @@ const generateResponseInternal = async (
     channelId: string;
     threadTs?: string;
   },
-  attemptNumber: number = 1
+  attemptNumber: number = 1,
+  sessionId?: string,
+  abortSignal?: AbortSignal
 ): Promise<{
   text: string;
   toolsUsed: string[];
@@ -290,7 +442,7 @@ const generateResponseInternal = async (
       'Otron started analyzing this issue',
       `Request from ${
         slackContext ? 'Slack' : 'Linear'
-      }, Attempt ${attemptNumber}`
+      }, Attempt ${attemptNumber}, Session: ${sessionId}`
     );
   }
 
@@ -401,6 +553,7 @@ const generateResponseInternal = async (
     - Reference previous conversations when relevant to show continuity and understanding.
     - Learn from past actions and their outcomes to improve future responses.
     - Current context ID: ${contextId}
+    - Current session ID: ${sessionId || 'unknown'}
 
     ADVANCED FILE EDITING CAPABILITIES:
     - You have access to precise, targeted file editing tools that allow you to make specific changes without affecting the rest of the file.
@@ -553,6 +706,32 @@ const generateResponseInternal = async (
       let success = false;
       let response = '';
       let detailedOutput: any = null;
+
+      // Update current tool in session
+      if (sessionId) {
+        await updateActiveSession(sessionId, {
+          currentTool: toolName,
+          toolsUsed: Array.from(executionTracker.toolsUsed).concat([toolName]),
+        });
+      }
+
+      // Check for abort signal before executing tool
+      if (abortSignal?.aborted) {
+        throw new Error('Request was aborted during tool execution');
+      }
+
+      // Check for cancellation from external source (Redis)
+      if (sessionId) {
+        try {
+          const cancelled = await redis.get(`session_cancelled:${sessionId}`);
+          if (cancelled) {
+            throw new Error('Request was cancelled by user');
+          }
+        } catch (redisError) {
+          // Don't fail on Redis errors, but log them
+          console.warn('Error checking cancellation status:', redisError);
+        }
+      }
 
       // Track tool usage counts
       const currentCount = executionStrategy.toolUsageCounts.get(toolName) || 0;
@@ -837,6 +1016,7 @@ const generateResponseInternal = async (
     system: systemPrompt,
     messages,
     maxSteps: 30,
+    abortSignal,
     tools: {
       // Execution Strategy Tools
       createExecutionPlan: tool({

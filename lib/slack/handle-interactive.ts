@@ -139,7 +139,8 @@ async function handleBlockActions(
     [{ role: 'user', content: contextMessage }],
     updateStatus,
     undefined, // No Linear client for Slack interactions
-    slackContext
+    slackContext,
+    undefined // No abort signal for interactive components
   );
 }
 

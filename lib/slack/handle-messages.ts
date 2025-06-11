@@ -68,7 +68,13 @@ export async function handleNewAssistantMessage(
   const messages = await getThread(channel, thread_ts, botUserId);
 
   // Let the AI decide whether and how to respond using its tools
-  await generateResponse(messages, updateStatus, linearClient, slackContext);
+  await generateResponse(
+    messages,
+    updateStatus,
+    linearClient,
+    slackContext,
+    undefined // No abort signal for Slack messages
+  );
 
   await updateStatus('');
 }
