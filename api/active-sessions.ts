@@ -9,12 +9,11 @@ const redis = new Redis({
   token: env.KV_REST_API_TOKEN,
 });
 
-interface ActiveSession {
+interface BaseSession {
   sessionId: string;
   contextId: string;
   startTime: number;
   platform: 'slack' | 'linear' | 'github' | 'general';
-  status: 'initializing' | 'planning' | 'gathering' | 'acting' | 'completing';
   currentTool?: string;
   toolsUsed: string[];
   actionsPerformed: string[];
@@ -27,12 +26,38 @@ interface ActiveSession {
   };
 }
 
+interface ActiveSession extends BaseSession {
+  status: 'initializing' | 'planning' | 'gathering' | 'acting' | 'completing';
+}
+
+interface CompletedSession extends BaseSession {
+  status: 'completed' | 'cancelled' | 'error';
+  endTime: number;
+  duration: number;
+  error?: string | null;
+}
+
 async function handler(req: VercelRequest, res: VercelResponse) {
   try {
     if (req.method === 'GET') {
+      // Get query parameters
+      const {
+        includeCompleted = 'true',
+        limit = '20',
+        offset = '0',
+        days = '7',
+        status = 'all',
+      } = req.query;
+
+      const shouldIncludeCompleted = includeCompleted === 'true';
+      const sessionLimit = Math.min(parseInt(limit as string) || 20, 200); // Allow up to 200
+      const sessionOffset = Math.max(parseInt(offset as string) || 0, 0);
+      const daysBack = Math.min(parseInt(days as string) || 7, 365); // Max 1 year
+      const statusFilter = status as string;
+
       // Get all active sessions
       const activeSessionIds = await redis.smembers('active_sessions_list');
-      const sessions: ActiveSession[] = [];
+      const activeSessions: ActiveSession[] = [];
 
       for (const sessionId of activeSessionIds) {
         try {
@@ -45,25 +70,101 @@ async function handler(req: VercelRequest, res: VercelResponse) {
             } else {
               session = sessionData as ActiveSession;
             }
-            sessions.push(session);
+            activeSessions.push(session);
           } else {
             // Clean up orphaned session ID
             await redis.srem('active_sessions_list', sessionId);
           }
         } catch (error) {
-          console.error(`Error parsing session ${sessionId}:`, error);
+          console.error(`Error parsing active session ${sessionId}:`, error);
           // Clean up problematic session
           await redis.srem('active_sessions_list', sessionId);
           await redis.del(`active_session:${sessionId}`);
         }
       }
 
-      // Sort by start time (newest first)
-      sessions.sort((a, b) => b.startTime - a.startTime);
+      // Get completed sessions if requested
+      const completedSessions: CompletedSession[] = [];
+      let totalCompletedCount = 0;
+      let hasMore = false;
+
+      if (shouldIncludeCompleted) {
+        // Get total count first
+        totalCompletedCount = await redis.llen('completed_sessions_list');
+
+        // Calculate pagination
+        const endIndex = sessionOffset + sessionLimit - 1;
+        hasMore = endIndex < totalCompletedCount - 1;
+
+        // Get paginated session IDs
+        const completedSessionIds = await redis.lrange(
+          'completed_sessions_list',
+          sessionOffset,
+          endIndex
+        );
+
+        // Calculate date cutoff
+        const cutoffTime = Date.now() - daysBack * 24 * 60 * 60 * 1000;
+
+        for (const sessionId of completedSessionIds) {
+          try {
+            const sessionData = await redis.get(
+              `completed_session:${sessionId}`
+            );
+            if (sessionData) {
+              // Handle both string and object responses from Redis
+              let session: CompletedSession;
+              if (typeof sessionData === 'string') {
+                session = JSON.parse(sessionData) as CompletedSession;
+              } else {
+                session = sessionData as CompletedSession;
+              }
+
+              // Apply date filter
+              if (session.startTime >= cutoffTime) {
+                // Apply status filter
+                if (statusFilter === 'all' || session.status === statusFilter) {
+                  completedSessions.push(session);
+                }
+              }
+            } else {
+              // Clean up orphaned session ID
+              await redis.lrem('completed_sessions_list', 1, sessionId);
+            }
+          } catch (error) {
+            console.error(
+              `Error parsing completed session ${sessionId}:`,
+              error
+            );
+            // Clean up problematic session
+            await redis.lrem('completed_sessions_list', 1, sessionId);
+            await redis.del(`completed_session:${sessionId}`);
+          }
+        }
+      }
+
+      // Sort sessions by start time (newest first)
+      activeSessions.sort((a, b) => b.startTime - a.startTime);
+      completedSessions.sort((a, b) => b.startTime - a.startTime);
 
       return res.status(200).json({
-        sessions,
-        count: sessions.length,
+        activeSessions,
+        completedSessions,
+        // Legacy field for backward compatibility
+        sessions: activeSessions,
+        counts: {
+          active: activeSessions.length,
+          completed: completedSessions.length,
+          total: activeSessions.length + completedSessions.length,
+          totalCompleted: totalCompletedCount,
+        },
+        pagination: {
+          limit: sessionLimit,
+          offset: sessionOffset,
+          hasMore,
+          daysBack,
+          statusFilter,
+        },
         timestamp: Date.now(),
       });
     } else if (req.method === 'DELETE') {

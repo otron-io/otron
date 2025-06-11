@@ -191,9 +191,58 @@ async function updateActiveSession(
   }
 }
 
-// Helper function to remove active session
-async function removeActiveSession(sessionId: string): Promise<void> {
+// Helper function to store completed session
+async function storeCompletedSession(
+  sessionId: string,
+  finalStatus: 'completed' | 'cancelled' | 'error',
+  error?: string
+): Promise<void> {
   try {
+    // Get the current session data
+    const sessionData = await redis.get(`active_session:${sessionId}`);
+    if (sessionData) {
+      // Handle both string and object responses from Redis
+      let session: ActiveSession;
+      if (typeof sessionData === 'string') {
+        session = JSON.parse(sessionData) as ActiveSession;
+      } else {
+        session = sessionData as ActiveSession;
+      }
+
+      // Create completed session with additional metadata
+      const completedSession = {
+        ...session,
+        status: finalStatus,
+        endTime: Date.now(),
+        duration: Date.now() - session.startTime,
+        error: error || null,
+      };
+
+      // Store in completed sessions without expiration
+      await redis.set(
+        `completed_session:${sessionId}`,
+        JSON.stringify(completedSession)
+      );
+
+      // Add to completed sessions list (keep all, but we'll paginate on fetch)
+      await redis.lpush('completed_sessions_list', sessionId);
+    }
+  } catch (error) {
+    console.error('Error storing completed session:', error);
+  }
+}
+
+// Helper function to remove active session
+async function removeActiveSession(
+  sessionId: string,
+  finalStatus: 'completed' | 'cancelled' | 'error' = 'completed',
+  error?: string
+): Promise<void> {
+  try {
+    // Store as completed session before removing
+    await storeCompletedSession(sessionId, finalStatus, error);
+
+    // Remove from active sessions
     await redis.del(`active_session:${sessionId}`);
     await redis.srem('active_sessions_list', sessionId);
   } catch (error) {
@@ -251,13 +300,16 @@ export const generateResponse = async (
   await storeActiveSession(activeSession);
 
   // Set up abort handling
-  const cleanup = async () => {
-    await removeActiveSession(sessionId);
+  const cleanup = async (
+    status: 'completed' | 'cancelled' | 'error' = 'completed',
+    error?: string
+  ) => {
+    await removeActiveSession(sessionId, status, error);
   };
 
   // Check if already aborted
   if (abortSignal?.aborted) {
-    await cleanup();
+    await cleanup('cancelled', 'Request was aborted before processing started');
     throw new Error('Request was aborted before processing started');
   }
 
@@ -286,7 +338,7 @@ export const generateResponse = async (
     while (attemptNumber <= MAX_RETRY_ATTEMPTS) {
       // Check for abort before each attempt
       if (abortSignal?.aborted) {
-        await cleanup();
+        await cleanup('cancelled', 'Request was aborted during processing');
         throw new Error('Request was aborted during processing');
       }
 
@@ -322,6 +374,7 @@ export const generateResponse = async (
 
         // Check for abort before evaluation
         if (abortSignal?.aborted) {
+          await cleanup('cancelled', 'Request was aborted during evaluation');
           throw new Error('Request was aborted during processing');
         }
 
@@ -378,6 +431,10 @@ export const generateResponse = async (
 
         // If this is the last attempt, throw the error
         if (attemptNumber >= MAX_RETRY_ATTEMPTS) {
+          await cleanup(
+            'error',
+            error instanceof Error ? error.message : String(error)
+          );
           throw error;
         }
 
@@ -732,6 +789,14 @@ const generateResponseInternal = async (
         try {
           const cancelled = await redis.get(`session_cancelled:${sessionId}`);
           if (cancelled) {
+            // Store as cancelled session before throwing
+            await storeCompletedSession(
+              sessionId,
+              'cancelled',
+              'Request was cancelled by user'
+            );
+            await redis.del(`active_session:${sessionId}`);
+            await redis.srem('active_sessions_list', sessionId);
             throw new Error('Request was cancelled by user');
           }
         } catch (redisError) {
