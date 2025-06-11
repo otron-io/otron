@@ -171,7 +171,14 @@ async function updateActiveSession(
   try {
     const sessionData = await redis.get(`active_session:${sessionId}`);
     if (sessionData) {
-      const session = JSON.parse(sessionData as string) as ActiveSession;
+      // Handle both string and object responses from Redis
+      let session: ActiveSession;
+      if (typeof sessionData === 'string') {
+        session = JSON.parse(sessionData) as ActiveSession;
+      } else {
+        session = sessionData as ActiveSession;
+      }
+
       const updatedSession = { ...session, ...updates };
       await redis.setex(
         `active_session:${sessionId}`,
