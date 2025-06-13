@@ -2895,3 +2895,5 @@ ${params.expectedActions.map((action: string) => `• ${action}`).join('\n')}
     endedExplicitly: executionTracker.endedExplicitly,
   };
 };
+
+import { listRepositoryDefinitions } from './repository/definitions';
