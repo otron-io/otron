@@ -198,10 +198,16 @@ KV_REST_API_TOKEN=your_upstash_redis_token
 
 # Repository Configuration
 REPO_BASE_BRANCH=main
+ALLOWED_REPOSITORIES=owner/repo1,owner/repo2  # Optional: comma-separated list
 
-# Admin Access
-ADMIN_PASSWORD=your_admin_interface_password
-INTERNAL_API_TOKEN=your_internal_api_token
+# Admin Access & Security
+ADMIN_PASSWORD=your_admin_interface_password  # Default: admin
+INTERNAL_API_TOKEN=your_internal_api_token    # Default: internal-token
+
+# Frontend Configuration (Optional)
+FRONTEND_URL=https://your-frontend-domain.vercel.app
+
+# Vercel Runtime (Auto-set by Vercel)
 VERCEL_URL=https://your-domain.vercel.app
 ```
 

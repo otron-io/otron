@@ -1,28 +1,6 @@
 {
   "version": 2,
   "builds": [{ "src": "api/*.ts", "use": "@vercel/node" }],
-  "env": {
-    "LINEAR_CLIENT_ID": "",
-    "LINEAR_CLIENT_SECRET": "",
-    "WEBHOOK_SIGNING_SECRET": "",
-    "REDIRECT_URI": "",
-    "WEBHOOK_URL": "",
-    "OPENAI_API_KEY": "",
-    "KV_REST_API_URL": "",
-    "KV_REST_API_TOKEN": "",
-    "GITHUB_APP_ID": "",
-    "GITHUB_APP_PRIVATE_KEY": "",
-    "GITHUB_APP_CLIENT_ID": "",
-    "GITHUB_APP_CLIENT_SECRET": "",
-    "GITHUB_APP_INSTALLATION_ID": "",
-    "REPO_BASE_BRANCH": "main",
-    "ALLOWED_REPOSITORIES": "",
-    "ANTHROPIC_API_KEY": "",
-    "ADMIN_PASSWORD": "",
-    "INTERNAL_API_TOKEN": "",
-    "FRONTEND_URL": "",
-    "VERCEL_URL": ""
-  },
   "rewrites": [
     { "source": "/linear-app", "destination": "/api/index.ts" },
     { "source": "/health", "destination": "/api/health.ts" },
