@@ -1,29 +1,30 @@
 {
   "version": 2,
-  "builds": [{ "src": "api/*.ts", "use": "@vercel/node" }],
-  "rewrites": [
-    { "source": "/linear-app", "destination": "/api/index.ts" },
-    { "source": "/health", "destination": "/api/health.ts" },
-    { "source": "/docs", "destination": "/api/docs.ts" },
-    { "source": "/webhook", "destination": "/api/webhook.ts" },
-    { "source": "/oauth/callback", "destination": "/api/callback.ts" },
-    { "source": "/api/embed-repo", "destination": "/api/embed-repo.ts" },
-    {
-      "source": "/api/embedding-status",
-      "destination": "/api/embedding-status.ts"
-    },
-    { "source": "/api/code-search", "destination": "/api/code-search.ts" },
-    { "source": "/api/agent-monitor", "destination": "/api/agent-monitor.ts" },
-    {
-      "source": "/api/active-sessions",
-      "destination": "/api/active-sessions.ts"
-    },
-    { "source": "/api/issue-actions", "destination": "/api/issue-actions.ts" },
-    { "source": "/api/issue-details", "destination": "/api/issue-details.ts" },
-    {
-      "source": "/api/memory-browser",
-      "destination": "/api/memory-browser.ts"
-    },
-    { "source": "/api/events", "destination": "/api/events.ts" }
-  ]
+  "env": {
+    "LINEAR_CLIENT_ID": "",
+    "LINEAR_CLIENT_SECRET": "",
+    "WEBHOOK_SIGNING_SECRET": "",
+    "REDIRECT_URI": "",
+    "WEBHOOK_URL": "",
+    "OPENAI_API_KEY": "",
+    "KV_REST_API_URL": "",
+    "KV_REST_API_TOKEN": "",
+
+    "GITHUB_APP_ID": "",
+    "GITHUB_APP_PRIVATE_KEY": "",
+    "GITHUB_APP_CLIENT_ID": "",
+    "GITHUB_APP_CLIENT_SECRET": "",
+    "GITHUB_APP_INSTALLATION_ID": "",
+
+    "REPO_BASE_BRANCH": "main",
+    "ALLOWED_REPOSITORIES": "",
+    "ANTHROPIC_API_KEY": "",
+
+    "ADMIN_PASSWORD": "admin",
+    "INTERNAL_API_TOKEN": "internal-token",
+    "FRONTEND_URL": "",
+
+    "EXA_API_KEY": "",
+    "VERCEL_URL": ""
+  }
 }
