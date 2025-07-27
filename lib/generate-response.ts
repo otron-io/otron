@@ -37,6 +37,7 @@ import {
   executeEditCode,
   executeAddCode,
   executeRemoveCode,
+  executeEditUrl,
   executeDeleteFile,
   executeCreateFile,
   // GitHub branch management tools
@@ -613,24 +614,27 @@ const generateResponseInternal = async (
     - Current session ID: ${sessionId || 'unknown'}
 
     SIMPLIFIED, SAFE FILE EDITING:
-    - You have access to 3 simplified, content-aware editing tools that are much safer and easier to use:
+    - You have access to 4 simplified, content-aware editing tools that are much safer and easier to use:
       * editCode: Replace specific existing code with new code (requires exact content matching for safety)
       * addCode: Add new code at a specific location using context-based positioning (start, end, after, before)
       * removeCode: Remove specific code from a file (requires exact content matching for safety)
+      * editUrl: Ultra-safe URL editing specifically for documentation files (requires exact URL matching)
       * createFile: Create entirely new files (for new file creation only)
       * deleteFile: Delete files that are no longer needed
     - These tools are content-aware and prevent accidental overwrites by requiring exact content matching.
     - They are much more reliable than line-based editing because they validate the content before making changes.
-    - Use editCode when you need to replace existing code, addCode when you need to add new code, and removeCode when you need to delete code.
+    - Use editCode when you need to replace existing code, addCode when you need to add new code, removeCode when you need to delete code, and editUrl for URL updates in documentation.
     - Always provide the exact code content you want to change - this prevents errors and unintended modifications.
     
     ⚠️ CRITICAL SAFETY WARNINGS FOR FILE EDITING:
     - ALWAYS be extremely precise with your oldCode/codeToRemove parameters in editCode and removeCode
     - Use the SMALLEST possible code chunks - prefer editing 1-5 lines at a time rather than large blocks
     - When editing URLs, configuration, or single lines, include ONLY that specific content, not surrounding text
+    - For URL changes in documentation, prefer using editUrl which has ultra-strict safety checks
     - If you need to make multiple changes, use multiple separate tool calls rather than one large edit
     - DOUBLE-CHECK your parameters before executing - accidental large matches can delete entire sections of files
     - The tools have safety limits: max 1000 characters for edits/removals, max 2000 for additions
+    - README.md files have special protection: max 200 characters for edits, max 500 character changes total
     - If you hit safety limits, break your changes into smaller, more targeted edits
 
     SLACK FORMATTING & BLOCK KIT:
@@ -723,9 +727,11 @@ const generateResponseInternal = async (
       * For replacing existing code: use editCode with the exact old code and new code
       * For adding new code: use addCode with position (start, end, after, before) and context
       * For removing code: use removeCode with the exact code to delete
+      * For editing URLs in documentation: use editUrl with the exact old and new URLs
       * For creating new files: use createFile
       * For deleting files: use deleteFile
     - These tools are much safer because they validate content before making changes, preventing accidental overwrites.
+    - The editUrl tool is specifically designed for documentation URL changes and has ultra-strict safety checks.
 
     IMPORTANT CONTEXT AWARENESS:
     - Use the Exa tools when you need things like documentation and current information. Always prefer realtime information your own knowledge.
@@ -823,6 +829,7 @@ const generateResponseInternal = async (
         'editCode',
         'addCode',
         'removeCode',
+        'editUrl',
         'createBranch',
         'createPullRequest',
         'updateIssueStatus',
@@ -2694,6 +2701,31 @@ ${params.expectedActions.map((action: string) => `• ${action}`).join('\n')}
         }),
         execute: createMemoryAwareToolExecutor('removeCode', (params: any) =>
           executeRemoveCode(params, updateStatus)
+        ),
+      }),
+      editUrl: tool({
+        description:
+          'Ultra-safe URL editing specifically for documentation files. Only allows editing of URLs with strict safety checks.',
+        parameters: z.object({
+          path: z.string().describe('The file path in the repository'),
+          repository: z
+            .string()
+            .describe('The repository in format "owner/repo"'),
+          branch: z.string().describe('The branch to edit'),
+          oldUrl: z
+            .string()
+            .describe(
+              'The exact URL to replace (must contain http:// or https://)'
+            ),
+          newUrl: z
+            .string()
+            .describe(
+              'The new URL to replace it with (must contain http:// or https://)'
+            ),
+          message: z.string().describe('Commit message for the change'),
+        }),
+        execute: createMemoryAwareToolExecutor('editUrl', (params: any) =>
+          executeEditUrl(params, updateStatus)
         ),
       }),
     },

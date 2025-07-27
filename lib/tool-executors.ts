@@ -1383,6 +1383,13 @@ export const executeEditCode = async (
     message,
   });
 
+  // 🚨 EMERGENCY CIRCUIT BREAKER FOR README.md
+  if (path.toLowerCase().includes('readme') && oldCode.length > 200) {
+    throw new Error(
+      `🚨 EMERGENCY PROTECTION: README.md edits are limited to 200 characters maximum to prevent documentation loss. Your oldCode is ${oldCode.length} characters. Please make smaller, more targeted edits to README files.`
+    );
+  }
+
   try {
     updateStatus?.(`is editing code in ${path}...`);
 
@@ -1474,6 +1481,20 @@ export const executeEditCode = async (
           originalLength - newLength
         )} characters, which is more than the safety limit of 2000. Please use smaller, more targeted edits.`
       );
+    }
+
+    // 🚨 ADDITIONAL EMERGENCY CHECK FOR DOCUMENTATION FILES
+    if (
+      path.toLowerCase().includes('readme') ||
+      path.toLowerCase().includes('.md')
+    ) {
+      if (Math.abs(originalLength - newLength) > 500) {
+        throw new Error(
+          `🚨 DOCUMENTATION PROTECTION: This would change ${Math.abs(
+            originalLength - newLength
+          )} characters in a documentation file. For safety, documentation edits are limited to 500 character changes maximum.`
+        );
+      }
     }
 
     // Log the change details for debugging
@@ -1796,6 +1817,158 @@ export const executeRemoveCode = async (
     };
   } catch (error) {
     console.error('❌ Error in executeRemoveCode:', error);
+    throw error;
+  }
+};
+
+// 🚨 ULTRA-SAFE URL EDITING TOOL FOR DOCUMENTATION
+export const executeEditUrl = async (
+  {
+    path,
+    repository,
+    branch,
+    oldUrl,
+    newUrl,
+    message,
+  }: {
+    path: string;
+    repository: string;
+    branch: string;
+    oldUrl: string;
+    newUrl: string;
+    message: string;
+  },
+  updateStatus?: (status: string) => void
+) => {
+  console.log('🔧 executeEditUrl CALLED');
+  console.log('Parameters:', {
+    path,
+    repository,
+    branch,
+    oldUrlLength: oldUrl.length,
+    newUrlLength: newUrl.length,
+    message,
+  });
+
+  try {
+    updateStatus?.(`is editing URL in ${path}...`);
+
+    // 🚨 ULTRA-STRICT SAFETY CHECKS FOR URL EDITING
+
+    // 1. Only allow URL-like content
+    if (!oldUrl.includes('http://') && !oldUrl.includes('https://')) {
+      throw new Error(
+        `SAFETY CHECK FAILED: oldUrl must contain http:// or https:// to be recognized as a URL. Got: ${oldUrl.substring(
+          0,
+          100
+        )}...`
+      );
+    }
+
+    if (!newUrl.includes('http://') && !newUrl.includes('https://')) {
+      throw new Error(
+        `SAFETY CHECK FAILED: newUrl must contain http:// or https:// to be recognized as a URL. Got: ${newUrl.substring(
+          0,
+          100
+        )}...`
+      );
+    }
+
+    // 2. Prevent large URL blocks (should be single line URLs)
+    if (oldUrl.length > 2000) {
+      throw new Error(
+        `SAFETY CHECK FAILED: oldUrl is too large (${oldUrl.length} characters). URLs should typically be under 2000 characters.`
+      );
+    }
+
+    if (newUrl.length > 2000) {
+      throw new Error(
+        `SAFETY CHECK FAILED: newUrl is too large (${newUrl.length} characters). URLs should typically be under 2000 characters.`
+      );
+    }
+
+    // 3. Prevent multi-line URLs (which might indicate accidental large matches)
+    const oldUrlLines = oldUrl.split('\n').length;
+    if (oldUrlLines > 3) {
+      throw new Error(
+        `SAFETY CHECK FAILED: oldUrl contains ${oldUrlLines} lines. For safety, URL edits should be 1-3 lines maximum.`
+      );
+    }
+
+    // Get the current file content
+    const { getFileContent } = await import('./github/github-utils.js');
+    const currentContent = await getFileContent(
+      path,
+      repository,
+      1,
+      10000,
+      branch
+    );
+
+    // Remove any header line that getFileContent might add
+    const lines = currentContent.split('\n');
+    let content = currentContent;
+    if (lines.length > 0 && lines[0]?.match(/^\/\/ Lines \d+-\d+ of \d+$/)) {
+      content = lines.slice(1).join('\n');
+    }
+
+    // Check if the old URL exists in the file
+    if (!content.includes(oldUrl)) {
+      throw new Error(
+        `Old URL not found in ${path}. The file content may have changed since you last read it. Looking for: ${oldUrl.substring(
+          0,
+          200
+        )}...`
+      );
+    }
+
+    // Check if the old URL appears multiple times
+    const occurrences = content.split(oldUrl).length - 1;
+    if (occurrences > 1) {
+      throw new Error(
+        `Old URL appears ${occurrences} times in ${path}. Please provide more specific URL text to avoid ambiguity.`
+      );
+    }
+
+    // 🚨 CRITICAL: Validate the replacement will cause minimal change
+    const originalLength = content.length;
+    const afterReplacement = content.replace(oldUrl, newUrl);
+    const newLength = afterReplacement.length;
+    const difference = Math.abs(originalLength - newLength);
+
+    // For URL edits, the difference should be small (typically just added/removed parameters)
+    if (difference > 1000) {
+      throw new Error(
+        `🚨 URL EDIT SAFETY CHECK FAILED: This URL replacement would change ${difference} characters in the file. URL edits should typically change less than 1000 characters. This suggests the oldUrl parameter might be matching more content than intended.`
+      );
+    }
+
+    // Log the change details for debugging
+    console.log('📊 URL edit summary:', {
+      originalLength,
+      newLength,
+      difference,
+      oldUrlPreview:
+        oldUrl.substring(0, 150) + (oldUrl.length > 150 ? '...' : ''),
+      newUrlPreview:
+        newUrl.substring(0, 150) + (newUrl.length > 150 ? '...' : ''),
+    });
+
+    // Replace the old URL with the new URL
+    const updatedContent = afterReplacement;
+
+    // Update the file
+    const { createOrUpdateFile } = await import('./github/github-utils.js');
+    await createOrUpdateFile(path, updatedContent, message, repository, branch);
+
+    console.log('✅ executeEditUrl completed successfully');
+
+    return {
+      success: true,
+      message: `Successfully updated URL in ${path} (${difference} character difference)`,
+    };
+  } catch (error) {
+    console.error('❌ Error in executeEditUrl:', error);
     throw error;
   }
 };
