@@ -34,16 +34,9 @@ import {
   executeGetPullRequestFiles,
   executeGetDirectoryStructure,
   executeGetRepositoryStructure,
-  // GitHub file editing tools
-  executeInsertAtLine,
-  executeReplaceLines,
-  executeDeleteLines,
-  executeAppendToFile,
-  executePrependToFile,
-  executeFindAndReplace,
-  executeInsertAfterPattern,
-  executeInsertBeforePattern,
-  executeApplyMultipleEdits,
+  executeEditCode,
+  executeAddCode,
+  executeRemoveCode,
   executeDeleteFile,
   executeCreateFile,
   // GitHub branch management tools
@@ -619,22 +612,17 @@ const generateResponseInternal = async (
     - Current context ID: ${contextId}
     - Current session ID: ${sessionId || 'unknown'}
 
-    ADVANCED FILE EDITING CAPABILITIES:
-    - You have access to precise, targeted file editing tools that allow you to make specific changes without affecting the rest of the file.
-    - ALWAYS use these targeted editing tools - they are designed to be safe and prevent data loss:
-      * insertAtLine: Insert content at a specific line number
-      * replaceLines: Replace a specific range of lines (much safer than replacing entire files)
-      * deleteLines: Delete a specific range of lines
-      * appendToFile: Add content to the end of a file
-      * prependToFile: Add content to the beginning of a file
-      * findAndReplace: Find and replace text with options for case sensitivity and whole word matching
-      * insertAfterPattern: Insert content after a line matching a pattern
-      * insertBeforePattern: Insert content before a line matching a pattern
-      * applyMultipleEdits: Apply multiple edit operations in a single commit (operations are applied in reverse line order to avoid conflicts)
+    SIMPLIFIED, SAFE FILE EDITING:
+    - You have access to 3 simplified, content-aware editing tools that are much safer and easier to use:
+      * editCode: Replace specific existing code with new code (requires exact content matching for safety)
+      * addCode: Add new code at a specific location using context-based positioning (start, end, after, before)
+      * removeCode: Remove specific code from a file (requires exact content matching for safety)
       * createFile: Create entirely new files (for new file creation only)
       * deleteFile: Delete files that are no longer needed
-    - These tools provide surgical precision for code changes and prevent accidental loss of existing content.
-    - NEVER try to replace entire file contents - always use the targeted editing tools above.
+    - These tools are content-aware and prevent accidental overwrites by requiring exact content matching.
+    - They are much more reliable than line-based editing because they validate the content before making changes.
+    - Use editCode when you need to replace existing code, addCode when you need to add new code, and removeCode when you need to delete code.
+    - Always provide the exact code content you want to change - this prevents errors and unintended modifications.
 
     SLACK FORMATTING & BLOCK KIT:
     - For simple text messages, use sendSlackMessage, sendChannelMessage, or sendDirectMessage
@@ -722,13 +710,13 @@ const generateResponseInternal = async (
 
     GITHUB REPO NOTES:
     - Your repository is https://github.com/otron-io/otron, you can develop and improve yourself via this repository.
-    - When making code changes, always use the most appropriate editing tool for the task:
-      * For small insertions: use insertAtLine or insertAfterPattern/insertBeforePattern
-      * For replacing specific sections: use replaceLines
-      * For simple text replacements: use findAndReplace
-      * For multiple related changes: use applyMultipleEdits to batch them into a single commit
-      * For adding to files: use appendToFile or prependToFile
-    - This approach ensures precise changes and prevents accidental deletion of existing code.
+    - When making code changes, use the simplified, content-aware editing tools:
+      * For replacing existing code: use editCode with the exact old code and new code
+      * For adding new code: use addCode with position (start, end, after, before) and context
+      * For removing code: use removeCode with the exact code to delete
+      * For creating new files: use createFile
+      * For deleting files: use deleteFile
+    - These tools are much safer because they validate content before making changes, preventing accidental overwrites.
 
     IMPORTANT CONTEXT AWARENESS:
     - Use the Exa tools when you need things like documentation and current information. Always prefer realtime information your own knowledge.
@@ -823,15 +811,9 @@ const generateResponseInternal = async (
       ];
       const actionTools = [
         'createFile',
-        'insertAtLine',
-        'replaceLines',
-        'deleteLines',
-        'appendToFile',
-        'prependToFile',
-        'findAndReplace',
-        'insertAfterPattern',
-        'insertBeforePattern',
-        'applyMultipleEdits',
+        'editCode',
+        'addCode',
+        'removeCode',
         'createBranch',
         'createPullRequest',
         'updateIssueStatus',
@@ -2488,247 +2470,7 @@ ${params.expectedActions.map((action: string) => `• ${action}`).join('\n')}
             executeRespondToSlackInteraction(params, updateStatus)
         ),
       }),
-      // Advanced GitHub file editing tools
-      insertAtLine: tool({
-        description:
-          'Insert content at a specific line number in a file. This is safer than replacing entire files.',
-        parameters: z.object({
-          path: z.string().describe('The file path in the repository'),
-          repository: z
-            .string()
-            .describe('The repository in format "owner/repo"'),
-          branch: z.string().describe('The branch to edit'),
-          line: z
-            .number()
-            .describe('The line number where to insert content (1-based)'),
-          content: z.string().describe('The content to insert'),
-          message: z.string().describe('Commit message for the change'),
-        }),
-        execute: createMemoryAwareToolExecutor('insertAtLine', (params: any) =>
-          executeInsertAtLine(params, updateStatus)
-        ),
-      }),
-      replaceLines: tool({
-        description:
-          'Replace a specific range of lines in a file. Much safer than replacing entire files.',
-        parameters: z.object({
-          path: z.string().describe('The file path in the repository'),
-          repository: z
-            .string()
-            .describe('The repository in format "owner/repo"'),
-          branch: z.string().describe('The branch to edit'),
-          startLine: z
-            .number()
-            .describe(
-              'The starting line number to replace (1-based, inclusive)'
-            ),
-          endLine: z
-            .number()
-            .describe('The ending line number to replace (1-based, inclusive)'),
-          content: z
-            .string()
-            .describe('The new content to replace the lines with'),
-          message: z.string().describe('Commit message for the change'),
-        }),
-        execute: createMemoryAwareToolExecutor('replaceLines', (params: any) =>
-          executeReplaceLines(params, updateStatus)
-        ),
-      }),
-      deleteLines: tool({
-        description: 'Delete a specific range of lines from a file.',
-        parameters: z.object({
-          path: z.string().describe('The file path in the repository'),
-          repository: z
-            .string()
-            .describe('The repository in format "owner/repo"'),
-          branch: z.string().describe('The branch to edit'),
-          startLine: z
-            .number()
-            .describe(
-              'The starting line number to delete (1-based, inclusive)'
-            ),
-          endLine: z
-            .number()
-            .describe('The ending line number to delete (1-based, inclusive)'),
-          message: z.string().describe('Commit message for the change'),
-        }),
-        execute: createMemoryAwareToolExecutor('deleteLines', (params: any) =>
-          executeDeleteLines(params, updateStatus)
-        ),
-      }),
-      appendToFile: tool({
-        description: 'Append content to the end of a file.',
-        parameters: z.object({
-          path: z.string().describe('The file path in the repository'),
-          repository: z
-            .string()
-            .describe('The repository in format "owner/repo"'),
-          branch: z.string().describe('The branch to edit'),
-          content: z.string().describe('The content to append'),
-          message: z.string().describe('Commit message for the change'),
-        }),
-        execute: createMemoryAwareToolExecutor('appendToFile', (params: any) =>
-          executeAppendToFile(params, updateStatus)
-        ),
-      }),
-      prependToFile: tool({
-        description: 'Prepend content to the beginning of a file.',
-        parameters: z.object({
-          path: z.string().describe('The file path in the repository'),
-          repository: z
-            .string()
-            .describe('The repository in format "owner/repo"'),
-          branch: z.string().describe('The branch to edit'),
-          content: z.string().describe('The content to prepend'),
-          message: z.string().describe('Commit message for the change'),
-        }),
-        execute: createMemoryAwareToolExecutor('prependToFile', (params: any) =>
-          executePrependToFile(params, updateStatus)
-        ),
-      }),
-      findAndReplace: tool({
-        description:
-          'Find and replace text in a file with options for case sensitivity and whole word matching.',
-        parameters: z.object({
-          path: z.string().describe('The file path in the repository'),
-          repository: z
-            .string()
-            .describe('The repository in format "owner/repo"'),
-          branch: z.string().describe('The branch to edit'),
-          searchText: z.string().describe('The text to search for'),
-          replaceText: z.string().describe('The text to replace with'),
-          message: z.string().describe('Commit message for the change'),
-          replaceAll: z
-            .boolean()
-            .describe(
-              'Whether to replace all occurrences (true) or just the first one (false). Default: false.'
-            ),
-          caseSensitive: z
-            .boolean()
-            .describe(
-              'Whether the search should be case sensitive. Default: true.'
-            ),
-          wholeWord: z
-            .boolean()
-            .describe('Whether to match whole words only. Default: false.'),
-        }),
-        execute: createMemoryAwareToolExecutor(
-          'findAndReplace',
-          (params: any) => executeFindAndReplace(params, updateStatus)
-        ),
-      }),
-      insertAfterPattern: tool({
-        description:
-          'Insert content after the first line that matches a specific pattern.',
-        parameters: z.object({
-          path: z.string().describe('The file path in the repository'),
-          repository: z
-            .string()
-            .describe('The repository in format "owner/repo"'),
-          branch: z.string().describe('The branch to edit'),
-          pattern: z.string().describe('The pattern to search for'),
-          content: z
-            .string()
-            .describe('The content to insert after the matching line'),
-          message: z.string().describe('Commit message for the change'),
-          caseSensitive: z
-            .boolean()
-            .describe(
-              'Whether the search should be case sensitive. Default: true.'
-            ),
-          wholeWord: z
-            .boolean()
-            .describe('Whether to match whole words only. Default: false.'),
-        }),
-        execute: createMemoryAwareToolExecutor(
-          'insertAfterPattern',
-          (params: any) => executeInsertAfterPattern(params, updateStatus)
-        ),
-      }),
-      insertBeforePattern: tool({
-        description:
-          'Insert content before the first line that matches a specific pattern.',
-        parameters: z.object({
-          path: z.string().describe('The file path in the repository'),
-          repository: z
-            .string()
-            .describe('The repository in format "owner/repo"'),
-          branch: z.string().describe('The branch to edit'),
-          pattern: z.string().describe('The pattern to search for'),
-          content: z
-            .string()
-            .describe('The content to insert before the matching line'),
-          message: z.string().describe('Commit message for the change'),
-          caseSensitive: z
-            .boolean()
-            .describe(
-              'Whether the search should be case sensitive. Default: true.'
-            ),
-          wholeWord: z
-            .boolean()
-            .describe('Whether to match whole words only. Default: false.'),
-        }),
-        execute: createMemoryAwareToolExecutor(
-          'insertBeforePattern',
-          (params: any) => executeInsertBeforePattern(params, updateStatus)
-        ),
-      }),
-      applyMultipleEdits: tool({
-        description:
-          'Apply multiple edit operations to a file in a single commit. Operations are applied in reverse line order to avoid line number conflicts.',
-        parameters: z.object({
-          path: z.string().describe('The file path in the repository'),
-          repository: z
-            .string()
-            .describe('The repository in format "owner/repo"'),
-          branch: z.string().describe('The branch to edit'),
-          operations: z
-            .array(
-              z.discriminatedUnion('type', [
-                z.object({
-                  type: z.literal('insert'),
-                  line: z
-                    .number()
-                    .describe('Line number for insert operation (1-based)'),
-                  content: z.string().describe('Content to insert'),
-                }),
-                z.object({
-                  type: z.literal('replace'),
-                  startLine: z
-                    .number()
-                    .describe(
-                      'Starting line for replace operation (1-based, inclusive)'
-                    ),
-                  endLine: z
-                    .number()
-                    .describe(
-                      'Ending line for replace operation (1-based, inclusive)'
-                    ),
-                  content: z.string().describe('Content to replace with'),
-                }),
-                z.object({
-                  type: z.literal('delete'),
-                  startLine: z
-                    .number()
-                    .describe(
-                      'Starting line for delete operation (1-based, inclusive)'
-                    ),
-                  endLine: z
-                    .number()
-                    .describe(
-                      'Ending line for delete operation (1-based, inclusive)'
-                    ),
-                }),
-              ])
-            )
-            .describe('Array of edit operations to apply'),
-          message: z.string().describe('Commit message for all the changes'),
-        }),
-        execute: createMemoryAwareToolExecutor(
-          'applyMultipleEdits',
-          (params: any) => executeApplyMultipleEdits(params, updateStatus)
-        ),
-      }),
+
       deleteFile: tool({
         description:
           'Delete a file from the repository. Use this when you need to remove files that are no longer needed.',
@@ -2873,6 +2615,76 @@ ${params.expectedActions.map((action: string) => `• ${action}`).join('\n')}
         execute: createMemoryAwareToolExecutor(
           'readRelatedFiles',
           (params: any) => executeReadRelatedFiles(params, updateStatus)
+        ),
+      }),
+      // GitHub file editing tools - simplified and content-aware
+      editCode: tool({
+        description:
+          'Replace specific existing code with new code. Always requires exact content matching for safety.',
+        parameters: z.object({
+          path: z.string().describe('The file path in the repository'),
+          repository: z
+            .string()
+            .describe('The repository in format "owner/repo"'),
+          branch: z.string().describe('The branch to edit'),
+          oldCode: z
+            .string()
+            .describe(
+              'The exact code content to replace (must match exactly for safety)'
+            ),
+          newCode: z
+            .string()
+            .describe('The new code content to replace it with'),
+          message: z.string().describe('Commit message for the change'),
+        }),
+        execute: createMemoryAwareToolExecutor('editCode', (params: any) =>
+          executeEditCode(params, updateStatus)
+        ),
+      }),
+      addCode: tool({
+        description:
+          'Add new code at a specific location in a file using context-based positioning.',
+        parameters: z.object({
+          path: z.string().describe('The file path in the repository'),
+          repository: z
+            .string()
+            .describe('The repository in format "owner/repo"'),
+          branch: z.string().describe('The branch to edit'),
+          newCode: z.string().describe('The new code content to add'),
+          position: z
+            .enum(['start', 'end', 'after', 'before'])
+            .describe(
+              'Where to add the code: "start" (beginning of file), "end" (end of file), "after" (after context), "before" (before context)'
+            ),
+          context: z
+            .string()
+            .describe(
+              'Required when position is "after" or "before" - the exact code content to position relative to. Leave empty for "start" or "end".'
+            ),
+          message: z.string().describe('Commit message for the change'),
+        }),
+        execute: createMemoryAwareToolExecutor('addCode', (params: any) =>
+          executeAddCode(params, updateStatus)
+        ),
+      }),
+      removeCode: tool({
+        description:
+          'Remove specific code from a file. Requires exact content matching for safety.',
+        parameters: z.object({
+          path: z.string().describe('The file path in the repository'),
+          repository: z
+            .string()
+            .describe('The repository in format "owner/repo"'),
+          branch: z.string().describe('The branch to edit'),
+          codeToRemove: z
+            .string()
+            .describe(
+              'The exact code content to remove (must match exactly for safety)'
+            ),
+          message: z.string().describe('Commit message for the change'),
+        }),
+        execute: createMemoryAwareToolExecutor('removeCode', (params: any) =>
+          executeRemoveCode(params, updateStatus)
         ),
       }),
     },

@@ -1354,593 +1354,284 @@ export const executeRespondToSlackInteraction = async (
   }
 };
 
-// Advanced GitHub file editing tool execution functions
-export const executeInsertAtLine = async (
+// Simplified GitHub file editing tool execution functions
+export const executeEditCode = async (
   {
     path,
     repository,
     branch,
-    line,
-    content,
+    oldCode,
+    newCode,
     message,
   }: {
     path: string;
     repository: string;
     branch: string;
-    line: number;
-    content: string;
+    oldCode: string;
+    newCode: string;
     message: string;
   },
   updateStatus?: (status: string) => void
 ) => {
-  // Add comprehensive logging
-  console.log('🔧 executeInsertAtLine CALLED');
+  console.log('🔧 executeEditCode CALLED');
   console.log('Parameters:', {
     path,
     repository,
     branch,
-    line,
-    content: content.substring(0, 100) + '...',
+    oldCodeLength: oldCode.length,
+    newCodeLength: newCode.length,
     message,
   });
 
   try {
-    updateStatus?.(`is inserting content at line ${line} in ${path}...`);
-    console.log('📝 About to call FileEditor.insertAtLine');
+    updateStatus?.(`is editing code in ${path}...`);
 
-    await FileEditor.insertAtLine(
+    // Get the current file content
+    const { getFileContent } = await import('./github/github-utils.js');
+    const currentContent = await getFileContent(
       path,
       repository,
-      branch,
-      line,
-      content,
-      message
+      1,
+      10000,
+      branch
     );
 
-    console.log('✅ FileEditor.insertAtLine completed successfully');
+    // Remove any header line that getFileContent might add
+    const lines = currentContent.split('\n');
+    let content = currentContent;
+    if (lines.length > 0 && lines[0]?.match(/^\/\/ Lines \d+-\d+ of \d+$/)) {
+      content = lines.slice(1).join('\n');
+    }
 
-    return {
-      success: true,
-      message: `Inserted content at line ${line} in ${path}`,
-    };
-  } catch (error) {
-    console.error('❌ Error in executeInsertAtLine:', error);
-    throw error;
-  }
-};
-
-export const executeReplaceLines = async (
-  {
-    path,
-    repository,
-    branch,
-    startLine,
-    endLine,
-    content,
-    message,
-  }: {
-    path: string;
-    repository: string;
-    branch: string;
-    startLine: number;
-    endLine: number;
-    content: string;
-    message: string;
-  },
-  updateStatus?: (status: string) => void
-) => {
-  // Add comprehensive logging
-  console.log('🔧 executeReplaceLines CALLED');
-  console.log('Parameters:', {
-    path,
-    repository,
-    branch,
-    startLine,
-    endLine,
-    content: content.substring(0, 100) + '...',
-    message,
-  });
-
-  // Extract Linear issue ID from branch name for logging
-  const issueId = extractLinearIssueFromBranch(branch);
-  if (issueId) {
-    await logToLinearIssue.info(
-      issueId,
-      `Replacing lines ${startLine}-${endLine} in ${path}`,
-      `Branch: ${branch}, New content: ${content.length} characters`
-    );
-  }
-
-  try {
-    updateStatus?.(`is replacing lines ${startLine}-${endLine} in ${path}...`);
-    console.log('📝 About to call FileEditor.replaceLines');
-
-    await FileEditor.replaceLines(
-      path,
-      repository,
-      branch,
-      startLine,
-      endLine,
-      content,
-      message
-    );
-
-    console.log('✅ FileEditor.replaceLines completed successfully');
-
-    if (issueId) {
-      await logToLinearIssue.info(
-        issueId,
-        `Successfully replaced lines in ${path}`,
-        `Lines ${startLine}-${endLine} updated`
+    // Check if the old code exists in the file
+    if (!content.includes(oldCode)) {
+      throw new Error(
+        `Old code not found in ${path}. The file content may have changed since you last read it.`
       );
     }
 
-    return {
-      success: true,
-      message: `Replaced lines ${startLine}-${endLine} in ${path}`,
-    };
-  } catch (error) {
-    console.error('❌ Error in executeReplaceLines:', error);
-
-    if (issueId) {
-      await logToLinearIssue.error(
-        issueId,
-        `Failed to replace lines in ${path}`,
-        error instanceof Error ? error.message : String(error)
+    // Check if the old code appears multiple times
+    const occurrences = content.split(oldCode).length - 1;
+    if (occurrences > 1) {
+      throw new Error(
+        `Old code appears ${occurrences} times in ${path}. Please provide more specific code to avoid ambiguity.`
       );
     }
 
-    throw error;
-  }
-};
+    // Replace the old code with the new code
+    const updatedContent = content.replace(oldCode, newCode);
 
-export const executeDeleteLines = async (
-  {
-    path,
-    repository,
-    branch,
-    startLine,
-    endLine,
-    message,
-  }: {
-    path: string;
-    repository: string;
-    branch: string;
-    startLine: number;
-    endLine: number;
-    message: string;
-  },
-  updateStatus?: (status: string) => void
-) => {
-  // Add comprehensive logging
-  console.log('🔧 executeDeleteLines CALLED');
-  console.log('Parameters:', {
-    path,
-    repository,
-    branch,
-    startLine,
-    endLine,
-    message,
-  });
+    // Update the file
+    const { createOrUpdateFile } = await import('./github/github-utils.js');
+    await createOrUpdateFile(path, updatedContent, message, repository, branch);
 
-  try {
-    updateStatus?.(`is deleting lines ${startLine}-${endLine} in ${path}...`);
-    console.log('📝 About to call FileEditor.deleteLines');
-
-    await FileEditor.deleteLines(
-      path,
-      repository,
-      branch,
-      startLine,
-      endLine,
-      message
-    );
-
-    console.log('✅ FileEditor.deleteLines completed successfully');
+    console.log('✅ executeEditCode completed successfully');
 
     return {
       success: true,
-      message: `Deleted lines ${startLine}-${endLine} in ${path}`,
+      message: `Successfully replaced code in ${path}`,
     };
   } catch (error) {
-    console.error('❌ Error in executeDeleteLines:', error);
+    console.error('❌ Error in executeEditCode:', error);
     throw error;
   }
 };
 
-export const executeAppendToFile = async (
+export const executeAddCode = async (
   {
     path,
     repository,
     branch,
-    content,
+    newCode,
+    position,
+    context,
     message,
   }: {
     path: string;
     repository: string;
     branch: string;
-    content: string;
+    newCode: string;
+    position: 'start' | 'end' | 'after' | 'before';
+    context: string;
     message: string;
   },
   updateStatus?: (status: string) => void
 ) => {
-  // Add comprehensive logging
-  console.log('🔧 executeAppendToFile CALLED');
+  console.log('🔧 executeAddCode CALLED');
   console.log('Parameters:', {
     path,
     repository,
     branch,
-    content: content.substring(0, 100) + '...',
+    newCodeLength: newCode.length,
+    position,
+    contextLength: context.length,
     message,
   });
 
   try {
-    updateStatus?.(`is appending content to ${path}...`);
-    console.log('📝 About to call FileEditor.appendToFile');
+    updateStatus?.(`is adding code to ${path}...`);
 
-    await FileEditor.appendToFile(path, repository, branch, content, message);
+    // Get the current file content
+    const { getFileContent } = await import('./github/github-utils.js');
+    const currentContent = await getFileContent(
+      path,
+      repository,
+      1,
+      10000,
+      branch
+    );
 
-    console.log('✅ FileEditor.appendToFile completed successfully');
+    // Remove any header line that getFileContent might add
+    const lines = currentContent.split('\n');
+    let content = currentContent;
+    if (lines.length > 0 && lines[0]?.match(/^\/\/ Lines \d+-\d+ of \d+$/)) {
+      content = lines.slice(1).join('\n');
+    }
+
+    let updatedContent: string;
+
+    switch (position) {
+      case 'start':
+        updatedContent = newCode + '\n' + content;
+        break;
+
+      case 'end':
+        updatedContent = content + '\n' + newCode;
+        break;
+
+      case 'after':
+        if (!context) {
+          throw new Error('Context is required when position is "after"');
+        }
+        if (!content.includes(context)) {
+          throw new Error(
+            `Context not found in ${path}: ${context.substring(0, 100)}...`
+          );
+        }
+        const afterOccurrences = content.split(context).length - 1;
+        if (afterOccurrences > 1) {
+          throw new Error(
+            `Context appears ${afterOccurrences} times in ${path}. Please provide more specific context.`
+          );
+        }
+        updatedContent = content.replace(context, context + '\n' + newCode);
+        break;
+
+      case 'before':
+        if (!context) {
+          throw new Error('Context is required when position is "before"');
+        }
+        if (!content.includes(context)) {
+          throw new Error(
+            `Context not found in ${path}: ${context.substring(0, 100)}...`
+          );
+        }
+        const beforeOccurrences = content.split(context).length - 1;
+        if (beforeOccurrences > 1) {
+          throw new Error(
+            `Context appears ${beforeOccurrences} times in ${path}. Please provide more specific context.`
+          );
+        }
+        updatedContent = content.replace(context, newCode + '\n' + context);
+        break;
+
+      default:
+        throw new Error(`Invalid position: ${position}`);
+    }
+
+    // Update the file
+    const { createOrUpdateFile } = await import('./github/github-utils.js');
+    await createOrUpdateFile(path, updatedContent, message, repository, branch);
+
+    console.log('✅ executeAddCode completed successfully');
 
     return {
       success: true,
-      message: `Appended content to ${path}`,
+      message: `Successfully added code to ${path} (${position}${
+        context ? ' context' : ''
+      })`,
     };
   } catch (error) {
-    console.error('❌ Error in executeAppendToFile:', error);
+    console.error('❌ Error in executeAddCode:', error);
     throw error;
   }
 };
 
-export const executePrependToFile = async (
+export const executeRemoveCode = async (
   {
     path,
     repository,
     branch,
-    content,
+    codeToRemove,
     message,
   }: {
     path: string;
     repository: string;
     branch: string;
-    content: string;
+    codeToRemove: string;
     message: string;
   },
   updateStatus?: (status: string) => void
 ) => {
-  // Add comprehensive logging
-  console.log('🔧 executePrependToFile CALLED');
+  console.log('🔧 executeRemoveCode CALLED');
   console.log('Parameters:', {
     path,
     repository,
     branch,
-    content: content.substring(0, 100) + '...',
+    codeToRemoveLength: codeToRemove.length,
     message,
   });
 
   try {
-    updateStatus?.(`is prepending content to ${path}...`);
-    console.log('📝 About to call FileEditor.prependToFile');
+    updateStatus?.(`is removing code from ${path}...`);
 
-    await FileEditor.prependToFile(path, repository, branch, content, message);
+    // Get the current file content
+    const { getFileContent } = await import('./github/github-utils.js');
+    const currentContent = await getFileContent(
+      path,
+      repository,
+      1,
+      10000,
+      branch
+    );
 
-    console.log('✅ FileEditor.prependToFile completed successfully');
+    // Remove any header line that getFileContent might add
+    const lines = currentContent.split('\n');
+    let content = currentContent;
+    if (lines.length > 0 && lines[0]?.match(/^\/\/ Lines \d+-\d+ of \d+$/)) {
+      content = lines.slice(1).join('\n');
+    }
+
+    // Check if the code to remove exists in the file
+    if (!content.includes(codeToRemove)) {
+      throw new Error(
+        `Code to remove not found in ${path}. The file content may have changed since you last read it.`
+      );
+    }
+
+    // Check if the code appears multiple times
+    const occurrences = content.split(codeToRemove).length - 1;
+    if (occurrences > 1) {
+      throw new Error(
+        `Code to remove appears ${occurrences} times in ${path}. Please provide more specific code to avoid ambiguity.`
+      );
+    }
+
+    // Remove the code
+    const updatedContent = content.replace(codeToRemove, '');
+
+    // Update the file
+    const { createOrUpdateFile } = await import('./github/github-utils.js');
+    await createOrUpdateFile(path, updatedContent, message, repository, branch);
+
+    console.log('✅ executeRemoveCode completed successfully');
 
     return {
       success: true,
-      message: `Prepended content to ${path}`,
+      message: `Successfully removed code from ${path}`,
     };
   } catch (error) {
-    console.error('❌ Error in executePrependToFile:', error);
-    throw error;
-  }
-};
-
-export const executeFindAndReplace = async (
-  {
-    path,
-    repository,
-    branch,
-    searchText,
-    replaceText,
-    message,
-    replaceAll,
-    caseSensitive,
-    wholeWord,
-  }: {
-    path: string;
-    repository: string;
-    branch: string;
-    searchText: string;
-    replaceText: string;
-    message: string;
-    replaceAll: boolean;
-    caseSensitive: boolean;
-    wholeWord: boolean;
-  },
-  updateStatus?: (status: string) => void
-) => {
-  // Add comprehensive logging
-  console.log('🔧 executeFindAndReplace CALLED');
-  console.log('Parameters:', {
-    path,
-    repository,
-    branch,
-    searchText: searchText.substring(0, 50) + '...',
-    replaceText: replaceText.substring(0, 50) + '...',
-    message,
-    replaceAll,
-    caseSensitive,
-    wholeWord,
-  });
-
-  try {
-    updateStatus?.(`is finding and replacing "${searchText}" in ${path}...`);
-    console.log('📝 About to call FileEditor.findAndReplace');
-
-    const result = await FileEditor.findAndReplace(
-      path,
-      repository,
-      branch,
-      searchText,
-      replaceText,
-      message,
-      {
-        replaceAll: replaceAll || false,
-        caseSensitive: caseSensitive !== false, // Default to true
-        wholeWord: wholeWord || false,
-      }
-    );
-
-    console.log(
-      '✅ FileEditor.findAndReplace completed successfully, replacements:',
-      result.replacements
-    );
-
-    return {
-      success: true,
-      replacements: result.replacements,
-      message: `Made ${result.replacements} replacement(s) in ${path}`,
-    };
-  } catch (error) {
-    console.error('❌ Error in executeFindAndReplace:', error);
-    throw error;
-  }
-};
-
-export const executeInsertAfterPattern = async (
-  {
-    path,
-    repository,
-    branch,
-    pattern,
-    content,
-    message,
-    caseSensitive,
-    wholeWord,
-  }: {
-    path: string;
-    repository: string;
-    branch: string;
-    pattern: string;
-    content: string;
-    message: string;
-    caseSensitive: boolean;
-    wholeWord: boolean;
-  },
-  updateStatus?: (status: string) => void
-) => {
-  // Add comprehensive logging
-  console.log('🔧 executeInsertAfterPattern CALLED');
-  console.log('Parameters:', {
-    path,
-    repository,
-    branch,
-    pattern: pattern.substring(0, 50) + '...',
-    content: content.substring(0, 100) + '...',
-    message,
-    caseSensitive,
-    wholeWord,
-  });
-
-  try {
-    updateStatus?.(
-      `is inserting content after pattern "${pattern}" in ${path}...`
-    );
-    console.log('📝 About to call FileEditor.insertAfterPattern');
-
-    const result = await FileEditor.insertAfterPattern(
-      path,
-      repository,
-      branch,
-      pattern,
-      content,
-      message,
-      {
-        caseSensitive: caseSensitive !== false, // Default to true
-        wholeWord: wholeWord || false,
-      }
-    );
-
-    console.log(
-      '✅ FileEditor.insertAfterPattern completed successfully, result:',
-      result
-    );
-
-    return {
-      success: result.found,
-      found: result.found,
-      line: result.line,
-      message: result.found
-        ? `Inserted content after pattern "${pattern}" at line ${result.line} in ${path}`
-        : `Pattern "${pattern}" not found in ${path}`,
-    };
-  } catch (error) {
-    console.error('❌ Error in executeInsertAfterPattern:', error);
-    throw error;
-  }
-};
-
-export const executeInsertBeforePattern = async (
-  {
-    path,
-    repository,
-    branch,
-    pattern,
-    content,
-    message,
-    caseSensitive,
-    wholeWord,
-  }: {
-    path: string;
-    repository: string;
-    branch: string;
-    pattern: string;
-    content: string;
-    message: string;
-    caseSensitive: boolean;
-    wholeWord: boolean;
-  },
-  updateStatus?: (status: string) => void
-) => {
-  // Add comprehensive logging
-  console.log('🔧 executeInsertBeforePattern CALLED');
-  console.log('Parameters:', {
-    path,
-    repository,
-    branch,
-    pattern: pattern.substring(0, 50) + '...',
-    content: content.substring(0, 100) + '...',
-    message,
-    caseSensitive,
-    wholeWord,
-  });
-
-  try {
-    updateStatus?.(
-      `is inserting content before pattern "${pattern}" in ${path}...`
-    );
-    console.log('📝 About to call FileEditor.insertBeforePattern');
-
-    const result = await FileEditor.insertBeforePattern(
-      path,
-      repository,
-      branch,
-      pattern,
-      content,
-      message,
-      {
-        caseSensitive: caseSensitive !== false, // Default to true
-        wholeWord: wholeWord || false,
-      }
-    );
-
-    console.log(
-      '✅ FileEditor.insertBeforePattern completed successfully, result:',
-      result
-    );
-
-    return {
-      success: result.found,
-      found: result.found,
-      line: result.line,
-      message: result.found
-        ? `Inserted content before pattern "${pattern}" at line ${result.line} in ${path}`
-        : `Pattern "${pattern}" not found in ${path}`,
-    };
-  } catch (error) {
-    console.error('❌ Error in executeInsertBeforePattern:', error);
-    throw error;
-  }
-};
-
-export const executeApplyMultipleEdits = async (
-  {
-    path,
-    repository,
-    branch,
-    operations,
-    message,
-  }: {
-    path: string;
-    repository: string;
-    branch: string;
-    operations: Array<{
-      type: 'insert' | 'replace' | 'delete';
-      line?: number;
-      startLine?: number;
-      endLine?: number;
-      content?: string;
-    }>;
-    message: string;
-  },
-  updateStatus?: (status: string) => void
-) => {
-  // Add comprehensive logging
-  console.log('🔧 executeApplyMultipleEdits CALLED');
-  console.log('Parameters:', {
-    path,
-    repository,
-    branch,
-    operationsCount: operations.length,
-    operations: operations.map((op) => ({
-      type: op.type,
-      line: op.line,
-      startLine: op.startLine,
-      endLine: op.endLine,
-      content: op.content ? op.content.substring(0, 50) + '...' : undefined,
-    })),
-    message,
-  });
-
-  try {
-    updateStatus?.(
-      `is applying ${operations.length} edit operations to ${path}...`
-    );
-    console.log(
-      '📝 About to convert operations and call FileEditor.applyEdits'
-    );
-
-    // Convert operations to the format expected by FileEditor
-    const editOperations = operations.map((op) => {
-      if (op.type === 'insert') {
-        return {
-          type: op.type,
-          line: op.line,
-          content: op.content,
-        };
-      } else if (op.type === 'replace' || op.type === 'delete') {
-        return {
-          type: op.type,
-          range: {
-            start: op.startLine!,
-            end: op.endLine!,
-          },
-          content: op.content,
-        };
-      }
-      throw new Error(`Invalid operation type: ${op.type}`);
-    });
-
-    console.log('📝 Converted operations:', editOperations);
-
-    await FileEditor.applyEdits({
-      path,
-      repository,
-      branch,
-      operations: editOperations,
-      message,
-    });
-
-    console.log('✅ FileEditor.applyEdits completed successfully');
-
-    return {
-      success: true,
-      operationsApplied: operations.length,
-      message: `Applied ${operations.length} edit operations to ${path}`,
-    };
-  } catch (error) {
-    console.error('❌ Error in executeApplyMultipleEdits:', error);
+    console.error('❌ Error in executeRemoveCode:', error);
     throw error;
   }
 };
