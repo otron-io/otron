@@ -10,7 +10,9 @@ Deploy Otron to Vercel with one click:
 
 [![Deploy with Vercel](https://vercel.com/button)](https://vercel.com/new/clone?repository-url=https%3A%2F%2Fgithub.com%2Fotron-io%2Fotron&env=OPENAI_API_KEY,ANTHROPIC_API_KEY,LINEAR_CLIENT_ID,LINEAR_CLIENT_SECRET,WEBHOOK_SIGNING_SECRET,REDIRECT_URI,WEBHOOK_URL,GITHUB_APP_ID,GITHUB_APP_PRIVATE_KEY,GITHUB_APP_CLIENT_ID,GITHUB_APP_CLIENT_SECRET,GITHUB_APP_INSTALLATION_ID,SLACK_BOT_TOKEN,SLACK_SIGNING_SECRET,KV_REST_API_URL,KV_REST_API_TOKEN,REPO_BASE_BRANCH,ALLOWED_REPOSITORIES,ADMIN_PASSWORD,INTERNAL_API_TOKEN,VERCEL_URL,FRONTEND_URL&envDescription=Required%20environment%20variables%20for%20Otron%20AI%20Agent&envLink=https%3A%2F%2Fgithub.com%2Fotron-io%2Fotron%23environment-variables&project-name=otron-ai-agent&repository-name=otron-ai-agent)
 
-> **⚠️ Before deploying**: You must create your own OAuth applications for GitHub, Linear, and Slack. See the [setup guide](#creating-oauth-applications) below.
+> **⚠️ Before deploying
+
+> **ℹ️ Note**: The quick deploy button now automatically creates these environment variables in your new Vercel project. You can edit them after the project is created under **Settings → Environment Variables**.**: You must create your own OAuth applications for GitHub, Linear, and Slack. See the [setup guide](#creating-oauth-applications) below.
 
 ## 🚀 What Otron Does
 
