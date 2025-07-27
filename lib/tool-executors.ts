@@ -1386,6 +1386,38 @@ export const executeEditCode = async (
   try {
     updateStatus?.(`is editing code in ${path}...`);
 
+    // CRITICAL SAFETY CHECKS
+
+    // 1. Prevent massive deletions
+    if (oldCode.length > 1000) {
+      throw new Error(
+        `SAFETY CHECK FAILED: oldCode is too large (${oldCode.length} characters). For safety, this tool only allows replacing content up to 1000 characters. Please use smaller, more specific code blocks.`
+      );
+    }
+
+    // 2. Prevent replacing more than 50 lines
+    const oldCodeLines = oldCode.split('\n').length;
+    if (oldCodeLines > 50) {
+      throw new Error(
+        `SAFETY CHECK FAILED: oldCode contains ${oldCodeLines} lines. For safety, this tool only allows replacing up to 50 lines at once. Please use smaller, more specific code blocks.`
+      );
+    }
+
+    // 3. Check for suspicious patterns that might indicate accidental large matches
+    const suspiciousPatterns = [
+      /```[\s\S]*```/, // Code blocks
+      /#{2,}/, // Multiple headers
+      /\n\s*\n\s*\n/, // Multiple blank lines
+    ];
+
+    for (const pattern of suspiciousPatterns) {
+      if (pattern.test(oldCode)) {
+        console.warn(
+          '⚠️ WARNING: oldCode contains patterns that might indicate a large text block'
+        );
+      }
+    }
+
     // Get the current file content
     const { getFileContent } = await import('./github/github-utils.js');
     const currentContent = await getFileContent(
@@ -1418,8 +1450,46 @@ export const executeEditCode = async (
       );
     }
 
+    // CRITICAL: Validate the replacement will not cause massive deletions
+    const originalLength = content.length;
+    const afterReplacement = content.replace(oldCode, newCode);
+    const newLength = afterReplacement.length;
+    const deletionRatio = (originalLength - newLength) / originalLength;
+
+    if (deletionRatio > 0.1) {
+      // More than 10% deletion
+      throw new Error(
+        `SAFETY CHECK FAILED: This replacement would delete ${Math.round(
+          deletionRatio * 100
+        )}% of the file content (${
+          originalLength - newLength
+        } characters). This seems like an unintended large deletion. Please verify your oldCode parameter is correct and specific.`
+      );
+    }
+
+    if (Math.abs(originalLength - newLength) > 2000) {
+      // Change more than 2000 characters
+      throw new Error(
+        `SAFETY CHECK FAILED: This replacement would change ${Math.abs(
+          originalLength - newLength
+        )} characters, which is more than the safety limit of 2000. Please use smaller, more targeted edits.`
+      );
+    }
+
+    // Log the change details for debugging
+    console.log('📊 Edit summary:', {
+      originalLength,
+      newLength,
+      difference: newLength - originalLength,
+      deletionRatio: Math.round(deletionRatio * 100) + '%',
+      oldCodePreview:
+        oldCode.substring(0, 100) + (oldCode.length > 100 ? '...' : ''),
+      newCodePreview:
+        newCode.substring(0, 100) + (newCode.length > 100 ? '...' : ''),
+    });
+
     // Replace the old code with the new code
-    const updatedContent = content.replace(oldCode, newCode);
+    const updatedContent = afterReplacement;
 
     // Update the file
     const { createOrUpdateFile } = await import('./github/github-utils.js');
@@ -1429,7 +1499,7 @@ export const executeEditCode = async (
 
     return {
       success: true,
-      message: `Successfully replaced code in ${path}`,
+      message: `Successfully replaced code in ${path} (${oldCode.length} → ${newCode.length} characters)`,
     };
   } catch (error) {
     console.error('❌ Error in executeEditCode:', error);
@@ -1471,6 +1541,20 @@ export const executeAddCode = async (
   try {
     updateStatus?.(`is adding code to ${path}...`);
 
+    // SAFETY CHECKS
+    if (newCode.length > 2000) {
+      throw new Error(
+        `SAFETY CHECK FAILED: newCode is too large (${newCode.length} characters). For safety, this tool only allows adding up to 2000 characters at once.`
+      );
+    }
+
+    const newCodeLines = newCode.split('\n').length;
+    if (newCodeLines > 100) {
+      throw new Error(
+        `SAFETY CHECK FAILED: newCode contains ${newCodeLines} lines. For safety, this tool only allows adding up to 100 lines at once.`
+      );
+    }
+
     // Get the current file content
     const { getFileContent } = await import('./github/github-utils.js');
     const currentContent = await getFileContent(
@@ -1503,6 +1587,14 @@ export const executeAddCode = async (
         if (!context) {
           throw new Error('Context is required when position is "after"');
         }
+
+        // SAFETY CHECK: Validate context size
+        if (context.length > 1000) {
+          throw new Error(
+            `SAFETY CHECK FAILED: context is too large (${context.length} characters). Please use a smaller, more specific context.`
+          );
+        }
+
         if (!content.includes(context)) {
           throw new Error(
             `Context not found in ${path}: ${context.substring(0, 100)}...`
@@ -1521,6 +1613,14 @@ export const executeAddCode = async (
         if (!context) {
           throw new Error('Context is required when position is "before"');
         }
+
+        // SAFETY CHECK: Validate context size
+        if (context.length > 1000) {
+          throw new Error(
+            `SAFETY CHECK FAILED: context is too large (${context.length} characters). Please use a smaller, more specific context.`
+          );
+        }
+
         if (!content.includes(context)) {
           throw new Error(
             `Context not found in ${path}: ${context.substring(0, 100)}...`
@@ -1539,6 +1639,29 @@ export const executeAddCode = async (
         throw new Error(`Invalid position: ${position}`);
     }
 
+    // SAFETY CHECK: Validate file size increase is reasonable
+    const originalLength = content.length;
+    const newLength = updatedContent.length;
+    const increase = newLength - originalLength;
+
+    if (increase > 5000) {
+      throw new Error(
+        `SAFETY CHECK FAILED: This would increase the file size by ${increase} characters, which exceeds the safety limit of 5000. Please add smaller chunks.`
+      );
+    }
+
+    console.log('📊 Add code summary:', {
+      originalLength,
+      newLength,
+      increase,
+      newCodePreview:
+        newCode.substring(0, 100) + (newCode.length > 100 ? '...' : ''),
+      position,
+      contextPreview: context
+        ? context.substring(0, 50) + (context.length > 50 ? '...' : '')
+        : 'N/A',
+    });
+
     // Update the file
     const { createOrUpdateFile } = await import('./github/github-utils.js');
     await createOrUpdateFile(path, updatedContent, message, repository, branch);
@@ -1549,7 +1672,7 @@ export const executeAddCode = async (
       success: true,
       message: `Successfully added code to ${path} (${position}${
         context ? ' context' : ''
-      })`,
+      }) - ${increase} characters added`,
     };
   } catch (error) {
     console.error('❌ Error in executeAddCode:', error);
@@ -1585,6 +1708,20 @@ export const executeRemoveCode = async (
   try {
     updateStatus?.(`is removing code from ${path}...`);
 
+    // CRITICAL SAFETY CHECKS
+    if (codeToRemove.length > 1000) {
+      throw new Error(
+        `SAFETY CHECK FAILED: codeToRemove is too large (${codeToRemove.length} characters). For safety, this tool only allows removing up to 1000 characters at once.`
+      );
+    }
+
+    const codeToRemoveLines = codeToRemove.split('\n').length;
+    if (codeToRemoveLines > 50) {
+      throw new Error(
+        `SAFETY CHECK FAILED: codeToRemove contains ${codeToRemoveLines} lines. For safety, this tool only allows removing up to 50 lines at once.`
+      );
+    }
+
     // Get the current file content
     const { getFileContent } = await import('./github/github-utils.js');
     const currentContent = await getFileContent(
@@ -1617,8 +1754,35 @@ export const executeRemoveCode = async (
       );
     }
 
+    // CRITICAL: Validate the removal will not cause massive deletions
+    const originalLength = content.length;
+    const afterRemoval = content.replace(codeToRemove, '');
+    const newLength = afterRemoval.length;
+    const deletionRatio = (originalLength - newLength) / originalLength;
+
+    if (deletionRatio > 0.1) {
+      // More than 10% deletion
+      throw new Error(
+        `SAFETY CHECK FAILED: This removal would delete ${Math.round(
+          deletionRatio * 100
+        )}% of the file content (${
+          originalLength - newLength
+        } characters). This seems like an unintended large deletion. Please verify your codeToRemove parameter is correct and specific.`
+      );
+    }
+
+    console.log('📊 Remove code summary:', {
+      originalLength,
+      newLength,
+      deleted: originalLength - newLength,
+      deletionRatio: Math.round(deletionRatio * 100) + '%',
+      codeToRemovePreview:
+        codeToRemove.substring(0, 100) +
+        (codeToRemove.length > 100 ? '...' : ''),
+    });
+
     // Remove the code
-    const updatedContent = content.replace(codeToRemove, '');
+    const updatedContent = afterRemoval;
 
     // Update the file
     const { createOrUpdateFile } = await import('./github/github-utils.js');
@@ -1628,7 +1792,7 @@ export const executeRemoveCode = async (
 
     return {
       success: true,
-      message: `Successfully removed code from ${path}`,
+      message: `Successfully removed code from ${path} (${codeToRemove.length} characters removed)`,
     };
   } catch (error) {
     console.error('❌ Error in executeRemoveCode:', error);

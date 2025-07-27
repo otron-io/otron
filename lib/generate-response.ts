@@ -623,6 +623,15 @@ const generateResponseInternal = async (
     - They are much more reliable than line-based editing because they validate the content before making changes.
     - Use editCode when you need to replace existing code, addCode when you need to add new code, and removeCode when you need to delete code.
     - Always provide the exact code content you want to change - this prevents errors and unintended modifications.
+    
+    ⚠️ CRITICAL SAFETY WARNINGS FOR FILE EDITING:
+    - ALWAYS be extremely precise with your oldCode/codeToRemove parameters in editCode and removeCode
+    - Use the SMALLEST possible code chunks - prefer editing 1-5 lines at a time rather than large blocks
+    - When editing URLs, configuration, or single lines, include ONLY that specific content, not surrounding text
+    - If you need to make multiple changes, use multiple separate tool calls rather than one large edit
+    - DOUBLE-CHECK your parameters before executing - accidental large matches can delete entire sections of files
+    - The tools have safety limits: max 1000 characters for edits/removals, max 2000 for additions
+    - If you hit safety limits, break your changes into smaller, more targeted edits
 
     SLACK FORMATTING & BLOCK KIT:
     - For simple text messages, use sendSlackMessage, sendChannelMessage, or sendDirectMessage
