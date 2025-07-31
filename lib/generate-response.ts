@@ -74,7 +74,10 @@ import { LinearClient } from '@linear/sdk';
 import { memoryManager } from './memory/memory-manager.js';
 import { goalEvaluator } from './goal-evaluator.js';
 import { openai } from '@ai-sdk/openai';
-import { linearLogger, logToLinearIssue } from './linear/linear-logger.js';
+import {
+  linearAgentSessionManager,
+  agentActivity,
+} from './linear/linear-agent-session-manager.js';
 import { Redis } from '@upstash/redis';
 import { env } from './env.js';
 
@@ -293,6 +296,16 @@ export const generateResponse = async (
   // Store the active session
   await storeActiveSession(activeSession);
 
+  // Log session initialization
+  if (contextId && !contextId.startsWith('slack:') && linearClient) {
+    await agentActivity.thought(
+      contextId,
+      `📋 Session initialized: ${sessionId.substring(
+        -8
+      )} on ${platform} platform. Context: ${contextId}`
+    );
+  }
+
   // Set up abort handling
   const cleanup = async (
     status: 'completed' | 'cancelled' | 'error' = 'completed',
@@ -310,19 +323,18 @@ export const generateResponse = async (
   // Store original messages for evaluation
   const originalMessages = [...messages];
 
-  // Initialize Linear logger if client is available
+  // Initialize Linear agent session manager if client is available
   if (linearClient) {
-    linearLogger.setLinearClient(linearClient);
+    linearAgentSessionManager.setLinearClient(linearClient);
   }
 
   // Extract issue ID and log initial activity if working on a Linear issue
   const isLinearIssue = contextId && !contextId.startsWith('slack:');
 
   if (isLinearIssue && linearClient) {
-    await logToLinearIssue.info(
+    await agentActivity.thought(
       contextId,
-      'Otron started working on this issue',
-      `Request from ${
+      `🚀 Starting work on this issue. Request from ${
         slackContext ? 'Slack' : 'Linear'
       } (Session: ${sessionId})`
     );
@@ -334,6 +346,21 @@ export const generateResponse = async (
       if (abortSignal?.aborted) {
         await cleanup('cancelled', 'Request was aborted during processing');
         throw new Error('Request was aborted during processing');
+      }
+
+      // Log attempt strategy and thinking
+      if (isLinearIssue && linearClient) {
+        if (attemptNumber === 1) {
+          await agentActivity.thought(
+            contextId,
+            `🎯 Planning approach: Analyzing ${messages.length} message(s) to determine best course of action`
+          );
+        } else {
+          await agentActivity.thought(
+            contextId,
+            `🔄 Retry attempt ${attemptNumber}: Adjusting strategy based on previous attempt results`
+          );
+        }
       }
 
       try {
@@ -360,6 +387,18 @@ export const generateResponse = async (
         toolsUsed = result.toolsUsed;
         actionsPerformed = result.actionsPerformed;
         endedExplicitly = result.endedExplicitly;
+
+        // Log completion thinking
+        if (isLinearIssue && linearClient) {
+          await agentActivity.thought(
+            contextId,
+            `✅ Task completion analysis: Generated response after attempt ${attemptNumber}/${MAX_RETRY_ATTEMPTS}. Used ${
+              result.toolsUsed.length
+            } tools: [${result.toolsUsed.join(', ')}]. Actions performed: ${
+              result.actionsPerformed.length
+            }. Explicitly ended: ${result.endedExplicitly}.`
+          );
+        }
 
         // If this is the last attempt, don't evaluate - just return
         if (attemptNumber >= MAX_RETRY_ATTEMPTS) {
@@ -437,6 +476,14 @@ export const generateResponse = async (
       }
     }
 
+    // Final completion log
+    if (isLinearIssue && linearClient) {
+      await agentActivity.response(
+        contextId,
+        `🎯 Session completed successfully. All requested work has been finished and I'm ready to assist with any follow-up questions or additional tasks.`
+      );
+    }
+
     return finalResponse;
   } finally {
     // Always clean up the active session
@@ -488,17 +535,24 @@ const generateResponseInternal = async (
   const contextId = extractIssueIdFromContext(messages, slackContext);
   const isLinearIssue = contextId && !contextId.startsWith('slack:');
 
-  // Initialize Linear logger if client is available
+  // Log strategic thinking about approach
+  if (isLinearIssue && linearClient) {
+    await agentActivity.thought(
+      contextId,
+      `🧠 Strategic analysis: Entering ${executionStrategy.phase} phase with limits: ${executionStrategy.maxSearchOperations} searches, ${executionStrategy.maxReadOperations} reads, ${executionStrategy.maxAnalysisOperations} analysis operations`
+    );
+  }
+
+  // Initialize Linear agent session manager if client is available
   if (linearClient) {
-    linearLogger.setLinearClient(linearClient);
+    linearAgentSessionManager.setLinearClient(linearClient);
   }
 
   // Log initial activity if working on a Linear issue
   if (isLinearIssue && linearClient) {
-    await logToLinearIssue.info(
+    await agentActivity.thought(
       contextId,
-      'Otron started analyzing this issue',
-      `Request from ${
+      `🔍 Beginning analysis of this issue. Request from ${
         slackContext ? 'Slack' : 'Linear'
       }, Attempt ${attemptNumber}, Session: ${sessionId}`
     );
@@ -851,7 +905,26 @@ const generateResponseInternal = async (
           executionStrategy.searchOperations >
           executionStrategy.maxSearchOperations
         ) {
+          // Log strategic limit enforcement
+          if (isLinearIssue && linearClient) {
+            await agentActivity.thought(
+              contextId,
+              `🚫 Strategic limit: Search operations maxed out (${executionStrategy.maxSearchOperations}). Enforcing action-focused approach to prevent over-research.`
+            );
+          }
           return `⚠️ Search limit reached (${executionStrategy.maxSearchOperations}). You must now focus on taking action with the information you have. No more searching allowed.`;
+        }
+        // Log search progress
+        if (
+          isLinearIssue &&
+          linearClient &&
+          executionStrategy.searchOperations ===
+            executionStrategy.maxSearchOperations - 1
+        ) {
+          await agentActivity.thought(
+            contextId,
+            `🔍 Search efficiency: ${executionStrategy.searchOperations}/${executionStrategy.maxSearchOperations} searches used. One search remaining before action phase.`
+          );
         }
       }
 
@@ -860,7 +933,26 @@ const generateResponseInternal = async (
         if (
           executionStrategy.readOperations > executionStrategy.maxReadOperations
         ) {
+          // Log strategic limit enforcement
+          if (isLinearIssue && linearClient) {
+            await agentActivity.thought(
+              contextId,
+              `📚 Strategic limit: File reading operations maxed out (${executionStrategy.maxReadOperations}). Transitioning to action phase with current information.`
+            );
+          }
           return `⚠️ File reading limit reached (${executionStrategy.maxReadOperations}). You must now take action with the information you have. No more file reading allowed.`;
+        }
+        // Log reading progress
+        if (
+          isLinearIssue &&
+          linearClient &&
+          executionStrategy.readOperations ===
+            executionStrategy.maxReadOperations - 1
+        ) {
+          await agentActivity.thought(
+            contextId,
+            `📖 Information gathering: ${executionStrategy.readOperations}/${executionStrategy.maxReadOperations} file reads used. Final read opportunity available.`
+          );
         }
       }
 
@@ -876,6 +968,15 @@ const generateResponseInternal = async (
 
       if (actionTools.includes(toolName)) {
         executionStrategy.actionOperations++;
+        if (!executionStrategy.hasStartedActions) {
+          // Log transition to action phase
+          if (isLinearIssue && linearClient) {
+            await agentActivity.thought(
+              contextId,
+              `🎬 Phase transition: Moving to action phase. First action tool: ${toolName}. Information gathering complete.`
+            );
+          }
+        }
         executionStrategy.hasStartedActions = true;
         executionStrategy.phase = 'acting';
       }
@@ -889,6 +990,17 @@ const generateResponseInternal = async (
         executionStrategy.phase === 'planning'
       ) {
         executionStrategy.phase = 'gathering';
+        // Log phase transition thinking
+        if (isLinearIssue && linearClient) {
+          await agentActivity.thought(
+            contextId,
+            `📊 Phase transition: Moving from planning to information gathering. Completed ${
+              executionStrategy.searchOperations +
+              executionStrategy.readOperations +
+              executionStrategy.analysisOperations
+            } operations.`
+          );
+        }
       }
 
       if (
@@ -899,16 +1011,25 @@ const generateResponseInternal = async (
         !executionStrategy.hasStartedActions
       ) {
         executionStrategy.shouldForceAction = true;
+        // Log strategic decision to force action
+        if (isLinearIssue && linearClient) {
+          await agentActivity.thought(
+            contextId,
+            `⚡ Strategic decision: Information gathering limit reached. Forcing transition to action phase to avoid analysis paralysis.`
+          );
+        }
       }
+
+      // Prepare tool context for logging
+      const toolContext = args[0]
+        ? Object.keys(args[0]).join(', ')
+        : 'No parameters';
 
       // Log tool execution to Linear if working on a Linear issue
       if (isLinearIssue && linearClient) {
-        const toolContext = args[0]
-          ? Object.keys(args[0]).join(', ')
-          : 'No parameters';
-        await logToLinearIssue.debug(
+        await agentActivity.action(
           contextId,
-          `Executing tool: ${toolName}`,
+          `Executing ${toolName}`,
           toolContext
         );
       }
@@ -928,9 +1049,10 @@ const generateResponseInternal = async (
 
         // Log successful tool execution to Linear if working on a Linear issue
         if (isLinearIssue && linearClient && actionTools.includes(toolName)) {
-          await logToLinearIssue.info(
+          await agentActivity.action(
             contextId,
-            `Successfully executed: ${toolName}`,
+            `Completed ${toolName}`,
+            toolContext,
             response.substring(0, 200) + (response.length > 200 ? '...' : '')
           );
         }
@@ -994,10 +1116,9 @@ const generateResponseInternal = async (
 
         // Log failed tool execution to Linear if working on a Linear issue
         if (isLinearIssue && linearClient) {
-          await logToLinearIssue.error(
+          await agentActivity.error(
             contextId,
-            `Failed to execute: ${toolName}`,
-            response
+            `Failed to execute ${toolName}: ${response}`
           );
         }
 

@@ -1,5 +1,8 @@
 import { LinearClient } from '@linear/sdk';
-import { logToLinearIssue } from './linear-logger.js';
+import {
+  logToLinearIssue,
+  agentActivity,
+} from './linear-agent-session-manager.js';
 
 /**
  * Get the context for an issue including comments, child issues, and parent issue
@@ -15,10 +18,9 @@ export const getIssueContext = async (
   }
 
   // Log that we're analyzing the issue
-  await logToLinearIssue.info(
+  await agentActivity.thought(
     issueIdOrIdentifier,
-    `Retrieved issue context for analysis`,
-    `Issue: ${issue.identifier} - ${issue.title}`
+    `📋 Analyzing issue context for ${issue.identifier} - ${issue.title}`
   );
 
   // Mark this as the assigned issue
@@ -127,20 +129,19 @@ export const updateIssueStatus = async (
 ): Promise<void> => {
   try {
     // Log the status update attempt
-    await logToLinearIssue.info(
+    await agentActivity.action(
       issueIdOrIdentifier,
-      `Updating issue status to: ${statusName}`,
-      'Status change requested'
+      'Updating issue status',
+      `Changing to: ${statusName}`
     );
 
     // Get all workflow states for the issue's team
     const issue = await linearClient.issue(issueIdOrIdentifier);
     if (!issue) {
       console.error(`Issue ${issueIdOrIdentifier} not found`);
-      await logToLinearIssue.error(
+      await agentActivity.error(
         issueIdOrIdentifier,
-        `Failed to update status: Issue not found`,
-        statusName
+        `Failed to update status: Issue not found`
       );
       return;
     }
@@ -177,20 +178,22 @@ export const updateIssueStatus = async (
     await issue.update({ stateId: state.id });
 
     console.log(`Updated issue ${issueIdOrIdentifier} status to ${statusName}`);
-    await logToLinearIssue.info(
+    await agentActivity.action(
       issueIdOrIdentifier,
-      `Successfully updated issue status to: ${statusName}`,
-      `Changed from previous state to ${state.name}`
+      'Updated issue status',
+      `Changed to: ${statusName}`,
+      `Successfully changed to ${state.name}`
     );
   } catch (error: unknown) {
     console.error(
       `Error updating status for issue ${issueIdOrIdentifier}:`,
       error instanceof Error ? error.message : String(error)
     );
-    await logToLinearIssue.error(
+    await agentActivity.error(
       issueIdOrIdentifier,
-      `Failed to update status to ${statusName}`,
-      error instanceof Error ? error.message : String(error)
+      `Failed to update status to ${statusName}: ${
+        error instanceof Error ? error.message : String(error)
+      }`
     );
   }
 };
@@ -893,19 +896,18 @@ export const createComment = async (
 ): Promise<void> => {
   try {
     // Log the comment creation attempt
-    await logToLinearIssue.info(
+    await agentActivity.action(
       issueIdOrIdentifier,
-      `Creating comment on issue`,
-      `Comment length: ${body.length} characters`
+      'Creating comment',
+      `${body.length} characters`
     );
 
     const issue = await linearClient.issue(issueIdOrIdentifier);
     if (!issue) {
       console.error(`Issue ${issueIdOrIdentifier} not found`);
-      await logToLinearIssue.error(
+      await agentActivity.error(
         issueIdOrIdentifier,
-        `Failed to create comment: Issue not found`,
-        body.substring(0, 100) + '...'
+        `Failed to create comment: Issue not found`
       );
       return;
     }
@@ -915,9 +917,10 @@ export const createComment = async (
       body,
     });
     console.log(`Created comment on issue ${issueIdOrIdentifier}`);
-    await logToLinearIssue.info(
+    await agentActivity.action(
       issueIdOrIdentifier,
-      `Successfully created comment on issue`,
+      'Created comment',
+      `${body.length} characters`,
       `Comment: ${body.substring(0, 100)}${body.length > 100 ? '...' : ''}`
     );
   } catch (error: unknown) {
@@ -925,10 +928,11 @@ export const createComment = async (
       `Error creating comment on issue ${issueIdOrIdentifier}:`,
       error instanceof Error ? error.message : String(error)
     );
-    await logToLinearIssue.error(
+    await agentActivity.error(
       issueIdOrIdentifier,
-      `Failed to create comment`,
-      error instanceof Error ? error.message : String(error)
+      `Failed to create comment: ${
+        error instanceof Error ? error.message : String(error)
+      }`
     );
   }
 };

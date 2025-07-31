@@ -5,7 +5,7 @@ import { LinearClient } from '@linear/sdk';
 import { FileEditor } from './github/file-editor.js';
 import { advancedFileReader } from './github/file-reader.js';
 import { env } from './env.js';
-import { logToLinearIssue } from './linear/linear-logger.js';
+import { agentActivity } from './linear/linear-agent-session-manager.js';
 
 // Helper function to extract Linear issue ID from branch name or context
 const extractLinearIssueFromBranch = (branchName: string): string | null => {
@@ -541,6 +541,16 @@ export const executeCreateIssue = async (
 
   updateStatus?.(`is creating new issue "${title}"...`);
 
+  // Add strategic thinking about issue creation
+  await agentActivity.thought(
+    'system',
+    `📋 Issue creation strategy: Creating "${title}" in team ${teamId}${
+      parentIssueId ? ` as child of ${parentIssueId}` : ''
+    }. Priority: ${priority || 'default'}, Status: ${
+      status || 'default'
+    }. Description length: ${description.length} chars.`
+  );
+
   const result = await linearUtils.createIssue(
     linearClient,
     teamId,
@@ -661,7 +671,28 @@ export const executeCreateBranch = async (
 ) => {
   updateStatus?.(`is creating branch ${branch}...`);
 
+  // Extract Linear issue ID and add strategic thinking
+  const issueId = extractLinearIssueFromBranch(branch);
+  if (issueId) {
+    await agentActivity.thought(
+      issueId,
+      `🌿 Branch strategy: Creating '${branch}' from '${
+        baseBranch || 'default'
+      }' in ${repository}. This will be our working branch for implementing changes.`
+    );
+  }
+
   await githubUtils.createBranch(branch, repository, baseBranch || undefined);
+
+  if (issueId) {
+    await agentActivity.action(
+      issueId,
+      'Created branch',
+      `${branch} from ${baseBranch || 'default'}`,
+      `Branch ready for development in ${repository}`
+    );
+  }
+
   return {
     success: true,
     message: `Created branch ${branch}`,
@@ -690,10 +721,14 @@ export const executeCreateFile = async (
     // Extract Linear issue ID from branch name for logging
     const issueId = extractLinearIssueFromBranch(branch);
     if (issueId) {
-      await logToLinearIssue.info(
+      await agentActivity.thought(
         issueId,
-        `Creating new file: ${path}`,
-        `Branch: ${branch}, Repository: ${repository}`
+        `💭 File creation strategy: Creating ${path} with ${content.length} characters in ${repository}:${branch}. Commit message: "${message}"`
+      );
+      await agentActivity.action(
+        issueId,
+        'Creating file',
+        `${path} in ${repository}:${branch}`
       );
     }
 
@@ -706,10 +741,11 @@ export const executeCreateFile = async (
     );
 
     if (issueId) {
-      await logToLinearIssue.info(
+      await agentActivity.action(
         issueId,
-        `Successfully created file: ${path}`,
-        `File size: ${content.length} characters`
+        'Created file',
+        `${path} in ${repository}:${branch}`,
+        `File created successfully (${content.length} characters)`
       );
     }
 
@@ -717,10 +753,11 @@ export const executeCreateFile = async (
   } catch (error) {
     const issueId = extractLinearIssueFromBranch(branch);
     if (issueId) {
-      await logToLinearIssue.error(
+      await agentActivity.error(
         issueId,
-        `Failed to create file: ${path}`,
-        error instanceof Error ? error.message : String(error)
+        `Failed to create file ${path}: ${
+          error instanceof Error ? error.message : String(error)
+        }`
       );
     }
     throw error;
@@ -768,6 +805,21 @@ export const executeCreatePullRequest = async (
 ) => {
   updateStatus?.(`is creating pull request "${title}" in ${repository}...`);
 
+  // Extract Linear issue ID and add strategic thinking
+  const issueId = extractLinearIssueFromBranch(head);
+  if (issueId) {
+    await agentActivity.thought(
+      issueId,
+      `🔄 Pull request strategy: Creating PR to merge '${head}' → '${base}' in ${repository}. Title: "${title}". Body length: ${body.length} chars.`
+    );
+    await agentActivity.thought(
+      issueId,
+      `📝 PR content preview: "${body.substring(0, 150)}${
+        body.length > 150 ? '...' : ''
+      }"`
+    );
+  }
+
   const result = await githubUtils.createPullRequest(
     title,
     body,
@@ -775,6 +827,16 @@ export const executeCreatePullRequest = async (
     base,
     repository
   );
+
+  if (issueId) {
+    await agentActivity.action(
+      issueId,
+      'Created pull request',
+      `#${result.number}: ${title}`,
+      `PR ready for review at ${result.url}`
+    );
+  }
+
   return {
     success: true,
     url: result.url,
@@ -1187,6 +1249,17 @@ export const executeSearchEmbeddedCode = async (
   try {
     updateStatus?.('is searching embedded code...');
 
+    // Extract Linear issue ID and add strategic thinking
+    const issueId = extractLinearIssueFromBranch('current'); // Use current context
+    if (issueId) {
+      await agentActivity.thought(
+        issueId,
+        `🔍 Code search strategy: Searching ${repository} for "${query}"${
+          fileFilter ? ` in files matching: ${fileFilter}` : ''
+        }. Max results: ${maxResults}. This will help understand the codebase structure and locate relevant code.`
+      );
+    }
+
     // Use the same direct approach as embed-ui
     const searchParams = new URLSearchParams({
       repository,
@@ -1392,6 +1465,27 @@ export const executeEditCode = async (
 
   try {
     updateStatus?.(`is editing code in ${path}...`);
+
+    // Extract Linear issue ID and add strategic thinking logs
+    const issueId = extractLinearIssueFromBranch(branch);
+    if (issueId) {
+      await agentActivity.thought(
+        issueId,
+        `🧠 Code edit analysis: Modifying ${path} in ${repository}:${branch}. Replacing ${
+          oldCode.length
+        } chars with ${newCode.length} chars. Change impact: ${
+          newCode.length > oldCode.length ? '+' : ''
+        }${newCode.length - oldCode.length} characters.`
+      );
+      await agentActivity.thought(
+        issueId,
+        `🔍 Edit context: "${oldCode.substring(0, 100)}${
+          oldCode.length > 100 ? '...' : ''
+        }" → "${newCode.substring(0, 100)}${
+          newCode.length > 100 ? '...' : ''
+        }" | Commit: "${message}"`
+      );
+    }
 
     // CRITICAL SAFETY CHECKS
 
