@@ -76,6 +76,8 @@ async function handleAgentSessionEvent(
 /**
  * Handle 'created' Agent Session Event - new session started
  * Triggered when agent is mentioned or assigned/delegated to an issue
+ *
+ * CRITICAL: Must send acknowledgment within 10 seconds to avoid being marked unresponsive
  */
 async function handleAgentSessionCreated(
   agentSession: any,
@@ -93,11 +95,38 @@ async function handleAgentSessionCreated(
     `Agent session created for issue ${issue.identifier}: ${issue.title}`
   );
 
-  // Send immediate acknowledgment thought (required within 10 seconds)
+  // IMMEDIATE ACKNOWLEDGMENT (required within 10 seconds)
   await agentActivity.thought(
     issue.id,
     `🚀 Agent session started for issue ${issue.identifier}. Analyzing the issue and context...`
   );
+
+  // Process the full response asynchronously (don't block webhook response)
+  setImmediate(async () => {
+    try {
+      await processAgentSessionWork(agentSession, linearClient);
+    } catch (error) {
+      console.error('Error in async agent session processing:', error);
+      // Log error to Linear
+      await agentActivity.error(
+        issue.id,
+        `Failed to process agent session: ${
+          error instanceof Error ? error.message : String(error)
+        }`
+      );
+    }
+  });
+}
+
+/**
+ * Process the full agent session work asynchronously
+ * This runs after webhook acknowledgment to avoid timeout issues
+ */
+async function processAgentSessionWork(
+  agentSession: any,
+  linearClient: LinearClient
+) {
+  const issue = agentSession.issue;
 
   // Build context from the issue and any related comments
   let contextMessage = `You have been assigned to work on Linear issue ${issue.identifier}: ${issue.title}`;
@@ -147,6 +176,8 @@ async function handleAgentSessionCreated(
 /**
  * Handle 'prompted' Agent Session Event - user sent new message
  * Triggered when user responds to agent or sends follow-up message
+ *
+ * CRITICAL: Must acknowledge within 5 seconds to avoid timeout
  */
 async function handleAgentSessionPrompted(
   agentSession: any,
@@ -176,13 +207,41 @@ async function handleAgentSessionPrompted(
     return;
   }
 
-  // Send acknowledgment
+  // IMMEDIATE ACKNOWLEDGMENT (within 5 seconds)
   await agentActivity.thought(
     issue.id,
     `📩 Received user prompt: "${userPrompt.substring(0, 100)}${
       userPrompt.length > 100 ? '...' : ''
     }"`
   );
+
+  // Process the response asynchronously (don't block webhook response)
+  setImmediate(async () => {
+    try {
+      await processAgentSessionPrompt(agentSession, userPrompt, linearClient);
+    } catch (error) {
+      console.error('Error in async agent session prompt processing:', error);
+      // Log error to Linear
+      await agentActivity.error(
+        issue.id,
+        `Failed to process user prompt: ${
+          error instanceof Error ? error.message : String(error)
+        }`
+      );
+    }
+  });
+}
+
+/**
+ * Process the agent session prompt asynchronously
+ * This runs after webhook acknowledgment to avoid timeout issues
+ */
+async function processAgentSessionPrompt(
+  agentSession: any,
+  userPrompt: string,
+  linearClient: LinearClient
+) {
+  const issue = agentSession.issue;
 
   // Build context message
   let contextMessage = `You are continuing work on Linear issue ${issue.identifier}: ${issue.title}`;
