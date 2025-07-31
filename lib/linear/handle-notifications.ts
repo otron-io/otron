@@ -64,7 +64,7 @@ async function handleAgentSessionEvent(
     if (action === 'created') {
       return await handleAgentSessionCreated(agentSession, linearClient);
     } else if (action === 'prompted') {
-      return await handleAgentSessionPrompted(agentSession, linearClient);
+      return await handleAgentSessionPrompted(payload, linearClient);
     } else {
       console.log(`Unknown agent session action: ${action}`);
     }
@@ -264,9 +264,10 @@ async function processAgentSessionWork(
  * CRITICAL: Must acknowledge within 5 seconds to avoid timeout
  */
 async function handleAgentSessionPrompted(
-  agentSession: any,
+  payload: any,
   linearClient: LinearClient
 ) {
+  const { agentSession, agentActivity } = payload;
   const sessionId = agentSession.id;
   const issue = agentSession.issue;
 
@@ -277,17 +278,26 @@ async function handleAgentSessionPrompted(
 
   console.log(`Agent session prompted for issue ${issue.identifier}`);
 
-  // Look for the new user activity (prompt)
+  // Extract the user prompt from the agentActivity first
   let userPrompt = '';
-  if (
-    agentSession.agentActivity &&
-    agentSession.agentActivity.content.type === 'prompt'
-  ) {
-    userPrompt = agentSession.agentActivity.content.body;
+  if (agentActivity && agentActivity.content?.type === 'prompt') {
+    userPrompt = agentActivity.content.body;
+    console.log(`📝 User prompt extracted from agentActivity: "${userPrompt}"`);
+  }
+
+  // Fallback to comment if no agentActivity prompt found
+  if (!userPrompt && agentSession.comment?.body) {
+    userPrompt = agentSession.comment.body;
+    console.log(`📝 Using comment as prompt fallback: "${userPrompt}"`);
   }
 
   if (!userPrompt) {
     console.error('No user prompt found in agent session prompted event');
+    console.log(
+      'AgentActivity structure:',
+      JSON.stringify(agentActivity, null, 2)
+    );
+    console.log('AgentSession comment:', agentSession.comment?.body);
     return;
   }
 
