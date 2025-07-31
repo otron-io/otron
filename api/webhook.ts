@@ -55,6 +55,12 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     if (payload.type === 'AppUserNotification') {
       // Use waitUntil to handle the notification asynchronously like events
       waitUntil(handleLinearNotification(payload, linearClient, appUserId));
+    } else if (payload.type === 'AgentSessionEvent') {
+      // Handle new Agent Session Events (created/prompted)
+      console.log(`Processing AgentSessionEvent: ${payload.action}`);
+      waitUntil(handleLinearNotification(payload, linearClient, appUserId));
+    } else {
+      console.log(`Unsupported webhook type: ${payload.type}`);
     }
 
     return res.status(200).json({ success: true });
