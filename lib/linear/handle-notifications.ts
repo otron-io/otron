@@ -22,55 +22,6 @@ export async function handleLinearNotification(
       return await handleAgentSessionEvent(payload, linearClient, appUserId);
     }
 
-    // Convert legacy AppUserNotification to AgentSessionEvent format
-    if (
-      payload.type === 'AppUserNotification' &&
-      (payload.action === 'issueCommentMention' ||
-        payload.action === 'issueAssignedToYou' ||
-        payload.action === 'issueNewComment')
-    ) {
-      console.log(
-        '⚠️ MIGRATION NOTICE: Converting legacy AppUserNotification to AgentSessionEvent format'
-      );
-      console.log(
-        '👉 Please update your Linear OAuth app to enable "Agent session events" webhook category'
-      );
-
-      // Determine if this is a new session (created) or follow-up (prompted)
-      const isFollowUp = payload.action === 'issueNewComment';
-      const action = isFollowUp ? 'prompted' : 'created';
-
-      // Transform legacy notification into AgentSessionEvent format
-      const agentSessionPayload = {
-        type: 'AgentSessionEvent',
-        action: action,
-        agentSession: {
-          id: isFollowUp
-            ? `legacy-session-${payload.notification.issueId}` // Consistent session ID for follow-ups
-            : `legacy-${payload.notification.id}`, // Unique session ID for new sessions
-          appUserId: appUserId,
-          issue: payload.notification.issue,
-          comment: payload.notification.comment,
-          previousComments: [], // Legacy notifications don't provide this context
-          // For prompted events, include the user's message as an agentActivity
-          agentActivity: isFollowUp
-            ? {
-                content: {
-                  type: 'prompt',
-                  body: payload.notification.comment?.body || '',
-                },
-              }
-            : undefined,
-        },
-      };
-
-      return await handleAgentSessionEvent(
-        agentSessionPayload,
-        linearClient,
-        appUserId
-      );
-    }
-
     // Log and skip any other notification types
     console.log(
       `Unsupported notification type: ${payload.type}/${payload.action}`
