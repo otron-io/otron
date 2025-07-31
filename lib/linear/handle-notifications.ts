@@ -22,6 +22,42 @@ export async function handleLinearNotification(
       return await handleAgentSessionEvent(payload, linearClient, appUserId);
     }
 
+    // Convert legacy AppUserNotification to AgentSessionEvent format
+    if (
+      payload.type === 'AppUserNotification' &&
+      (payload.action === 'issueCommentMention' ||
+        payload.action === 'issueAssignedToYou')
+    ) {
+      console.log(
+        '⚠️ MIGRATION NOTICE: Converting legacy AppUserNotification to AgentSessionEvent format'
+      );
+      console.log(
+        '👉 Please update your Linear OAuth app to enable "Agent session events" webhook category'
+      );
+
+      // Transform legacy notification into AgentSessionEvent format
+      const agentSessionPayload = {
+        type: 'AgentSessionEvent',
+        action: 'created', // Both mentions and assignments create new sessions
+        agentSession: {
+          id: `legacy-${payload.notification.id}`, // Generate session ID from notification ID
+          appUserId: appUserId,
+          issue: payload.notification.issue,
+          comment:
+            payload.action === 'issueCommentMention'
+              ? payload.notification.comment
+              : undefined,
+          previousComments: [], // Legacy notifications don't provide this context
+        },
+      };
+
+      return await handleAgentSessionEvent(
+        agentSessionPayload,
+        linearClient,
+        appUserId
+      );
+    }
+
     // Log and skip any other notification types
     console.log(
       `Unsupported notification type: ${payload.type}/${payload.action}`
