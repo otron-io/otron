@@ -107,16 +107,21 @@ async function handleAgentSessionCreated(
   // Process the full response asynchronously (don't block webhook response)
   setImmediate(async () => {
     try {
-      await processAgentSessionWork(agentSession, linearClient);
+      console.log(`Starting async processing for session ${sessionId}`);
+      await processAgentSessionWork(agentSession, linearClient, sessionId);
     } catch (error) {
       console.error('Error in async agent session processing:', error);
       // Log error to Linear using the real session ID
-      await agentActivityDirect.error(
-        sessionId,
-        `Failed to process agent session: ${
-          error instanceof Error ? error.message : String(error)
-        }`
-      );
+      try {
+        await agentActivityDirect.error(
+          sessionId,
+          `Failed to process agent session: ${
+            error instanceof Error ? error.message : String(error)
+          }`
+        );
+      } catch (logError) {
+        console.error('Failed to log error to Linear:', logError);
+      }
     }
   });
 }
@@ -127,7 +132,8 @@ async function handleAgentSessionCreated(
  */
 async function processAgentSessionWork(
   agentSession: any,
-  linearClient: LinearClient
+  linearClient: LinearClient,
+  sessionId: string
 ) {
   const issue = agentSession.issue;
 
@@ -161,19 +167,63 @@ async function processAgentSessionWork(
 
   contextMessage += `\n\nPlease analyze this issue thoroughly and take appropriate actions. You can use Linear, GitHub, or Slack tools as needed.`;
 
+  // Log that we're starting AI processing
+  console.log(
+    `Processing AI response for session ${sessionId}, issue ${issue.identifier}`
+  );
+  await agentActivityDirect.thought(
+    sessionId,
+    `🧠 Starting AI analysis of the request: "${
+      agentSession.comment?.body || 'No comment'
+    }"`
+  );
+
   // Simple status update function
   const updateStatus = async (status: string) => {
     console.log(`Agent Session Status: ${status}`);
+    // Also log status as thought activity
+    await agentActivityDirect.thought(sessionId, `📊 Status: ${status}`);
   };
 
-  // Generate response using AI
-  await generateResponse(
-    [{ role: 'user', content: contextMessage }],
-    updateStatus,
-    linearClient,
-    undefined, // No Slack context
-    undefined // No abort signal
-  );
+  try {
+    console.log(`Calling generateResponse for session ${sessionId}`);
+
+    // Generate response using AI
+    const result = await generateResponse(
+      [{ role: 'user', content: contextMessage }],
+      updateStatus,
+      linearClient,
+      undefined, // No Slack context
+      undefined // No abort signal
+    );
+
+    console.log(
+      `generateResponse completed for session ${sessionId}, result length: ${
+        result?.length || 0
+      }`
+    );
+
+    // Log completion
+    await agentActivityDirect.response(
+      sessionId,
+      `✅ Completed processing the request. ${
+        result
+          ? `Response: ${result.substring(0, 200)}${
+              result.length > 200 ? '...' : ''
+            }`
+          : 'No response generated.'
+      }`
+    );
+  } catch (error) {
+    console.error(`generateResponse failed for session ${sessionId}:`, error);
+    await agentActivityDirect.error(
+      sessionId,
+      `Failed to generate AI response: ${
+        error instanceof Error ? error.message : String(error)
+      }`
+    );
+    throw error;
+  }
 }
 
 /**
@@ -224,16 +274,26 @@ async function handleAgentSessionPrompted(
   // Process the response asynchronously (don't block webhook response)
   setImmediate(async () => {
     try {
-      await processAgentSessionPrompt(agentSession, userPrompt, linearClient);
+      console.log(`Starting async prompt processing for session ${sessionId}`);
+      await processAgentSessionPrompt(
+        agentSession,
+        userPrompt,
+        linearClient,
+        sessionId
+      );
     } catch (error) {
       console.error('Error in async agent session prompt processing:', error);
       // Log error to Linear using the real session ID
-      await agentActivityDirect.error(
-        sessionId,
-        `Failed to process user prompt: ${
-          error instanceof Error ? error.message : String(error)
-        }`
-      );
+      try {
+        await agentActivityDirect.error(
+          sessionId,
+          `Failed to process user prompt: ${
+            error instanceof Error ? error.message : String(error)
+          }`
+        );
+      } catch (logError) {
+        console.error('Failed to log prompt error to Linear:', logError);
+      }
     }
   });
 }
@@ -245,7 +305,8 @@ async function handleAgentSessionPrompted(
 async function processAgentSessionPrompt(
   agentSession: any,
   userPrompt: string,
-  linearClient: LinearClient
+  linearClient: LinearClient,
+  sessionId: string
 ) {
   const issue = agentSession.issue;
 
@@ -259,17 +320,64 @@ async function processAgentSessionPrompt(
 
   contextMessage += `\n\nPlease respond to the user's prompt and take appropriate actions.`;
 
+  // Log that we're starting AI processing
+  console.log(
+    `Processing AI prompt response for session ${sessionId}, issue ${issue.identifier}`
+  );
+  await agentActivityDirect.thought(
+    sessionId,
+    `🧠 Processing user prompt: "${userPrompt.substring(0, 100)}${
+      userPrompt.length > 100 ? '...' : ''
+    }"`
+  );
+
   // Simple status update function
   const updateStatus = async (status: string) => {
     console.log(`Agent Session Status: ${status}`);
+    // Also log status as thought activity
+    await agentActivityDirect.thought(sessionId, `📊 Status: ${status}`);
   };
 
-  // Generate response using AI
-  await generateResponse(
-    [{ role: 'user', content: contextMessage }],
-    updateStatus,
-    linearClient,
-    undefined, // No Slack context
-    undefined // No abort signal
-  );
+  try {
+    console.log(`Calling generateResponse for prompt session ${sessionId}`);
+
+    // Generate response using AI
+    const result = await generateResponse(
+      [{ role: 'user', content: contextMessage }],
+      updateStatus,
+      linearClient,
+      undefined, // No Slack context
+      undefined // No abort signal
+    );
+
+    console.log(
+      `generateResponse completed for prompt session ${sessionId}, result length: ${
+        result?.length || 0
+      }`
+    );
+
+    // Log completion
+    await agentActivityDirect.response(
+      sessionId,
+      `✅ Completed processing the prompt. ${
+        result
+          ? `Response: ${result.substring(0, 200)}${
+              result.length > 200 ? '...' : ''
+            }`
+          : 'No response generated.'
+      }`
+    );
+  } catch (error) {
+    console.error(
+      `generateResponse failed for prompt session ${sessionId}:`,
+      error
+    );
+    await agentActivityDirect.error(
+      sessionId,
+      `Failed to generate AI response to prompt: ${
+        error instanceof Error ? error.message : String(error)
+      }`
+    );
+    throw error;
+  }
 }
