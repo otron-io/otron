@@ -2,7 +2,7 @@ import { LinearClient } from '@linear/sdk';
 import { generateResponse } from '../generate-response.js';
 import {
   linearAgentSessionManager,
-  agentActivity,
+  agentActivityDirect,
 } from './linear-agent-session-manager.js';
 
 /**
@@ -95,9 +95,12 @@ async function handleAgentSessionCreated(
     `Agent session created for issue ${issue.identifier}: ${issue.title}`
   );
 
-  // IMMEDIATE ACKNOWLEDGMENT (required within 10 seconds)
-  await agentActivity.thought(
-    issue.id,
+  // Register the existing session ID from webhook with the session manager
+  linearAgentSessionManager.registerExistingSession(sessionId, issue.id);
+
+  // IMMEDIATE ACKNOWLEDGMENT (required within 10 seconds) - use the real session ID
+  await agentActivityDirect.thought(
+    sessionId,
     `🚀 Agent session started for issue ${issue.identifier}. Analyzing the issue and context...`
   );
 
@@ -107,9 +110,9 @@ async function handleAgentSessionCreated(
       await processAgentSessionWork(agentSession, linearClient);
     } catch (error) {
       console.error('Error in async agent session processing:', error);
-      // Log error to Linear
-      await agentActivity.error(
-        issue.id,
+      // Log error to Linear using the real session ID
+      await agentActivityDirect.error(
+        sessionId,
         `Failed to process agent session: ${
           error instanceof Error ? error.message : String(error)
         }`
@@ -207,9 +210,12 @@ async function handleAgentSessionPrompted(
     return;
   }
 
-  // IMMEDIATE ACKNOWLEDGMENT (within 5 seconds)
-  await agentActivity.thought(
-    issue.id,
+  // Register the existing session ID from webhook with the session manager
+  linearAgentSessionManager.registerExistingSession(sessionId, issue.id);
+
+  // IMMEDIATE ACKNOWLEDGMENT (within 5 seconds) - use the real session ID
+  await agentActivityDirect.thought(
+    sessionId,
     `📩 Received user prompt: "${userPrompt.substring(0, 100)}${
       userPrompt.length > 100 ? '...' : ''
     }"`
@@ -221,9 +227,9 @@ async function handleAgentSessionPrompted(
       await processAgentSessionPrompt(agentSession, userPrompt, linearClient);
     } catch (error) {
       console.error('Error in async agent session prompt processing:', error);
-      // Log error to Linear
-      await agentActivity.error(
-        issue.id,
+      // Log error to Linear using the real session ID
+      await agentActivityDirect.error(
+        sessionId,
         `Failed to process user prompt: ${
           error instanceof Error ? error.message : String(error)
         }`

@@ -291,17 +291,12 @@ class LinearAgentSessionManager {
           }
         }
       } catch (linearError) {
-        // If we can't emit to Linear, log the error but don't fail the operation
+        // If we can't emit to Linear, log the error and fail
         console.error(
           'LinearAgentSessionManager: Failed to emit activity to Linear:',
           linearError
         );
-        console.log(
-          'LinearAgentSessionManager: Falling back to comment-based logging'
-        );
-
-        // Fall back to creating a comment (backwards compatibility)
-        await this.fallbackToComment(session.issueId, content);
+        throw linearError;
       }
     } catch (error) {
       console.error(
@@ -312,26 +307,18 @@ class LinearAgentSessionManager {
   }
 
   /**
-   * Fallback to creating a regular comment if agent activities fail
+   * Register an existing session ID (from webhook) with issue mapping
    */
-  private async fallbackToComment(
-    issueId: string,
-    content: ActivityContent
-  ): Promise<void> {
-    if (!this.linearClient) return;
+  registerExistingSession(sessionId: string, issueId: string): void {
+    const sessionData: AgentSessionData = {
+      sessionId,
+      issueId,
+      state: 'pending',
+      activities: [],
+      startTime: Date.now(),
+    };
 
-    try {
-      const commentBody = this.formatActivityAsComment(content);
-      await this.linearClient.createComment({
-        issueId,
-        body: commentBody,
-      });
-    } catch (error) {
-      console.error(
-        'LinearAgentSessionManager: Failed to create fallback comment:',
-        error
-      );
-    }
+    this.activeSessions.set(sessionId, sessionData);
   }
 
   /**
@@ -358,33 +345,6 @@ class LinearAgentSessionManager {
         return `${prefix} ❌ ERROR: ${content.body}`;
       default:
         return `${prefix} ACTIVITY: ${JSON.stringify(content)}`;
-    }
-  }
-
-  /**
-   * Format activity as a comment for fallback
-   */
-  private formatActivityAsComment(content: ActivityContent): string {
-    const timestamp = new Date().toLocaleString();
-
-    switch (content.type) {
-      case 'thought':
-        return `🤔 **Agent Thought** (${timestamp})\n${content.body}`;
-      case 'elicitation':
-        return `❓ **Agent Question** (${timestamp})\n${content.body}`;
-      case 'action':
-        const result = content.result ? `\n**Result:** ${content.result}` : '';
-        return `🛠️ **Agent Action** (${timestamp})\n**Action:** ${content.action}\n**Parameter:** ${content.parameter}${result}`;
-      case 'response':
-        return `✅ **Agent Response** (${timestamp})\n${content.body}`;
-      case 'error':
-        return `❌ **Agent Error** (${timestamp})\n${content.body}`;
-      default:
-        return `🤖 **Agent Activity** (${timestamp})\n${JSON.stringify(
-          content,
-          null,
-          2
-        )}`;
     }
   }
 
@@ -476,6 +436,39 @@ export const agentActivity = {
     if (sessionId) {
       await linearAgentSessionManager.emitError(sessionId, message);
     }
+  },
+};
+
+// Direct session ID functions for webhook handlers that already have the session ID
+export const agentActivityDirect = {
+  thought: async (sessionId: string, message: string) => {
+    await linearAgentSessionManager.emitThought(sessionId, message);
+  },
+
+  elicitation: async (sessionId: string, message: string) => {
+    await linearAgentSessionManager.emitElicitation(sessionId, message);
+  },
+
+  action: async (
+    sessionId: string,
+    action: string,
+    parameter: string,
+    result?: string
+  ) => {
+    await linearAgentSessionManager.emitAction(
+      sessionId,
+      action,
+      parameter,
+      result
+    );
+  },
+
+  response: async (sessionId: string, message: string) => {
+    await linearAgentSessionManager.emitResponse(sessionId, message);
+  },
+
+  error: async (sessionId: string, message: string) => {
+    await linearAgentSessionManager.emitError(sessionId, message);
   },
 };
 
