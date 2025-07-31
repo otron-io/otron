@@ -62,9 +62,9 @@ async function handleAgentSessionEvent(
     linearAgentSessionManager.setLinearClient(linearClient);
 
     if (action === 'created') {
-      await handleAgentSessionCreated(agentSession, linearClient);
+      return await handleAgentSessionCreated(agentSession, linearClient);
     } else if (action === 'prompted') {
-      await handleAgentSessionPrompted(agentSession, linearClient);
+      return await handleAgentSessionPrompted(agentSession, linearClient);
     } else {
       console.log(`Unknown agent session action: ${action}`);
     }
@@ -104,26 +104,55 @@ async function handleAgentSessionCreated(
     `🚀 Agent session started for issue ${issue.identifier}. Analyzing the issue and context...`
   );
 
-  // Process the full response asynchronously (don't block webhook response)
-  setImmediate(async () => {
+  console.log(
+    `✅ Acknowledgment sent for session ${sessionId}, returning async processing Promise`
+  );
+
+  // Return the async processing Promise for waitUntil to handle
+  const asyncPromise = processAgentSessionWorkWithErrorHandling(
+    agentSession,
+    linearClient,
+    sessionId
+  );
+
+  console.log(
+    `🔄 Async Promise created for session ${sessionId}, returning to waitUntil`
+  );
+  return asyncPromise;
+}
+
+/**
+ * Wrapper for async processing with error handling that can be used by waitUntil
+ */
+async function processAgentSessionWorkWithErrorHandling(
+  agentSession: any,
+  linearClient: LinearClient,
+  sessionId: string
+): Promise<void> {
+  console.log(
+    `🚀 processAgentSessionWorkWithErrorHandling STARTED for session ${sessionId}`
+  );
+
+  try {
+    console.log(`⏳ Starting async processing for session ${sessionId}`);
+    await processAgentSessionWork(agentSession, linearClient, sessionId);
+    console.log(
+      `✅ processAgentSessionWork COMPLETED for session ${sessionId}`
+    );
+  } catch (error) {
+    console.error('Error in async agent session processing:', error);
+    // Log error to Linear using the real session ID
     try {
-      console.log(`Starting async processing for session ${sessionId}`);
-      await processAgentSessionWork(agentSession, linearClient, sessionId);
-    } catch (error) {
-      console.error('Error in async agent session processing:', error);
-      // Log error to Linear using the real session ID
-      try {
-        await agentActivityDirect.error(
-          sessionId,
-          `Failed to process agent session: ${
-            error instanceof Error ? error.message : String(error)
-          }`
-        );
-      } catch (logError) {
-        console.error('Failed to log error to Linear:', logError);
-      }
+      await agentActivityDirect.error(
+        sessionId,
+        `Failed to process agent session: ${
+          error instanceof Error ? error.message : String(error)
+        }`
+      );
+    } catch (logError) {
+      console.error('Failed to log error to Linear:', logError);
     }
-  });
+  }
 }
 
 /**
@@ -135,6 +164,8 @@ async function processAgentSessionWork(
   linearClient: LinearClient,
   sessionId: string
 ) {
+  console.log(`🎯 processAgentSessionWork ENTERED for session ${sessionId}`);
+
   const issue = agentSession.issue;
 
   // Build context from the issue and any related comments
@@ -271,31 +302,46 @@ async function handleAgentSessionPrompted(
     }"`
   );
 
-  // Process the response asynchronously (don't block webhook response)
-  setImmediate(async () => {
+  // Return the async processing Promise for waitUntil to handle
+  return processAgentSessionPromptWithErrorHandling(
+    agentSession,
+    userPrompt,
+    linearClient,
+    sessionId
+  );
+}
+
+/**
+ * Wrapper for async prompt processing with error handling that can be used by waitUntil
+ */
+async function processAgentSessionPromptWithErrorHandling(
+  agentSession: any,
+  userPrompt: string,
+  linearClient: LinearClient,
+  sessionId: string
+): Promise<void> {
+  try {
+    console.log(`Starting async prompt processing for session ${sessionId}`);
+    await processAgentSessionPrompt(
+      agentSession,
+      userPrompt,
+      linearClient,
+      sessionId
+    );
+  } catch (error) {
+    console.error('Error in async agent session prompt processing:', error);
+    // Log error to Linear using the real session ID
     try {
-      console.log(`Starting async prompt processing for session ${sessionId}`);
-      await processAgentSessionPrompt(
-        agentSession,
-        userPrompt,
-        linearClient,
-        sessionId
+      await agentActivityDirect.error(
+        sessionId,
+        `Failed to process user prompt: ${
+          error instanceof Error ? error.message : String(error)
+        }`
       );
-    } catch (error) {
-      console.error('Error in async agent session prompt processing:', error);
-      // Log error to Linear using the real session ID
-      try {
-        await agentActivityDirect.error(
-          sessionId,
-          `Failed to process user prompt: ${
-            error instanceof Error ? error.message : String(error)
-          }`
-        );
-      } catch (logError) {
-        console.error('Failed to log prompt error to Linear:', logError);
-      }
+    } catch (logError) {
+      console.error('Failed to log prompt error to Linear:', logError);
     }
-  });
+  }
 }
 
 /**
