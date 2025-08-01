@@ -62,7 +62,11 @@ async function handleAgentSessionEvent(
     linearAgentSessionManager.setLinearClient(linearClient);
 
     if (action === 'created') {
-      return await handleAgentSessionCreated(agentSession, linearClient);
+      return await handleAgentSessionCreated(
+        agentSession,
+        linearClient,
+        payload.previousComments
+      );
     } else if (action === 'prompted') {
       return await handleAgentSessionPrompted(payload, linearClient);
     } else {
@@ -81,7 +85,8 @@ async function handleAgentSessionEvent(
  */
 async function handleAgentSessionCreated(
   agentSession: any,
-  linearClient: LinearClient
+  linearClient: LinearClient,
+  previousComments?: any[]
 ) {
   const sessionId = agentSession.id;
   const issue = agentSession.issue;
@@ -112,7 +117,8 @@ async function handleAgentSessionCreated(
   const asyncPromise = processAgentSessionWorkWithErrorHandling(
     agentSession,
     linearClient,
-    sessionId
+    sessionId,
+    previousComments
   );
 
   console.log(
@@ -127,7 +133,8 @@ async function handleAgentSessionCreated(
 async function processAgentSessionWorkWithErrorHandling(
   agentSession: any,
   linearClient: LinearClient,
-  sessionId: string
+  sessionId: string,
+  previousComments?: any[]
 ): Promise<void> {
   console.log(
     `🚀 processAgentSessionWorkWithErrorHandling STARTED for session ${sessionId}`
@@ -135,7 +142,12 @@ async function processAgentSessionWorkWithErrorHandling(
 
   try {
     console.log(`⏳ Starting async processing for session ${sessionId}`);
-    await processAgentSessionWork(agentSession, linearClient, sessionId);
+    await processAgentSessionWork(
+      agentSession,
+      linearClient,
+      sessionId,
+      previousComments
+    );
     console.log(
       `✅ processAgentSessionWork COMPLETED for session ${sessionId}`
     );
@@ -162,7 +174,8 @@ async function processAgentSessionWorkWithErrorHandling(
 async function processAgentSessionWork(
   agentSession: any,
   linearClient: LinearClient,
-  sessionId: string
+  sessionId: string,
+  previousComments?: any[]
 ) {
   console.log(`🎯 processAgentSessionWork ENTERED for session ${sessionId}`);
 
@@ -184,15 +197,12 @@ async function processAgentSessionWork(
   }
 
   // Include previous comments for context
-  if (
-    agentSession.previousComments &&
-    agentSession.previousComments.length > 0
-  ) {
+  if (previousComments && previousComments.length > 0) {
     contextMessage += `\n\nPrevious comments for context:`;
-    for (const comment of agentSession.previousComments) {
-      const user = comment.user;
-      const userName = user?.name || 'Unknown';
-      contextMessage += `\n- ${userName}: ${comment.body}`;
+    for (const comment of previousComments) {
+      // For now, we just use 'User' since the webhook provides userId but not user names
+      // We could fetch user details from Linear API in the future if needed
+      contextMessage += `\n- User: ${comment.body}`;
     }
   }
 
@@ -317,7 +327,8 @@ async function handleAgentSessionPrompted(
     agentSession,
     userPrompt,
     linearClient,
-    sessionId
+    sessionId,
+    payload.previousComments
   );
 }
 
@@ -328,7 +339,8 @@ async function processAgentSessionPromptWithErrorHandling(
   agentSession: any,
   userPrompt: string,
   linearClient: LinearClient,
-  sessionId: string
+  sessionId: string,
+  previousComments?: any[]
 ): Promise<void> {
   try {
     console.log(`Starting async prompt processing for session ${sessionId}`);
@@ -336,7 +348,8 @@ async function processAgentSessionPromptWithErrorHandling(
       agentSession,
       userPrompt,
       linearClient,
-      sessionId
+      sessionId,
+      previousComments
     );
   } catch (error) {
     console.error('Error in async agent session prompt processing:', error);
@@ -362,7 +375,8 @@ async function processAgentSessionPrompt(
   agentSession: any,
   userPrompt: string,
   linearClient: LinearClient,
-  sessionId: string
+  sessionId: string,
+  previousComments?: any[]
 ) {
   const issue = agentSession.issue;
 
@@ -372,6 +386,16 @@ async function processAgentSessionPrompt(
 
   if (issue.description) {
     contextMessage += `\n\nIssue description: ${issue.description}`;
+  }
+
+  // Include previous comments for context
+  if (previousComments && previousComments.length > 0) {
+    contextMessage += `\n\nPrevious comments for context:`;
+    for (const comment of previousComments) {
+      // For now, we just use 'User' since the webhook provides userId but not user names
+      // We could fetch user details from Linear API in the future if needed
+      contextMessage += `\n- User: ${comment.body}`;
+    }
   }
 
   contextMessage += `\n\nPlease respond to the user's prompt and take appropriate actions.`;
