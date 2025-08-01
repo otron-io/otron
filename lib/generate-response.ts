@@ -44,7 +44,6 @@ import {
   executeResetBranchToHead,
   // GitHub file reading tools
   executeGetRawFileContent,
-  executeAnalyzeFileStructure,
   executeReadRelatedFiles,
   // Embedded repository tools
   executeSearchEmbeddedCode,
@@ -2653,25 +2652,6 @@ ${memoryContext ? `## Previous Context\n${memoryContext}\n` : ''}${
           'getRawFileContent',
           (params: any) =>
             executeGetRawFileContent({ ...params, sessionId }, updateStatus)
-        ),
-      }),
-      analyzeFileStructure: tool({
-        description:
-          'Analyze a file to extract its structure including functions, classes, imports, exports, and complexity metrics.',
-        parameters: z.object({
-          path: z.string().describe('The file path in the repository'),
-          repository: z
-            .string()
-            .describe('The repository in format "owner/repo"'),
-          branch: z
-            .string()
-            .describe(
-              'Branch to analyze (defaults to default branch). Leave empty to use default branch.'
-            ),
-        }),
-        execute: createMemoryAwareToolExecutor(
-          'analyzeFileStructure',
-          (params: any) => executeAnalyzeFileStructure(params, updateStatus)
         ),
       }),
       readRelatedFiles: tool({
