@@ -43,7 +43,6 @@ import {
   // GitHub branch management tools
   executeResetBranchToHead,
   // GitHub file reading tools
-  executeReadFileWithContext,
   executeGetRawFileContent,
   executeAnalyzeFileStructure,
   executeReadRelatedFiles,
@@ -692,11 +691,11 @@ For coding tasks, gather the information you need to understand the problem full
 - Read relevant files to get complete picture
 - Analyze structure when necessary
 - Make informed decisions based on comprehensive understanding
+- Always ask the user what repository they want to use if you are not sure
 
-## File Reading Tools - Choose the Right Tool
-- **readFileWithContext**: For understanding code structure, finding specific functions/classes, or getting contextual information around specific lines
-- **getRawFileContent**: For getting exact file content when you need to use editCode tool. This provides the raw source code without any formatting
-- **editCode**: ALWAYS use getRawFileContent first to get the exact code you want to replace. Never use formatted output from readFileWithContext as oldCode parameter
+## File Reading
+- **getRawFileContent**: The primary tool for reading files. Gets raw, unformatted source code with optional line ranges (max 200 lines). Perfect for both understanding code and preparing for edits
+- **editCode**: ALWAYS use getRawFileContent first to get the exact code you want to replace. Use the raw content directly as oldCode parameter
 
 ## Memory & Context
 - You have persistent memory across conversations
@@ -862,7 +861,6 @@ ${memoryContext ? `\n## Previous Context\n${memoryContext}` : ''}
       ];
       const readTools = [
         'getFileContent',
-        'readFileWithContext',
         'getRawFileContent',
         'readRelatedFiles',
         'getIssueContext',
@@ -2668,69 +2666,29 @@ ${params.expectedActions.map((action: string) => `• ${action}`).join('\n')}
           (params: any) => executeResetBranchToHead(params, updateStatus)
         ),
       }),
-      // Advanced file reading and analysis tools
-      readFileWithContext: tool({
-        description:
-          'Read a file with intelligent context around specific lines, patterns, functions, or classes. Much more powerful than basic file reading.',
-        parameters: z.object({
-          path: z.string().describe('The file path in the repository'),
-          repository: z
-            .string()
-            .describe('The repository in format "owner/repo"'),
-          targetLine: z
-            .number()
-            .describe(
-              'Specific line number to focus on (1-based). Use 0 if not targeting a specific line.'
-            ),
-          searchPattern: z
-            .string()
-            .describe(
-              'Pattern to search for and provide context around. Leave empty if not searching for a pattern.'
-            ),
-          functionName: z
-            .string()
-            .describe(
-              'Function name to find and provide context for. Leave empty if not searching for a function.'
-            ),
-          className: z
-            .string()
-            .describe(
-              'Class name to find and provide context for. Leave empty if not searching for a class.'
-            ),
-          contextLines: z
-            .number()
-            .describe(
-              'Number of context lines before and after (default: 5). Use 5 if not specified.'
-            ),
-          maxLines: z
-            .number()
-            .describe(
-              'Maximum number of lines to return (default: 100). Use 100 if not specified.'
-            ),
-          branch: z
-            .string()
-            .describe(
-              'Branch to read from (defaults to default branch). Leave empty to use default branch.'
-            ),
-        }),
-        execute: createMemoryAwareToolExecutor(
-          'readFileWithContext',
-          (params: any) =>
-            executeReadFileWithContext({ ...params, sessionId }, updateStatus)
-        ),
-      }),
+      // Simplified file reading tool
       getRawFileContent: tool({
         description:
-          'Get the raw, unformatted content of a file. Use this when you need the exact file content for editing with editCode tool. This returns the actual source code without any formatting or context headers.',
+          'Get the raw, unformatted content of a file with optional line range. Perfect for reading source code for editing or analysis. Returns actual source code without any formatting headers. Max 200 lines per request.',
         parameters: z.object({
           path: z.string().describe('The file path in the repository'),
           repository: z
             .string()
             .describe('The repository in format "owner/repo"'),
+          startLine: z
+            .number()
+            .describe(
+              'Starting line number (1-based). Use 1 to start from beginning. Use this to read specific sections of large files.'
+            ),
+          endLine: z
+            .number()
+            .describe(
+              'Ending line number (1-based). Use 0 to read up to 200 lines from startLine. Maximum 200 lines total.'
+            ),
           branch: z
             .string()
             .describe(
-              'Branch to read from (defaults to default branch). Leave empty to use default branch.'
+              'Branch to read from. Leave empty to use default branch.'
             ),
         }),
         execute: createMemoryAwareToolExecutor(

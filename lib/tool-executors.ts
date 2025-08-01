@@ -2593,108 +2593,36 @@ export const executeResetBranchToHead = async (
   }
 };
 
-// Advanced file reading and analysis tools
-export const executeReadFileWithContext = async (
+// Simplified file reading tool
+
+export const executeGetRawFileContent = async (
   {
     path,
     repository,
-    targetLine,
-    searchPattern,
-    functionName,
-    className,
-    contextLines,
-    maxLines,
+    startLine,
+    endLine,
     branch,
     sessionId,
   }: {
     path: string;
     repository: string;
-    targetLine: number;
-    searchPattern: string;
-    functionName: string;
-    className: string;
-    contextLines: number;
-    maxLines: number;
+    startLine: number;
+    endLine: number;
     branch: string;
     sessionId?: string;
   },
   updateStatus?: (status: string) => void
 ) => {
   try {
-    updateStatus?.('Reading file with context...');
+    // Validate and normalize line parameters
+    if (!startLine || startLine < 1) startLine = 1;
+    const normalizedEndLine = !endLine || endLine === 0 ? undefined : endLine;
 
-    const options: any = {};
-
-    // Handle optional parameters by checking for empty strings and default values
-    if (targetLine > 0) options.targetLine = targetLine;
-    if (searchPattern && searchPattern.trim())
-      options.searchPattern = searchPattern;
-    if (functionName && functionName.trim())
-      options.functionName = functionName;
-    if (className && className.trim()) options.className = className;
-    if (contextLines > 0) options.contextLines = contextLines;
-    else options.contextLines = 5; // default
-    if (maxLines > 0) options.maxLines = maxLines;
-    else options.maxLines = 100; // default
-    if (branch && branch.trim()) options.branch = branch;
-
-    // Add sessionId to options if provided
-    if (sessionId) {
-      options.sessionId = sessionId;
-    }
-
-    const result = await advancedFileReader.readFileWithContext(
-      path,
-      repository,
-      options
+    updateStatus?.(
+      `Getting raw content of ${path} (lines ${startLine}${
+        normalizedEndLine ? `-${normalizedEndLine}` : '+'
+      })`
     );
-
-    const summary = `File: ${path}
-Lines ${result.lineNumbers.start}-${result.lineNumbers.end} of ${
-      result.lineNumbers.total
-    }
-
-Context:
-${
-  result.beforeLines.length > 0
-    ? `Before:\n${result.beforeLines.join('\n')}\n`
-    : ''
-}
-Target:
-${result.targetLines.join('\n')}
-${
-  result.afterLines.length > 0
-    ? `\nAfter:\n${result.afterLines.join('\n')}`
-    : ''
-}`;
-
-    updateStatus?.('File context retrieved successfully');
-    return summary;
-  } catch (error) {
-    const errorMessage = `Failed to read file with context: ${
-      error instanceof Error ? error.message : String(error)
-    }`;
-    updateStatus?.(errorMessage);
-    return errorMessage;
-  }
-};
-
-export const executeGetRawFileContent = async (
-  {
-    path,
-    repository,
-    branch,
-    sessionId,
-  }: {
-    path: string;
-    repository: string;
-    branch?: string;
-    sessionId?: string;
-  },
-  updateStatus?: (status: string) => void
-) => {
-  try {
-    updateStatus?.(`Getting raw content of ${path}...`);
 
     // Get the raw file content without any formatting
     const { getFileContent } = await import('./github/github-utils.js');
@@ -2702,28 +2630,75 @@ export const executeGetRawFileContent = async (
       path,
       repository,
       1,
-      10000, // Get full file
-      branch,
+      10000, // Get full file to determine total lines
+      branch || undefined,
       sessionId
     );
 
     // Remove any header line that getFileContent might add
     const lines = fullContent.split('\n');
-    let rawContent = fullContent;
+    let allLines = lines;
 
     // Check if first line is the line info header from getFileContent
     if (lines.length > 0 && lines[0]?.match(/^\/\/ Lines \d+-\d+ of \d+$/)) {
-      rawContent = lines.slice(1).join('\n');
+      allLines = lines.slice(1);
     }
 
-    const totalLines = rawContent.split('\n').length;
+    const totalLines = allLines.length;
+
+    // Calculate actual end line
+    let actualEndLine =
+      normalizedEndLine || Math.min(startLine + 199, totalLines); // Max 200 lines
+    if (actualEndLine > totalLines) actualEndLine = totalLines;
+    if (actualEndLine - startLine + 1 > 200) {
+      actualEndLine = startLine + 199; // Enforce max 200 lines
+    }
+
+    // Extract the requested range
+    const requestedLines = allLines.slice(startLine - 1, actualEndLine);
+    const rawContent = requestedLines.join('\n');
+
+    // Extract Linear issue ID from sessionId or repository for activity logging
+    const issueId =
+      extractLinearIssueFromBranch(branch || '') ||
+      sessionId?.match(/[A-Z]{2,}-\d+/)?.[0];
+
+    if (issueId) {
+      await agentActivity.thought(
+        issueId,
+        `📄 Reading file content from \`${path}\` in \`${repository}\`${
+          branch && branch.trim() ? ` (branch: ${branch})` : ''
+        }`
+      );
+
+      // Create detailed markdown content with proper formatting
+      const markdownContent = `## File Content: \`${path}\`
+**Repository:** \`${repository}\`${
+        branch && branch.trim()
+          ? `  
+**Branch:** \`${branch}\``
+          : ''
+      }  
+**Lines:** ${startLine}-${actualEndLine} of ${totalLines}  
+**Size:** ${rawContent.length} characters
+
+\`\`\`typescript
+${rawContent}
+\`\`\``;
+
+      await agentActivity.thought(issueId, markdownContent);
+    }
 
     updateStatus?.('Raw file content retrieved successfully');
 
     return {
       content: rawContent,
-      lines: totalLines,
-      message: `Retrieved raw content from ${path} (${totalLines} lines, ${rawContent.length} characters)`,
+      startLine,
+      endLine: actualEndLine,
+      totalLines,
+      message: `Retrieved lines ${startLine}-${actualEndLine} from ${path} (${
+        actualEndLine - startLine + 1
+      } lines, ${rawContent.length} characters)`,
     };
   } catch (error) {
     const errorMessage = `Failed to get raw file content: ${

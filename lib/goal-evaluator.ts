@@ -46,8 +46,8 @@ export class GoalEvaluator {
 
     try {
       const { text } = await generateText({
-        model: openai('gpt-4.1-mini'),
-        system: `You are an AI request analyzer. Analyze the user's request to understand its type and requirements.
+        model: openai('o3'),
+        system: `You are an AI agent request analyzer. Analyze the user's request to understand its type and requirements.
 
 Categorize this request and respond with a JSON object:
 {
@@ -189,7 +189,7 @@ REQUEST ANALYSIS:
 
     try {
       const { text } = await generateText({
-        model: openai('gpt-4.1-mini'),
+        model: openai('o3'),
         system: `You are an AI goal completion evaluator. Your job is to determine if an AI agent has successfully completed the user's request.
 
 AGENT'S EXECUTION SUMMARY:
@@ -257,7 +257,7 @@ Respond with a JSON object containing:
             content: evaluationPrompt,
           },
         ],
-        temperature: 0.1, // Low temperature for consistent evaluation
+        temperature: 0.4, // Low temperature for consistent evaluation
       });
 
       // Parse the JSON response

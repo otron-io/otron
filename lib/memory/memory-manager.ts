@@ -332,7 +332,6 @@ export class MemoryManager {
         break;
 
       case 'getFileContent':
-      case 'readFileWithContext':
       case 'getRawFileContent':
         summary.filePath = input.path;
         summary.repository = input.repository;
