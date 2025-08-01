@@ -81,11 +81,22 @@ import {
 import { Redis } from '@upstash/redis';
 import { env } from './env.js';
 
-// Initialize Redis client for tracking active responses
+// Initialize Redis client for tracking active responses and message queuing
 const redis = new Redis({
   url: env.KV_REST_API_URL,
   token: env.KV_REST_API_TOKEN,
 });
+
+// Interface for queued messages during agent processing
+export interface QueuedMessage {
+  timestamp: number;
+  type: 'created' | 'prompted';
+  content: string;
+  sessionId: string;
+  issueId: string;
+  userId?: string;
+  metadata?: any;
+}
 
 // Interface for tracking active response sessions
 interface ActiveSession {
@@ -477,6 +488,94 @@ export const generateResponse = async (
     await cleanup();
   }
 };
+
+// Helper functions for agent session coordination and message queuing
+
+/**
+ * Check if there's already an active agent session for this issue
+ */
+export async function getActiveSessionForIssue(
+  issueId: string
+): Promise<string | null> {
+  try {
+    const activeSessionsKeys = await redis.smembers('active_sessions_list');
+
+    for (const sessionId of activeSessionsKeys) {
+      const sessionData = await redis.get(`active_session:${sessionId}`);
+      if (sessionData) {
+        let session: ActiveSession;
+        if (typeof sessionData === 'string') {
+          session = JSON.parse(sessionData) as ActiveSession;
+        } else {
+          session = sessionData as ActiveSession;
+        }
+
+        // Check if this session is for the same issue and still active
+        if (
+          session.metadata?.issueId === issueId &&
+          ['initializing', 'planning', 'gathering', 'acting'].includes(
+            session.status
+          )
+        ) {
+          return sessionId;
+        }
+      }
+    }
+
+    return null;
+  } catch (error) {
+    console.error('Error checking for active session:', error);
+    return null;
+  }
+}
+
+/**
+ * Queue a message for an active agent session
+ */
+export async function queueMessageForSession(
+  sessionId: string,
+  message: QueuedMessage
+): Promise<void> {
+  try {
+    const queueKey = `message_queue:${sessionId}`;
+    await redis.lpush(queueKey, JSON.stringify(message));
+    await redis.expire(queueKey, 3600); // 1 hour TTL
+
+    console.log(`Queued message for session ${sessionId}`);
+  } catch (error) {
+    console.error('Error queuing message:', error);
+  }
+}
+
+/**
+ * Get queued messages for a session and clear the queue
+ */
+export async function getQueuedMessages(
+  sessionId: string
+): Promise<QueuedMessage[]> {
+  try {
+    const queueKey = `message_queue:${sessionId}`;
+    const messages = await redis.lrange(queueKey, 0, -1);
+
+    if (messages.length > 0) {
+      // Clear the queue
+      await redis.del(queueKey);
+
+      // Parse and return messages (newest first)
+      return messages.reverse().map((msg) => {
+        if (typeof msg === 'string') {
+          return JSON.parse(msg) as QueuedMessage;
+        }
+        return msg as QueuedMessage;
+      });
+    }
+
+    return [];
+  } catch (error) {
+    console.error('Error getting queued messages:', error);
+    return [];
+  }
+}
 
 // Internal function that does the actual response generation
 const generateResponseInternal = async (
@@ -874,6 +973,44 @@ const generateResponseInternal = async (
         } catch (redisError) {
           // Don't fail on Redis errors, but log them
           console.warn('Error checking cancellation status:', redisError);
+        }
+      }
+
+      // Check for queued messages from other webhooks/interjections
+      if (sessionId && isLinearIssue && linearClient) {
+        try {
+          const queuedMessages = await getQueuedMessages(sessionId);
+          if (queuedMessages.length > 0) {
+            console.log(
+              `Found ${queuedMessages.length} queued messages for session ${sessionId}`
+            );
+
+            // Log that we're processing interjections
+            await agentActivity.thought(
+              contextId,
+              `Processing ${queuedMessages.length} new message(s) received during analysis`
+            );
+
+            // Add queued messages to the conversation context
+            for (const queuedMsg of queuedMessages) {
+              messages.push({
+                role: 'user',
+                content: `[INTERJECTION ${new Date(
+                  queuedMsg.timestamp
+                ).toISOString()}] ${queuedMsg.content}`,
+              });
+            }
+
+            // Update the session with new messages
+            await updateActiveSession(sessionId, { messages });
+
+            console.log(
+              `Added ${queuedMessages.length} interjection messages to conversation context`
+            );
+          }
+        } catch (messageError) {
+          // Don't fail on message polling errors, but log them
+          console.warn('Error checking for queued messages:', messageError);
         }
       }
 

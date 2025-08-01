@@ -1,5 +1,10 @@
 import { LinearClient } from '@linear/sdk';
-import { generateResponse } from '../generate-response.js';
+import {
+  generateResponse,
+  getActiveSessionForIssue,
+  queueMessageForSession,
+  QueuedMessage,
+} from '../generate-response.js';
 import {
   linearAgentSessionManager,
   agentActivityDirect,
@@ -100,17 +105,54 @@ async function handleAgentSessionCreated(
     `Agent session created for issue ${issue.identifier}: ${issue.title}`
   );
 
+  // Check if there's already an active agent session for this issue
+  const activeSessionId = await getActiveSessionForIssue(issue.id);
+
+  if (activeSessionId && activeSessionId !== sessionId) {
+    console.log(
+      `Found active session ${activeSessionId} for issue ${issue.id}, queuing this request`
+    );
+
+    // IMMEDIATE ACKNOWLEDGMENT still required
+    await agentActivityDirect.thought(
+      sessionId,
+      `Agent session acknowledged - joining active analysis for ${issue.identifier}`
+    );
+
+    // Queue this message for the active session
+    const queuedMessage: QueuedMessage = {
+      timestamp: Date.now(),
+      type: 'created',
+      content: `New agent session created: ${
+        agentSession.comment?.body || 'No comment'
+      }`,
+      sessionId: sessionId,
+      issueId: issue.id,
+      metadata: { previousComments, agentSession },
+    };
+
+    await queueMessageForSession(activeSessionId, queuedMessage);
+
+    // Complete this session since it's been merged with the active one
+    await agentActivityDirect.response(
+      sessionId,
+      `Merged with active session ${activeSessionId}`
+    );
+
+    return;
+  }
+
   // Register the existing session ID from webhook with the session manager
   linearAgentSessionManager.registerExistingSession(sessionId, issue.id);
 
-  // IMMEDIATE ACKNOWLEDGMENT (required within 10 seconds) - use the real session ID
+  // IMMEDIATE ACKNOWLEDGMENT (required within 10 seconds)
   await agentActivityDirect.thought(
     sessionId,
-    `🚀 Agent session started for issue ${issue.identifier}. Analyzing the issue and context...`
+    `Agent session started for issue ${issue.identifier}`
   );
 
   console.log(
-    `✅ Acknowledgment sent for session ${sessionId}, returning async processing Promise`
+    `✅ Acknowledgment sent for session ${sessionId}, starting processing`
   );
 
   // Return the async processing Promise for waitUntil to handle
@@ -334,15 +376,52 @@ async function handleAgentSessionPrompted(
     return;
   }
 
+  // Check if there's already an active agent session for this issue
+  const activeSessionId = await getActiveSessionForIssue(issue.id);
+
+  if (activeSessionId && activeSessionId !== sessionId) {
+    console.log(
+      `Found active session ${activeSessionId} for issue ${issue.id}, queuing this prompt`
+    );
+
+    // IMMEDIATE ACKNOWLEDGMENT still required
+    await agentActivityDirect.thought(
+      sessionId,
+      `Prompt acknowledged - joining active analysis for ${issue.identifier}`
+    );
+
+    // Queue this prompt for the active session
+    const queuedMessage: QueuedMessage = {
+      timestamp: Date.now(),
+      type: 'prompted',
+      content: `User prompt: ${userPrompt}`,
+      sessionId: sessionId,
+      issueId: issue.id,
+      metadata: {
+        agentActivity,
+        agentSession,
+        previousComments: payload.previousComments,
+      },
+    };
+
+    await queueMessageForSession(activeSessionId, queuedMessage);
+
+    // Complete this session since it's been merged with the active one
+    await agentActivityDirect.response(
+      sessionId,
+      `Prompt queued for active session ${activeSessionId}`
+    );
+
+    return;
+  }
+
   // Register the existing session ID from webhook with the session manager
   linearAgentSessionManager.registerExistingSession(sessionId, issue.id);
 
-  // IMMEDIATE ACKNOWLEDGMENT (within 5 seconds) - use the real session ID
+  // IMMEDIATE ACKNOWLEDGMENT (within 5 seconds)
   await agentActivityDirect.thought(
     sessionId,
-    `📩 Received user prompt: "${userPrompt.substring(0, 100)}${
-      userPrompt.length > 100 ? '...' : ''
-    }"`
+    `Processing user prompt for ${issue.identifier}`
   );
 
   // Return the async processing Promise for waitUntil to handle
