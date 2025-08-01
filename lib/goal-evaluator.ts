@@ -322,15 +322,6 @@ Respond with a JSON object containing:
       adjustedConfidence += 0.15;
     }
 
-    // Boost confidence if agent used execution planning tools (shows good strategy)
-    const planningTools = ['createExecutionPlan', 'checkExecutionProgress'];
-    const usedPlanningTools = executionSummary.toolsUsed.some((tool) =>
-      planningTools.includes(tool)
-    );
-    if (usedPlanningTools) {
-      adjustedConfidence += 0.1;
-    }
-
     // Boost confidence if agent shows good action-to-analysis ratio
     const searchTools = executionSummary.toolsUsed.filter((tool) =>
       [
