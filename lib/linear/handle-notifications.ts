@@ -455,11 +455,11 @@ async function processAgentSessionPromptWithErrorHandling(
     );
   } catch (error) {
     console.error('Error in async agent session prompt processing:', error);
-    // Log error to Linear using the real session ID
+    // Log error to Linear using the real session ID (using thought for less prominent logging)
     try {
-      await agentActivityDirect.error(
+      await agentActivityDirect.thought(
         sessionId,
-        `Failed to process user prompt: ${
+        `❌ Prompt processing failed: ${
           error instanceof Error ? error.message : String(error)
         }`
       );

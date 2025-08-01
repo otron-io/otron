@@ -905,9 +905,9 @@ export const createComment = async (
     const issue = await linearClient.issue(issueIdOrIdentifier);
     if (!issue) {
       console.error(`Issue ${issueIdOrIdentifier} not found`);
-      await agentActivity.error(
+      await agentActivity.thought(
         issueIdOrIdentifier,
-        `Failed to create comment: Issue not found`
+        `❌ Comment creation failed: Issue not found`
       );
       return;
     }
@@ -928,9 +928,9 @@ export const createComment = async (
       `Error creating comment on issue ${issueIdOrIdentifier}:`,
       error instanceof Error ? error.message : String(error)
     );
-    await agentActivity.error(
+    await agentActivity.thought(
       issueIdOrIdentifier,
-      `Failed to create comment: ${
+      `❌ Comment creation failed: ${
         error instanceof Error ? error.message : String(error)
       }`
     );

@@ -933,17 +933,60 @@ ${memoryContext ? `\n## Previous Context\n${memoryContext}` : ''}
         }
       }
 
-      // Prepare tool context for logging
-      const toolContext = args[0]
-        ? Object.keys(args[0]).join(', ')
-        : 'No parameters';
+      // Prepare detailed tool context for logging
+      const getDetailedToolContext = (
+        toolName: string,
+        params: any
+      ): string => {
+        if (!params) return 'No parameters';
 
-      // Log tool execution to Linear if working on a Linear issue
+        switch (toolName) {
+          case 'searchEmbeddedCode':
+            return `Query: "${params.query}", Repository: ${params.repository}${
+              params.fileFilter ? `, Filter: ${params.fileFilter}` : ''
+            }`;
+          case 'searchLinearIssues':
+            return `Query: "${params.query}", Limit: ${params.limit || 10}`;
+          case 'getFileContent':
+          case 'readFileWithContext':
+            return `Path: ${params.path}, Repository: ${params.repository}${
+              params.startLine
+                ? `, Lines: ${params.startLine}-${params.maxLines || 'end'}`
+                : ''
+            }`;
+          case 'exaSearch':
+            return `Mode: ${params.mode}, Query: "${params.query}"${
+              params.numResults ? `, Results: ${params.numResults}` : ''
+            }`;
+          case 'createBranch':
+            return `Branch: ${params.branch}, Repository: ${params.repository}`;
+          case 'createPullRequest':
+            return `Title: "${params.title}", ${params.head} → ${params.base}`;
+          case 'editCode':
+          case 'addCode':
+          case 'removeCode':
+            return `Path: ${params.path}, Repository: ${params.repository}, Branch: ${params.branch}`;
+          default:
+            return Object.keys(params)
+              .map(
+                (key) =>
+                  `${key}: ${
+                    typeof params[key] === 'string'
+                      ? params[key].substring(0, 50)
+                      : params[key]
+                  }`
+              )
+              .join(', ');
+        }
+      };
+
+      const toolContext = getDetailedToolContext(toolName, args[0]);
+
+      // Log tool execution to Linear if working on a Linear issue (using thought for less prominent logging)
       if (isLinearIssue && linearClient) {
-        await agentActivity.action(
+        await agentActivity.thought(
           contextId,
-          `Executing ${toolName}`,
-          toolContext
+          `🔧 ${toolName}: ${toolContext}`
         );
       }
 
@@ -960,14 +1003,90 @@ ${memoryContext ? `\n## Previous Context\n${memoryContext}` : ''}
           detailedOutput = extractDetailedOutput(toolName, result, args[0]);
         }
 
-        // Log successful tool execution to Linear if working on a Linear issue
-        if (isLinearIssue && linearClient && actionTools.includes(toolName)) {
-          await agentActivity.action(
-            contextId,
-            `Completed ${toolName}`,
-            toolContext,
-            response.substring(0, 200) + (response.length > 200 ? '...' : '')
-          );
+        // Log successful tool execution with detailed results
+        if (isLinearIssue && linearClient) {
+          const getSuccessDetails = (
+            toolName: string,
+            result: any,
+            input: any
+          ): string => {
+            switch (toolName) {
+              case 'searchEmbeddedCode':
+                // Try to extract result count and key findings
+                const resultText =
+                  typeof result === 'string' ? result : JSON.stringify(result);
+                const resultMatch = resultText.match(/found (\d+) results?/i);
+                const resultCount = resultMatch ? resultMatch[1] : 'unknown';
+                const preview = resultText.substring(0, 150);
+                return `Found ${resultCount} results. Preview: ${preview}${
+                  resultText.length > 150 ? '...' : ''
+                }`;
+
+              case 'searchLinearIssues':
+                const linearResults =
+                  typeof result === 'string' ? result : JSON.stringify(result);
+                const linearPreview = linearResults.substring(0, 150);
+                return `Search completed. Results: ${linearPreview}${
+                  linearResults.length > 150 ? '...' : ''
+                }`;
+
+              case 'getFileContent':
+              case 'readFileWithContext':
+                const fileResult =
+                  typeof result === 'string' ? result : JSON.stringify(result);
+                const lines = fileResult.split('\n').length;
+                const chars = fileResult.length;
+                return `Read ${lines} lines (${chars} characters) from ${input?.path}`;
+
+              case 'exaSearch':
+                const exaResult =
+                  typeof result === 'string' ? result : JSON.stringify(result);
+                const exaPreview = exaResult.substring(0, 200);
+                return `${
+                  input?.mode
+                } search completed. Results: ${exaPreview}${
+                  exaResult.length > 200 ? '...' : ''
+                }`;
+
+              case 'createBranch':
+                return `Created branch ${input?.branch} in ${input?.repository}`;
+
+              case 'createPullRequest':
+                const prResult = detailedOutput || {};
+                return `Created PR #${
+                  prResult.pullRequestNumber || 'unknown'
+                }: ${input?.title}`;
+
+              default:
+                const defaultResult =
+                  typeof result === 'string' ? result : JSON.stringify(result);
+                return (
+                  defaultResult.substring(0, 150) +
+                  (defaultResult.length > 150 ? '...' : '')
+                );
+            }
+          };
+
+          const successDetails = getSuccessDetails(toolName, result, args[0]);
+
+          // Use thought for information gathering tools, action for actual changes
+          if (
+            searchTools.includes(toolName) ||
+            readTools.includes(toolName) ||
+            analysisTools.includes(toolName)
+          ) {
+            await agentActivity.thought(
+              contextId,
+              `✅ ${toolName}: ${successDetails}`
+            );
+          } else if (actionTools.includes(toolName)) {
+            await agentActivity.action(
+              contextId,
+              `Completed ${toolName}`,
+              toolContext,
+              successDetails
+            );
+          }
         }
 
         // Information gathering tools can continue without restrictions
@@ -996,12 +1115,31 @@ ${memoryContext ? `\n## Previous Context\n${memoryContext}` : ''}
         success = false;
         response = error instanceof Error ? error.message : String(error);
 
-        // Log failed tool execution to Linear if working on a Linear issue
+        // Log failed tool execution as thought (less prominent than error comments)
         if (isLinearIssue && linearClient) {
-          await agentActivity.error(
-            contextId,
-            `Failed to execute ${toolName}: ${response}`
-          );
+          const getFailureContext = (
+            toolName: string,
+            error: string,
+            input: any
+          ): string => {
+            switch (toolName) {
+              case 'searchEmbeddedCode':
+                return `Search failed for "${input?.query}" in ${input?.repository}: ${error}`;
+              case 'editCode':
+                return `Code edit failed in ${input?.path}: ${error}`;
+              case 'createPullRequest':
+                return `PR creation failed (${input?.head} → ${input?.base}): ${error}`;
+              case 'createBranch':
+                return `Branch creation failed for ${input?.branch}: ${error}`;
+              default:
+                return `${toolName} failed: ${error}`;
+            }
+          };
+
+          const failureContext = getFailureContext(toolName, response, args[0]);
+
+          // Use thought instead of error for less prominent logging
+          await agentActivity.thought(contextId, `❌ ${failureContext}`);
         }
 
         // Track failed tool usage
