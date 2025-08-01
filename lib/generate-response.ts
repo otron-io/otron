@@ -695,6 +695,10 @@ For coding tasks, gather the information you need to understand the problem full
 
 ## File Reading
 - **getRawFileContent**: The primary tool for reading files. Gets raw, unformatted source code with optional line ranges (max 200 lines). Perfect for both understanding code and preparing for edits
+  - Use startLine=1, endLine=0 to read from beginning (up to 200 lines)
+  - Use startLine=50, endLine=0 to read from line 50 onwards (up to 200 lines)  
+  - Use startLine=10, endLine=50 to read specific range (lines 10-50)
+  - **Important**: Always check the totalLines in the response before requesting specific ranges
 - **editCode**: ALWAYS use getRawFileContent first to get the exact code you want to replace. Use the raw content directly as oldCode parameter
 
 ## Memory & Context

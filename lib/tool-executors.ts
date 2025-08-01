@@ -2646,15 +2646,37 @@ export const executeGetRawFileContent = async (
 
     const totalLines = allLines.length;
 
-    // Calculate actual end line
-    let actualEndLine =
-      normalizedEndLine || Math.min(startLine + 199, totalLines); // Max 200 lines
-    if (actualEndLine > totalLines) actualEndLine = totalLines;
-    if (actualEndLine - startLine + 1 > 200) {
-      actualEndLine = startLine + 199; // Enforce max 200 lines
+    // Check if startLine is beyond the file
+    if (startLine > totalLines) {
+      return {
+        content: '',
+        startLine,
+        endLine: startLine,
+        totalLines,
+        message: `Start line ${startLine} is beyond file end (${totalLines} lines). File has no content at requested range.`,
+      };
     }
 
-    // Extract the requested range
+    // Calculate actual end line
+    let actualEndLine: number;
+    if (normalizedEndLine) {
+      // User specified an end line
+      actualEndLine = Math.min(normalizedEndLine, totalLines);
+      // Ensure we don't exceed 200 lines
+      if (actualEndLine - startLine + 1 > 200) {
+        actualEndLine = startLine + 199;
+      }
+    } else {
+      // No end line specified, read up to 200 lines or end of file
+      actualEndLine = Math.min(startLine + 199, totalLines);
+    }
+
+    // Ensure endLine >= startLine
+    if (actualEndLine < startLine) {
+      actualEndLine = startLine;
+    }
+
+    // Extract the requested range (slice uses 0-based indexing)
     const requestedLines = allLines.slice(startLine - 1, actualEndLine);
     const rawContent = requestedLines.join('\n');
 
@@ -2671,8 +2693,55 @@ export const executeGetRawFileContent = async (
         }`
       );
 
-      // Create detailed markdown content with proper formatting
-      const markdownContent = `## File Content: \`${path}\`
+      // Get proper file extension for syntax highlighting
+      const getFileExtension = (filePath: string): string => {
+        const ext = filePath.split('.').pop()?.toLowerCase();
+        const extensionMap: { [key: string]: string } = {
+          ts: 'typescript',
+          tsx: 'typescript',
+          js: 'javascript',
+          jsx: 'javascript',
+          py: 'python',
+          java: 'java',
+          cpp: 'cpp',
+          c: 'c',
+          h: 'c',
+          cs: 'csharp',
+          php: 'php',
+          rb: 'ruby',
+          go: 'go',
+          rs: 'rust',
+          swift: 'swift',
+          kt: 'kotlin',
+          dart: 'dart',
+          html: 'html',
+          css: 'css',
+          scss: 'scss',
+          sass: 'sass',
+          less: 'less',
+          json: 'json',
+          xml: 'xml',
+          yaml: 'yaml',
+          yml: 'yaml',
+          md: 'markdown',
+          sh: 'bash',
+          bash: 'bash',
+          zsh: 'bash',
+          fish: 'bash',
+          ps1: 'powershell',
+          sql: 'sql',
+          graphql: 'graphql',
+          gql: 'graphql',
+          dockerfile: 'dockerfile',
+          toml: 'toml',
+          ini: 'ini',
+        };
+        return extensionMap[ext || ''] || 'text';
+      };
+
+      // Create detailed markdown content with proper syntax highlighting
+      const markdownContent = `## 📄 File Content: \`${path}\`
+
 **Repository:** \`${repository}\`${
         branch && branch.trim()
           ? `  
@@ -2680,9 +2749,10 @@ export const executeGetRawFileContent = async (
           : ''
       }  
 **Lines:** ${startLine}-${actualEndLine} of ${totalLines}  
-**Size:** ${rawContent.length} characters
+**Size:** ${rawContent.length} characters  
+**Range:** ${actualEndLine - startLine + 1} lines returned
 
-\`\`\`typescript
+\`\`\`${getFileExtension(path)}
 ${rawContent}
 \`\`\``;
 
@@ -2690,6 +2760,17 @@ ${rawContent}
     }
 
     updateStatus?.('Raw file content retrieved successfully');
+
+    // Debug logging for range issues
+    console.log(`📊 getRawFileContent range calculation:`, {
+      requestedStart: startLine,
+      requestedEnd: normalizedEndLine || 'auto',
+      actualStart: startLine,
+      actualEnd: actualEndLine,
+      totalLines,
+      linesReturned: actualEndLine - startLine + 1,
+      contentLength: rawContent.length,
+    });
 
     return {
       content: rawContent,
