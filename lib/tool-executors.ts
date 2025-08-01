@@ -635,13 +635,13 @@ export const executeSetPointEstimate = async (
 // GitHub tool execution functions
 export const executeGetFileContent = async (
   {
-    path,
+    file_path,
     repository,
     startLine,
     maxLines,
     branch,
   }: {
-    path: string;
+    file_path: string;
     repository: string;
     startLine: number;
     maxLines: number;
@@ -649,10 +649,10 @@ export const executeGetFileContent = async (
   },
   updateStatus?: (status: string) => void
 ) => {
-  updateStatus?.(`is getting content for ${path}...`);
+  updateStatus?.(`is getting content for ${file_path}...`);
 
   const content = await githubUtils.getFileContent(
-    path,
+    file_path,
     repository,
     startLine === 0 ? undefined : startLine,
     maxLines === 0 ? undefined : maxLines,
@@ -702,13 +702,13 @@ export const executeCreateBranch = async (
 
 export const executeCreateFile = async (
   {
-    path,
+    file_path,
     content,
     message,
     repository,
     branch,
   }: {
-    path: string;
+    file_path: string;
     content: string;
     message: string;
     repository: string;
@@ -717,24 +717,24 @@ export const executeCreateFile = async (
   updateStatus?: (status: string) => void
 ) => {
   try {
-    updateStatus?.(`Creating file ${path}...`);
+    updateStatus?.(`Creating file ${file_path}...`);
 
     // Extract Linear issue ID from branch name for logging
     const issueId = extractLinearIssueFromBranch(branch);
     if (issueId) {
       await agentActivity.thought(
         issueId,
-        `💭 File creation strategy: Creating ${path} with ${content.length} characters in ${repository}:${branch}. Commit message: "${message}"`
+        `💭 File creation strategy: Creating ${file_path} with ${content.length} characters in ${repository}:${branch}. Commit message: "${message}"`
       );
       await agentActivity.action(
         issueId,
         'Creating file',
-        `${path} in ${repository}:${branch}`
+        `${file_path} in ${repository}:${branch}`
       );
     }
 
     const result = await githubUtils.createOrUpdateFile(
-      path,
+      file_path,
       content,
       message,
       repository,
@@ -745,7 +745,7 @@ export const executeCreateFile = async (
       await agentActivity.action(
         issueId,
         'Created file',
-        `${path} in ${repository}:${branch}`,
+        `${file_path} in ${repository}:${branch}`,
         `File created successfully (${content.length} characters)`
       );
     }
@@ -756,7 +756,7 @@ export const executeCreateFile = async (
     if (issueId) {
       await agentActivity.error(
         issueId,
-        `Failed to create file ${path}: ${
+        `Failed to create file ${file_path}: ${
           error instanceof Error ? error.message : String(error)
         }`
       );
@@ -767,24 +767,26 @@ export const executeCreateFile = async (
 
 export const executeDeleteFile = async (
   {
-    path,
+    file_path,
     message,
     repository,
     branch,
   }: {
-    path: string;
+    file_path: string;
     message: string;
     repository: string;
     branch: string;
   },
   updateStatus?: (status: string) => void
 ) => {
-  updateStatus?.(`is deleting file ${path} from ${repository}/${branch}...`);
+  updateStatus?.(
+    `is deleting file ${file_path} from ${repository}/${branch}...`
+  );
 
-  await githubUtils.deleteFile(path, message, repository, branch);
+  await githubUtils.deleteFile(file_path, message, repository, branch);
   return {
     success: true,
-    message: `Deleted file ${path} from ${repository}/${branch}`,
+    message: `Deleted file ${file_path} from ${repository}/${branch}`,
   };
 };
 
@@ -953,7 +955,7 @@ export const executeGetDirectoryStructure = async (
           structure: [
             {
               name: `Directory not found: ${directoryPath || 'root'}`,
-              path: directoryPath || '',
+              file_path: directoryPath || '',
               type: 'file' as const,
             },
           ],
@@ -969,7 +971,7 @@ export const executeGetDirectoryStructure = async (
       structure: [
         {
           name: 'Error retrieving directory structure',
-          path: directoryPath || '',
+          file_path: directoryPath || '',
           type: 'file' as const,
         },
       ],
@@ -1476,7 +1478,7 @@ export const executeSearchEmbeddedCode = async (
 };
 
 export const executeGetRepositoryStructure = async (
-  { repository, path }: { repository: string; path?: string },
+  { repository, file_path }: { repository: string; file_path?: string },
   updateStatus?: (status: string) => void
 ) => {
   try {
@@ -1485,14 +1487,14 @@ export const executeGetRepositoryStructure = async (
     // Use the direct GitHub utils approach
     const structure = await githubUtils.getDirectoryStructure(
       repository,
-      path || ''
+      file_path || ''
     );
 
     return {
       success: true,
       structure: structure,
       message: `Retrieved structure for ${repository}${
-        path ? ` at path ${path}` : ''
+        file_path ? ` at file_path ${file_path}` : ''
       }`,
     };
   } catch (error) {
@@ -1562,80 +1564,85 @@ export const executeRespondToSlackInteraction = async (
   }
 };
 
-// Simplified GitHub file editing tool execution functions
+// Foolproof file editing tool
 export const executeEditCode = async (
   {
-    path,
+    file_path,
     repository,
     branch,
-    oldCode,
-    newCode,
-    message,
+    old_string,
+    new_string,
+    replace_all = false,
+    commit_message,
   }: {
-    path: string;
+    file_path: string;
     repository: string;
-    branch: string;
-    oldCode: string;
-    newCode: string;
-    message: string;
+    branch?: string;
+    old_string: string;
+    new_string: string;
+    replace_all?: boolean;
+    commit_message: string;
   },
   updateStatus?: (status: string) => void
 ) => {
-  console.log('🔧 executeEditCode CALLED');
+  console.log('🔧 executeEditCode (foolproof interface)');
   console.log('Parameters:', {
-    path,
+    file_path,
     repository,
     branch,
-    oldCodeLength: oldCode.length,
-    newCodeLength: newCode.length,
-    message,
+    old_string_length: old_string.length,
+    new_string_length: new_string.length,
+    replace_all,
+    commit_message,
   });
 
-  // 🚨 EMERGENCY CIRCUIT BREAKER FOR README.md
-  if (path.toLowerCase().includes('readme') && oldCode.length > 200) {
-    throw new Error(
-      `🚨 EMERGENCY PROTECTION: README.md edits are limited to 200 characters maximum to prevent documentation loss. Your oldCode is ${oldCode.length} characters. Please make smaller, more targeted edits to README files.`
-    );
-  }
-
   try {
-    updateStatus?.(`is editing code in ${path}...`);
+    // Validate input parameters
+    if (old_string === new_string) {
+      throw new Error('old_string and new_string are exactly the same');
+    }
+
+    if (!old_string.trim()) {
+      throw new Error('old_string cannot be empty');
+    }
+
+    updateStatus?.(`Editing ${file_path}...`);
 
     // Extract Linear issue ID and add strategic thinking logs
-    const issueId = extractLinearIssueFromBranch(branch);
+    const issueId = extractLinearIssueFromBranch(branch || '');
     if (issueId) {
       await agentActivity.thought(
         issueId,
-        `🧠 Code edit analysis: Modifying ${path} in ${repository}:${branch}. Replacing ${
-          oldCode.length
-        } chars with ${newCode.length} chars. Change impact: ${
-          newCode.length > oldCode.length ? '+' : ''
-        }${newCode.length - oldCode.length} characters.`
+        `🧠 Code edit analysis: Modifying ${file_path} in ${repository}:${branch}. Replacing ${
+          old_string.length
+        } chars with ${new_string.length} chars. Change impact: ${
+          new_string.length > old_string.length ? '+' : ''
+        }${new_string.length - old_string.length} characters.`
       );
       await agentActivity.thought(
         issueId,
-        `🔍 Edit context: "${oldCode.substring(0, 100)}${
-          oldCode.length > 100 ? '...' : ''
-        }" → "${newCode.substring(0, 100)}${
-          newCode.length > 100 ? '...' : ''
-        }" | Commit: "${message}"`
+        `🔍 Edit context: "${old_string.substring(0, 100)}${
+          old_string.length > 100 ? '...' : ''
+        }" → "${new_string.substring(0, 100)}${
+          new_string.length > 100 ? '...' : ''
+        }" | Commit: "${commit_message}"`
       );
     }
 
     // CRITICAL SAFETY CHECKS
 
     // 1. Prevent massive deletions
-    if (oldCode.length > 1000) {
+    if (old_string.length > 1000) {
       throw new Error(
-        `SAFETY CHECK FAILED: oldCode is too large (${oldCode.length} characters). For safety, this tool only allows replacing content up to 1000 characters. Please use smaller, more specific code blocks.`
+        `SAFETY CHECK FAILED: old_string is too large (${old_string.length} characters). For safety, this tool only allows replacing content up to 1000 characters. Please use smaller, more specific code blocks.`
       );
     }
 
     // 2. Prevent replacing more than 50 lines
-    const oldCodeLines = oldCode.split('\n').length;
-    if (oldCodeLines > 50) {
+    const old_stringLines = old_string.split('\n').length;
+    if (old_stringLines > 50) {
       throw new Error(
-        `SAFETY CHECK FAILED: oldCode contains ${oldCodeLines} lines. For safety, this tool only allows replacing up to 50 lines at once. Please use smaller, more specific code blocks.`
+        `SAFETY CHECK FAILED: old_string contains ${old_stringLines} lines. For safety, this tool only allows replacing up to 50 lines at once. Please use smaller, more specific code blocks.`
       );
     }
 
@@ -1647,9 +1654,9 @@ export const executeEditCode = async (
     ];
 
     for (const pattern of suspiciousPatterns) {
-      if (pattern.test(oldCode)) {
+      if (pattern.test(old_string)) {
         console.warn(
-          '⚠️ WARNING: oldCode contains patterns that might indicate a large text block'
+          '⚠️ WARNING: old_string contains patterns that might indicate a large text block'
         );
       }
     }
@@ -1657,7 +1664,7 @@ export const executeEditCode = async (
     // Get the current file content
     const { getFileContent } = await import('./github/github-utils.js');
     const currentContent = await getFileContent(
-      path,
+      file_path,
       repository,
       1,
       10000,
@@ -1682,7 +1689,7 @@ export const executeEditCode = async (
     } | null = null;
 
     // Strategy 1: Exact match
-    if (content.includes(oldCode)) {
+    if (content.includes(old_string)) {
       matchInfo = { strategy: 'exact', exact: true };
       console.log('✅ Using exact matching for editCode');
     }
@@ -1691,7 +1698,7 @@ export const executeEditCode = async (
       const normalizedContent = content
         .replace(/\r\n/g, '\n')
         .replace(/\r/g, '\n');
-      const normalizedOldCode = oldCode
+      const normalizedOldCode = old_string
         .replace(/\r\n/g, '\n')
         .replace(/\r/g, '\n');
 
@@ -1802,46 +1809,46 @@ export const executeEditCode = async (
     if (!matchInfo) {
       console.error('❌ EditCode matching failed. Comprehensive debugging:');
       console.error('='.repeat(80));
-      console.error('File path:', path);
+      console.error('File file_path:', file_path);
       console.error('Repository:', repository);
       console.error('Branch:', branch);
-      console.error('Old code length:', oldCode.length);
+      console.error('Old code length:', old_string.length);
       console.error('File content length:', content.length);
 
       // Character-by-character analysis of differences
       console.error('\n📝 OLD CODE (first 300 chars):');
-      console.error(JSON.stringify(oldCode.substring(0, 300)));
+      console.error(JSON.stringify(old_string.substring(0, 300)));
       console.error('\n📄 FILE CONTENT (first 300 chars):');
       console.error(JSON.stringify(content.substring(0, 300)));
 
       // Line-by-line comparison
-      const oldCodeLines = oldCode.split('\n');
+      const old_stringLines = old_string.split('\n');
       const contentLines = content.split('\n');
 
       console.error('\n📊 Line comparison:');
-      console.error(`Old code lines: ${oldCodeLines.length}`);
+      console.error(`Old code lines: ${old_stringLines.length}`);
       console.error(`File content lines: ${contentLines.length}`);
 
       // Check for common issues
       console.error('\n🔍 Common issues check:');
       console.error(
-        `Old code starts with BOM: ${oldCode.charCodeAt(0) === 0xfeff}`
+        `Old code starts with BOM: ${old_string.charCodeAt(0) === 0xfeff}`
       );
       console.error(
         `File content starts with BOM: ${content.charCodeAt(0) === 0xfeff}`
       );
-      console.error(`Old code has \\r\\n: ${oldCode.includes('\\r\\n')}`);
+      console.error(`Old code has \\r\\n: ${old_string.includes('\\r\\n')}`);
       console.error(`File content has \\r\\n: ${content.includes('\\r\\n')}`);
-      console.error(`Old code has tabs: ${oldCode.includes('\\t')}`);
+      console.error(`Old code has tabs: ${old_string.includes('\\t')}`);
       console.error(`File content has tabs: ${content.includes('\\t')}`);
 
       // Check if old code looks like formatted readFileWithContext output
       const hasFileHeader =
-        oldCode.startsWith('File: ') || oldCode.includes('Lines ');
+        old_string.startsWith('File: ') || old_string.includes('Lines ');
       const hasContextHeaders =
-        oldCode.includes('Context:') ||
-        oldCode.includes('Before:') ||
-        oldCode.includes('Target:');
+        old_string.includes('Context:') ||
+        old_string.includes('Before:') ||
+        old_string.includes('Target:');
 
       if (hasFileHeader || hasContextHeaders) {
         console.error('\n⚠️  POTENTIAL ISSUE DETECTED:');
@@ -1849,17 +1856,17 @@ export const executeEditCode = async (
           'Old code appears to be formatted output from readFileWithContext tool!'
         );
         console.error(
-          'This suggests the agent is using formatted context as oldCode instead of raw code.'
+          'This suggests the agent is using formatted context as old_string instead of raw code.'
         );
 
         throw new Error(
-          `❌ AGENT ERROR: The oldCode parameter appears to be formatted output from readFileWithContext tool, not raw source code. The agent should extract the actual code content, not use the formatted summary. Please use the raw source code that needs to be replaced.`
+          `❌ AGENT ERROR: The old_string parameter appears to be formatted output from readFileWithContext tool, not raw source code. The agent should extract the actual code content, not use the formatted summary. Please use the raw source code that needs to be replaced.`
         );
       }
 
       // Find the closest matching lines
-      const firstLine = oldCodeLines[0]?.trim();
-      const lastLine = oldCodeLines[oldCodeLines.length - 1]?.trim();
+      const firstLine = old_stringLines[0]?.trim();
+      const lastLine = old_stringLines[old_stringLines.length - 1]?.trim();
 
       const firstLineMatch = firstLine
         ? contentLines.findIndex((line) => line.trim().includes(firstLine))
@@ -1896,7 +1903,7 @@ export const executeEditCode = async (
           }
 
           throw new Error(
-            `Code pattern found but exact match failed in ${path}. Found first line at ${
+            `Code pattern found but exact match failed in ${file_path}. Found first line at ${
               firstLineMatch + 1
             } and last line at ${
               lastLineMatch + 1
@@ -1904,7 +1911,7 @@ export const executeEditCode = async (
           );
         } else {
           throw new Error(
-            `Partial code match found in ${path}. Found first line "${firstLine}" at line ${
+            `Partial code match found in ${file_path}. Found first line "${firstLine}" at line ${
               firstLineMatch + 1
             } but couldn't locate the full block. Try using a smaller, more specific code chunk.`
           );
@@ -1913,7 +1920,7 @@ export const executeEditCode = async (
 
       console.error('='.repeat(80));
       throw new Error(
-        `Old code not found in ${path}. The file content may have changed since you last read it. Check the comprehensive debugging output above for details.`
+        `Old code not found in ${file_path}. The file content may have changed since you last read it. Check the comprehensive debugging output above for details.`
       );
     }
 
@@ -1926,24 +1933,24 @@ export const executeEditCode = async (
       // For exact and normalized matches, use a simplified approach
       if (matchInfo.strategy === 'exact') {
         // Simple exact replacement
-        occurrences = content.split(oldCode).length - 1;
+        occurrences = content.split(old_string).length - 1;
         if (occurrences > 1) {
           throw new Error(
-            `Old code appears ${occurrences} times in ${path}. Please provide more specific code to avoid ambiguity.`
+            `Old code appears ${occurrences} times in ${file_path}. Please provide more specific code to avoid ambiguity.`
           );
         }
-        afterReplacement = content.replace(oldCode, newCode);
-        replacedCode = oldCode;
+        afterReplacement = content.replace(old_string, new_string);
+        replacedCode = old_string;
       } else {
         // For normalized matches, apply normalization and then replace
         let normalizedContent = content;
-        let normalizedOldCode = oldCode;
+        let normalizedOldCode = old_string;
 
         if (matchInfo.strategy === 'line-endings') {
           normalizedContent = content
             .replace(/\r\n/g, '\n')
             .replace(/\r/g, '\n');
-          normalizedOldCode = oldCode
+          normalizedOldCode = old_string
             .replace(/\r\n/g, '\n')
             .replace(/\r/g, '\n');
         } else if (matchInfo.strategy === 'whitespace') {
@@ -1951,7 +1958,7 @@ export const executeEditCode = async (
             .replace(/\r\n/g, '\n')
             .replace(/\r/g, '\n')
             .replace(/\t/g, '  ');
-          normalizedOldCode = oldCode
+          normalizedOldCode = old_string
             .replace(/\r\n/g, '\n')
             .replace(/\r/g, '\n')
             .replace(/\t/g, '  ');
@@ -1961,21 +1968,21 @@ export const executeEditCode = async (
         occurrences = normalizedContent.split(normalizedOldCode).length - 1;
         if (occurrences > 1) {
           throw new Error(
-            `Old code appears ${occurrences} times in ${path} after normalization. Please provide more specific code to avoid ambiguity.`
+            `Old code appears ${occurrences} times in ${file_path} after normalization. Please provide more specific code to avoid ambiguity.`
           );
         }
 
         // Replace in normalized content, then use the result
         afterReplacement = normalizedContent.replace(
           normalizedOldCode,
-          newCode
+          new_string
         );
         replacedCode = normalizedOldCode;
 
         console.log('📝 Using normalized matching - applied replacement:', {
           strategy: matchInfo.strategy,
           replacedLength: normalizedOldCode.length,
-          newLength: newCode.length,
+          newLength: new_string.length,
         });
       }
     } else {
@@ -1985,20 +1992,20 @@ export const executeEditCode = async (
         matchInfo.endIndex === undefined ||
         !matchInfo.originalCode
       ) {
-        throw new Error(`Invalid fuzzy match data for ${path}`);
+        throw new Error(`Invalid fuzzy match data for ${file_path}`);
       }
 
       replacedCode = matchInfo.originalCode;
       afterReplacement =
         content.slice(0, matchInfo.startIndex) +
-        newCode +
+        new_string +
         content.slice(matchInfo.endIndex);
       occurrences = 1;
 
       console.log('📝 Using fuzzy matching - replaced exact content:', {
         strategy: matchInfo.strategy,
         originalLength: matchInfo.originalCode.length,
-        newLength: newCode.length,
+        newLength: new_string.length,
         replacedPreview:
           replacedCode.substring(0, 50) +
           (replacedCode.length > 50 ? '...' : ''),
@@ -2017,7 +2024,7 @@ export const executeEditCode = async (
           deletionRatio * 100
         )}% of the file content (${
           originalLength - newLength
-        } characters). This seems like an unintended large deletion. Please verify your oldCode parameter is correct and specific.`
+        } characters). This seems like an unintended large deletion. Please verify your old_string parameter is correct and specific.`
       );
     }
 
@@ -2032,8 +2039,8 @@ export const executeEditCode = async (
 
     // 🚨 ADDITIONAL EMERGENCY CHECK FOR DOCUMENTATION FILES
     if (
-      path.toLowerCase().includes('readme') ||
-      path.toLowerCase().includes('.md')
+      file_path.toLowerCase().includes('readme') ||
+      file_path.toLowerCase().includes('.md')
     ) {
       if (Math.abs(originalLength - newLength) > 500) {
         throw new Error(
@@ -2054,8 +2061,8 @@ export const executeEditCode = async (
       replacedCodePreview:
         replacedCode.substring(0, 100) +
         (replacedCode.length > 100 ? '...' : ''),
-      newCodePreview:
-        newCode.substring(0, 100) + (newCode.length > 100 ? '...' : ''),
+      new_stringPreview:
+        new_string.substring(0, 100) + (new_string.length > 100 ? '...' : ''),
     });
 
     // Replace the old code with the new code
@@ -2063,13 +2070,19 @@ export const executeEditCode = async (
 
     // Update the file
     const { createOrUpdateFile } = await import('./github/github-utils.js');
-    await createOrUpdateFile(path, updatedContent, message, repository, branch);
+    await createOrUpdateFile(
+      file_path,
+      updatedContent,
+      commit_message,
+      repository,
+      branch || 'main'
+    );
 
     console.log('✅ executeEditCode completed successfully');
 
     return {
       success: true,
-      message: `Successfully replaced code in ${path} using ${matchInfo.strategy} matching (${replacedCode.length} → ${newCode.length} characters)`,
+      message: `Successfully replaced code in ${file_path} using ${matchInfo.strategy} matching (${replacedCode.length} → ${new_string.length} characters)`,
     };
   } catch (error) {
     console.error('❌ Error in executeEditCode:', error);
@@ -2079,18 +2092,18 @@ export const executeEditCode = async (
 
 export const executeAddCode = async (
   {
-    path,
+    file_path,
     repository,
     branch,
-    newCode,
+    new_string,
     position,
     context,
     message,
   }: {
-    path: string;
+    file_path: string;
     repository: string;
     branch: string;
-    newCode: string;
+    new_string: string;
     position: 'start' | 'end' | 'after' | 'before';
     context: string;
     message: string;
@@ -2099,36 +2112,36 @@ export const executeAddCode = async (
 ) => {
   console.log('🔧 executeAddCode CALLED');
   console.log('Parameters:', {
-    path,
+    file_path,
     repository,
     branch,
-    newCodeLength: newCode.length,
+    new_stringLength: new_string.length,
     position,
     contextLength: context.length,
     message,
   });
 
   try {
-    updateStatus?.(`is adding code to ${path}...`);
+    updateStatus?.(`is adding code to ${file_path}...`);
 
     // SAFETY CHECKS
-    if (newCode.length > 2000) {
+    if (new_string.length > 2000) {
       throw new Error(
-        `SAFETY CHECK FAILED: newCode is too large (${newCode.length} characters). For safety, this tool only allows adding up to 2000 characters at once.`
+        `SAFETY CHECK FAILED: new_string is too large (${new_string.length} characters). For safety, this tool only allows adding up to 2000 characters at once.`
       );
     }
 
-    const newCodeLines = newCode.split('\n').length;
-    if (newCodeLines > 100) {
+    const new_stringLines = new_string.split('\n').length;
+    if (new_stringLines > 100) {
       throw new Error(
-        `SAFETY CHECK FAILED: newCode contains ${newCodeLines} lines. For safety, this tool only allows adding up to 100 lines at once.`
+        `SAFETY CHECK FAILED: new_string contains ${new_stringLines} lines. For safety, this tool only allows adding up to 100 lines at once.`
       );
     }
 
     // Get the current file content
     const { getFileContent } = await import('./github/github-utils.js');
     const currentContent = await getFileContent(
-      path,
+      file_path,
       repository,
       1,
       10000,
@@ -2147,11 +2160,11 @@ export const executeAddCode = async (
 
     switch (position) {
       case 'start':
-        updatedContent = newCode + '\n' + content;
+        updatedContent = new_string + '\n' + content;
         break;
 
       case 'end':
-        updatedContent = content + '\n' + newCode;
+        updatedContent = content + '\n' + new_string;
         break;
 
       case 'after':
@@ -2168,16 +2181,16 @@ export const executeAddCode = async (
 
         if (!content.includes(context)) {
           throw new Error(
-            `Context not found in ${path}: ${context.substring(0, 100)}...`
+            `Context not found in ${file_path}: ${context.substring(0, 100)}...`
           );
         }
         const afterOccurrences = content.split(context).length - 1;
         if (afterOccurrences > 1) {
           throw new Error(
-            `Context appears ${afterOccurrences} times in ${path}. Please provide more specific context.`
+            `Context appears ${afterOccurrences} times in ${file_path}. Please provide more specific context.`
           );
         }
-        updatedContent = content.replace(context, context + '\n' + newCode);
+        updatedContent = content.replace(context, context + '\n' + new_string);
         break;
 
       case 'before':
@@ -2194,16 +2207,16 @@ export const executeAddCode = async (
 
         if (!content.includes(context)) {
           throw new Error(
-            `Context not found in ${path}: ${context.substring(0, 100)}...`
+            `Context not found in ${file_path}: ${context.substring(0, 100)}...`
           );
         }
         const beforeOccurrences = content.split(context).length - 1;
         if (beforeOccurrences > 1) {
           throw new Error(
-            `Context appears ${beforeOccurrences} times in ${path}. Please provide more specific context.`
+            `Context appears ${beforeOccurrences} times in ${file_path}. Please provide more specific context.`
           );
         }
-        updatedContent = content.replace(context, newCode + '\n' + context);
+        updatedContent = content.replace(context, new_string + '\n' + context);
         break;
 
       default:
@@ -2225,8 +2238,8 @@ export const executeAddCode = async (
       originalLength,
       newLength,
       increase,
-      newCodePreview:
-        newCode.substring(0, 100) + (newCode.length > 100 ? '...' : ''),
+      new_stringPreview:
+        new_string.substring(0, 100) + (new_string.length > 100 ? '...' : ''),
       position,
       contextPreview: context
         ? context.substring(0, 50) + (context.length > 50 ? '...' : '')
@@ -2235,13 +2248,19 @@ export const executeAddCode = async (
 
     // Update the file
     const { createOrUpdateFile } = await import('./github/github-utils.js');
-    await createOrUpdateFile(path, updatedContent, message, repository, branch);
+    await createOrUpdateFile(
+      file_path,
+      updatedContent,
+      message,
+      repository,
+      branch
+    );
 
     console.log('✅ executeAddCode completed successfully');
 
     return {
       success: true,
-      message: `Successfully added code to ${path} (${position}${
+      message: `Successfully added code to ${file_path} (${position}${
         context ? ' context' : ''
       }) - ${increase} characters added`,
     };
@@ -2253,13 +2272,13 @@ export const executeAddCode = async (
 
 export const executeRemoveCode = async (
   {
-    path,
+    file_path,
     repository,
     branch,
     codeToRemove,
     message,
   }: {
-    path: string;
+    file_path: string;
     repository: string;
     branch: string;
     codeToRemove: string;
@@ -2269,7 +2288,7 @@ export const executeRemoveCode = async (
 ) => {
   console.log('🔧 executeRemoveCode CALLED');
   console.log('Parameters:', {
-    path,
+    file_path,
     repository,
     branch,
     codeToRemoveLength: codeToRemove.length,
@@ -2277,7 +2296,7 @@ export const executeRemoveCode = async (
   });
 
   try {
-    updateStatus?.(`is removing code from ${path}...`);
+    updateStatus?.(`is removing code from ${file_path}...`);
 
     // CRITICAL SAFETY CHECKS
     if (codeToRemove.length > 1000) {
@@ -2296,7 +2315,7 @@ export const executeRemoveCode = async (
     // Get the current file content
     const { getFileContent } = await import('./github/github-utils.js');
     const currentContent = await getFileContent(
-      path,
+      file_path,
       repository,
       1,
       10000,
@@ -2314,7 +2333,7 @@ export const executeRemoveCode = async (
     // Check if the code to remove exists in the file
     if (!content.includes(codeToRemove)) {
       throw new Error(
-        `Code to remove not found in ${path}. The file content may have changed since you last read it.`
+        `Code to remove not found in ${file_path}. The file content may have changed since you last read it.`
       );
     }
 
@@ -2322,7 +2341,7 @@ export const executeRemoveCode = async (
     const occurrences = content.split(codeToRemove).length - 1;
     if (occurrences > 1) {
       throw new Error(
-        `Code to remove appears ${occurrences} times in ${path}. Please provide more specific code to avoid ambiguity.`
+        `Code to remove appears ${occurrences} times in ${file_path}. Please provide more specific code to avoid ambiguity.`
       );
     }
 
@@ -2358,13 +2377,19 @@ export const executeRemoveCode = async (
 
     // Update the file
     const { createOrUpdateFile } = await import('./github/github-utils.js');
-    await createOrUpdateFile(path, updatedContent, message, repository, branch);
+    await createOrUpdateFile(
+      file_path,
+      updatedContent,
+      message,
+      repository,
+      branch
+    );
 
     console.log('✅ executeRemoveCode completed successfully');
 
     return {
       success: true,
-      message: `Successfully removed code from ${path} (${codeToRemove.length} characters removed)`,
+      message: `Successfully removed code from ${file_path} (${codeToRemove.length} characters removed)`,
     };
   } catch (error) {
     console.error('❌ Error in executeRemoveCode:', error);
@@ -2375,14 +2400,14 @@ export const executeRemoveCode = async (
 // 🚨 ULTRA-SAFE URL EDITING TOOL FOR DOCUMENTATION
 export const executeEditUrl = async (
   {
-    path,
+    file_path,
     repository,
     branch,
     oldUrl,
     newUrl,
     message,
   }: {
-    path: string;
+    file_path: string;
     repository: string;
     branch: string;
     oldUrl: string;
@@ -2393,7 +2418,7 @@ export const executeEditUrl = async (
 ) => {
   console.log('🔧 executeEditUrl CALLED');
   console.log('Parameters:', {
-    path,
+    file_path,
     repository,
     branch,
     oldUrlLength: oldUrl.length,
@@ -2402,7 +2427,7 @@ export const executeEditUrl = async (
   });
 
   try {
-    updateStatus?.(`is editing URL in ${path}...`);
+    updateStatus?.(`is editing URL in ${file_path}...`);
 
     // 🚨 ULTRA-STRICT SAFETY CHECKS FOR URL EDITING
 
@@ -2449,7 +2474,7 @@ export const executeEditUrl = async (
     // Get the current file content
     const { getFileContent } = await import('./github/github-utils.js');
     const currentContent = await getFileContent(
-      path,
+      file_path,
       repository,
       1,
       10000,
@@ -2467,7 +2492,7 @@ export const executeEditUrl = async (
     // Check if the old URL exists in the file
     if (!content.includes(oldUrl)) {
       throw new Error(
-        `Old URL not found in ${path}. The file content may have changed since you last read it. Looking for: ${oldUrl.substring(
+        `Old URL not found in ${file_path}. The file content may have changed since you last read it. Looking for: ${oldUrl.substring(
           0,
           200
         )}...`
@@ -2478,7 +2503,7 @@ export const executeEditUrl = async (
     const occurrences = content.split(oldUrl).length - 1;
     if (occurrences > 1) {
       throw new Error(
-        `Old URL appears ${occurrences} times in ${path}. Please provide more specific URL text to avoid ambiguity.`
+        `Old URL appears ${occurrences} times in ${file_path}. Please provide more specific URL text to avoid ambiguity.`
       );
     }
 
@@ -2511,13 +2536,19 @@ export const executeEditUrl = async (
 
     // Update the file
     const { createOrUpdateFile } = await import('./github/github-utils.js');
-    await createOrUpdateFile(path, updatedContent, message, repository, branch);
+    await createOrUpdateFile(
+      file_path,
+      updatedContent,
+      message,
+      repository,
+      branch
+    );
 
     console.log('✅ executeEditUrl completed successfully');
 
     return {
       success: true,
-      message: `Successfully updated URL in ${path} (${difference} character difference)`,
+      message: `Successfully updated URL in ${file_path} (${difference} character difference)`,
     };
   } catch (error) {
     console.error('❌ Error in executeEditUrl:', error);
@@ -2597,7 +2628,7 @@ export const executeResetBranchToHead = async (
 
 export const executeGetRawFileContent = async (
   {
-    path,
+    file_path,
     repository,
     should_read_entire_file,
     start_line_one_indexed,
@@ -2605,7 +2636,7 @@ export const executeGetRawFileContent = async (
     branch,
     sessionId,
   }: {
-    path: string;
+    file_path: string;
     repository: string;
     should_read_entire_file: boolean;
     start_line_one_indexed?: number;
@@ -2617,21 +2648,21 @@ export const executeGetRawFileContent = async (
 ) => {
   try {
     if (should_read_entire_file) {
-      updateStatus?.(`Reading entire file: ${path}`);
+      updateStatus?.(`Reading entire file: ${file_path}`);
     } else {
       updateStatus?.(
-        `Reading ${path} (lines ${start_line_one_indexed || 1}-${
+        `Reading ${file_path} (lines ${start_line_one_indexed || 1}-${
           end_line_one_indexed_inclusive || 'end'
         })`
       );
     }
 
-    // Foolproof file reading logic (like Cursor's read_file)
+    // Foolproof file reading logic
     const { getFileContent } = await import('./github/github-utils.js');
 
     // First, get file metadata to determine total lines
     const infoContent = await getFileContent(
-      path,
+      file_path,
       repository,
       1,
       1, // Just first line to get header with total lines
@@ -2648,7 +2679,7 @@ export const executeGetRawFileContent = async (
     let actualEndLine: number;
 
     if (should_read_entire_file) {
-      // Read entire file (up to 1500 lines like Cursor)
+      // Read entire file (up to 1500 lines)
       actualStartLine = 1;
       actualEndLine = Math.min(totalLines, 1500);
     } else {
@@ -2686,7 +2717,7 @@ export const executeGetRawFileContent = async (
 
     // Get the actual content for the calculated range
     const fullContent = await getFileContent(
-      path,
+      file_path,
       repository,
       actualStartLine,
       actualEndLine - actualStartLine + 1,
@@ -2709,7 +2740,7 @@ export const executeGetRawFileContent = async (
     if (issueId) {
       await agentActivity.thought(
         issueId,
-        `📄 Reading file content from \`${path}\` in \`${repository}\`${
+        `📄 Reading file content from \`${file_path}\` in \`${repository}\`${
           branch && branch.trim() ? ` (branch: ${branch})` : ''
         }`
       );
@@ -2761,7 +2792,7 @@ export const executeGetRawFileContent = async (
       };
 
       // Create detailed markdown content with proper syntax highlighting
-      const markdownContent = `## 📄 File Content: \`${path}\`
+      const markdownContent = `## 📄 File Content: \`${file_path}\`
 
 **Repository:** \`${repository}\`${
         branch && branch.trim()
@@ -2774,7 +2805,7 @@ export const executeGetRawFileContent = async (
 **Range:** ${actualEndLine - actualStartLine + 1} lines returned
 **Mode:** ${should_read_entire_file ? 'Entire file' : 'Range read'}
 
-\`\`\`${getFileExtension(path)}
+\`\`\`${getFileExtension(file_path)}
 ${rawContent}
 \`\`\``;
 
@@ -2800,7 +2831,7 @@ ${rawContent}
       startLine: actualStartLine,
       endLine: actualEndLine,
       totalLines,
-      message: `Retrieved lines ${actualStartLine}-${actualEndLine} from ${path} (${
+      message: `Retrieved lines ${actualStartLine}-${actualEndLine} from ${file_path} (${
         actualEndLine - actualStartLine + 1
       } lines, ${rawContent.length} characters)`,
     };
@@ -2815,11 +2846,11 @@ ${rawContent}
 
 export const executeAnalyzeFileStructure = async (
   {
-    path,
+    file_path,
     repository,
     branch,
   }: {
-    path: string;
+    file_path: string;
     repository: string;
     branch: string;
   },
@@ -2830,7 +2861,7 @@ export const executeAnalyzeFileStructure = async (
 
     const branchToUse = branch && branch.trim() ? branch : undefined;
     const analysis = await advancedFileReader.analyzeFileStructure(
-      path,
+      file_path,
       repository,
       branchToUse
     );
@@ -2920,7 +2951,7 @@ export const executeReadRelatedFiles = async (
 ${relatedFiles
   .map(
     (file: any) => `
-${file.relationship}: ${file.path}
+${file.relationship}: ${file.file_path}
 ${file.content.substring(0, 200)}${file.content.length > 200 ? '...' : ''}
 `
   )
@@ -2979,7 +3010,7 @@ export const executeSearchCodeWithContext = async (
 ${searchResults
   .map(
     (file: any) => `
-File: ${file.path}
+File: ${file.file_path}
 ${file.matches
   .map(
     (match: any) => `

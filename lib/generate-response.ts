@@ -694,7 +694,7 @@ For coding tasks, gather the information you need to understand the problem full
 - Always ask the user what repository they want to use if you are not sure
 
 ## File Reading
-- **getRawFileContent**: Reads file content from GitHub repositories. Uses the same interface as Cursor's read_file tool - impossible to mess up!
+- **getRawFileContent**: Reads file content from GitHub repositories. Foolproof interface that prevents range calculation errors.
 
 **Two Simple Modes:**
 1. **Entire file**: 'should_read_entire_file: true' (reads up to 1500 lines)
@@ -712,23 +712,34 @@ For coding tasks, gather the information you need to understand the problem full
 - 1500-line limit for entire file reads
 - Clear error messages if required parameters missing
 
-- **editCode**: ALWAYS use getRawFileContent first to get the exact code you want to replace. Use the raw content directly as oldCode parameter
+- **editCode**: Simple interface (file_path, old_string, new_string, replace_all). ALWAYS use getRawFileContent first to get exact content for old_string parameter
 
 ## Memory & Context
 - You have persistent memory across conversations
 - Reference previous interactions when relevant for continuity
 - Current context: ${contextId}, Session: ${sessionId || 'unknown'}
 
-## File Editing (Safety First)
-Use content-aware tools that require exact matching for safety:
-- **editCode**: Replace specific code (requires exact match, supports whitespace normalization)
-- **addCode**: Add code with position context (start/end/after/before)
-- **removeCode**: Delete specific code (requires exact match)
-- **editUrl**: Safe URL editing for documentation
+## File Editing
+- **editCode**: Simple, reliable interface for exact string replacements.
 
-**Safety guidelines**: Keep edits small (1-5 lines preferred), use exact matching, make multiple calls for complex changes. Tools have size limits and validate content before changes.
+**Parameters:**
+- 'file_path': Path to file
+- 'old_string': Text to replace (must be unique)  
+- 'new_string': Replacement text
+- 'replace_all': Replace all occurrences (boolean)
+- 'commit_message': Git commit message
 
-**When editCode fails**: If "Old code not found" error occurs, read the file again to get current exact content, or use smaller/more specific code chunks. The tool supports whitespace normalization as fallback.
+**Examples:**
+- Replace function: '{file_path: "src/app.ts", old_string: "function oldName() {", new_string: "function newName() {", replace_all: false}'
+- Replace all instances: '{old_string: "oldVar", new_string: "newVar", replace_all: true}'
+
+**Automatic Safety:**
+- Validates old_string exists and is unique (when replace_all=false)
+- Prevents identical old_string and new_string 
+- Clear error messages if text not found
+- Reliable string replacement without complex matching
+
+**Other tools**: addCode (position-based), removeCode (exact match), editUrl (documentation)
 
 ## Slack Communication
 - **Simple messages**: Use sendSlackMessage, sendChannelMessage, sendDirectMessage
@@ -2683,7 +2694,7 @@ ${params.expectedActions.map((action: string) => `• ${action}`).join('\n')}
           (params: any) => executeResetBranchToHead(params, updateStatus)
         ),
       }),
-      // Foolproof file reading tool (modeled after Cursor's read_file)
+      // Foolproof file reading tool
       getRawFileContent: tool({
         description:
           'Read file content from a GitHub repository. Returns raw, unformatted source code. Automatically handles large files by chunking into 200-line sections.',
@@ -2779,25 +2790,30 @@ ${params.expectedActions.map((action: string) => `• ${action}`).join('\n')}
           (params: any) => executeReadRelatedFiles(params, updateStatus)
         ),
       }),
-      // GitHub file editing tools - simplified and content-aware
+      // Foolproof file editing tool
       editCode: tool({
         description:
-          'Replace specific existing code with new code. Always requires exact content matching for safety.',
+          'Performs exact string replacements in files. Simple, reliable interface that prevents common editing errors.',
         parameters: z.object({
-          path: z.string().describe('The file path in the repository'),
+          file_path: z.string().describe('The path to the file to modify'),
           repository: z
             .string()
             .describe('The repository in format "owner/repo"'),
-          branch: z.string().describe('The branch to edit'),
-          oldCode: z
+          branch: z
+            .string()
+            .describe('Branch to edit. Leave empty to use default branch'),
+          old_string: z
+            .string()
+            .describe('The text to replace (must be unique in the file)'),
+          new_string: z
             .string()
             .describe(
-              'The exact code content to replace (must match exactly for safety)'
+              'The text to replace it with (must be different from old_string)'
             ),
-          newCode: z
-            .string()
-            .describe('The new code content to replace it with'),
-          message: z.string().describe('Commit message for the change'),
+          replace_all: z
+            .boolean()
+            .describe('Replace all occurrences of old_string (default false)'),
+          commit_message: z.string().describe('Commit message for the change'),
         }),
         execute: createMemoryAwareToolExecutor('editCode', (params: any) =>
           executeEditCode(params, updateStatus)
