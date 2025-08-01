@@ -388,6 +388,32 @@ export const createPullRequest = async (
       console.warn(`Warning when checking branch ${head}: ${error.message}`);
     }
 
+    // Check if there are commits between base and head before creating PR
+    try {
+      const comparison = await octokit.repos.compareCommits({
+        owner,
+        repo,
+        base,
+        head,
+      });
+
+      if (comparison.data.commits.length === 0) {
+        throw new Error(
+          `No commits found between ${base} and ${head}. You need to make commits to the ${head} branch before creating a pull request. This usually means the code changes failed to be committed properly.`
+        );
+      }
+
+      console.log(
+        `Found ${comparison.data.commits.length} commits between ${base} and ${head}`
+      );
+    } catch (error: any) {
+      if (error.message.includes('No commits found')) {
+        throw error; // Re-throw our custom error
+      }
+      console.warn(`Warning when comparing commits: ${error.message}`);
+      // Continue anyway - the GitHub PR creation will give us the final answer
+    }
+
     // Create the pull request
     const { data } = await octokit.pulls.create({
       owner,

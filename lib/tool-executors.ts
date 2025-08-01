@@ -1670,24 +1670,120 @@ export const executeEditCode = async (
       content = lines.slice(1).join('\n');
     }
 
-    // Check if the old code exists in the file
-    if (!content.includes(oldCode)) {
+    // Check if the old code exists in the file with improved matching
+    let foundMatch = false;
+    let normalizedContent = content;
+    let normalizedOldCode = oldCode;
+
+    // First try exact match
+    if (content.includes(oldCode)) {
+      foundMatch = true;
+    } else {
+      // Try with normalized whitespace
+      normalizedContent = content.replace(/\s+/g, ' ').trim();
+      normalizedOldCode = oldCode.replace(/\s+/g, ' ').trim();
+
+      if (normalizedContent.includes(normalizedOldCode)) {
+        foundMatch = true;
+        console.log('⚠️ Using whitespace-normalized matching for editCode');
+      } else {
+        // Try line-by-line matching for better error reporting
+        const contentLines = content.split('\n');
+        const oldCodeLines = oldCode.split('\n');
+
+        // Look for partial matches to give better error messages
+        const firstLine = oldCodeLines[0]?.trim();
+        if (
+          firstLine &&
+          contentLines.some((line) => line.trim().includes(firstLine))
+        ) {
+          throw new Error(
+            `Old code pattern found but exact match failed in ${path}. Found similar content but whitespace or exact formatting differs. Try reading the file again to get current exact content, or use smaller, more specific code chunks.`
+          );
+        }
+
+        throw new Error(
+          `Old code not found in ${path}. The file content may have changed since you last read it. Please read the file again to get the current content and try with the exact code as it appears now.`
+        );
+      }
+    }
+
+    if (!foundMatch) {
       throw new Error(
         `Old code not found in ${path}. The file content may have changed since you last read it.`
       );
     }
 
-    // Check if the old code appears multiple times
-    const occurrences = content.split(oldCode).length - 1;
-    if (occurrences > 1) {
-      throw new Error(
-        `Old code appears ${occurrences} times in ${path}. Please provide more specific code to avoid ambiguity.`
-      );
+    // Check if the old code appears multiple times and prepare for replacement
+    let afterReplacement: string;
+    let occurrences: number;
+
+    if (content.includes(oldCode)) {
+      // Use exact matching
+      occurrences = content.split(oldCode).length - 1;
+      if (occurrences > 1) {
+        throw new Error(
+          `Old code appears ${occurrences} times in ${path}. Please provide more specific code to avoid ambiguity.`
+        );
+      }
+      afterReplacement = content.replace(oldCode, newCode);
+    } else {
+      // Use normalized matching - need to find the exact position and replace
+      const normalizedMatches = [];
+      let searchIndex = 0;
+      let originalIndex = 0;
+
+      // Find the original position by matching normalized content
+      while (originalIndex < content.length) {
+        const remainingContent = content.slice(originalIndex);
+        const remainingNormalized = remainingContent
+          .replace(/\s+/g, ' ')
+          .trim();
+
+        if (remainingNormalized.startsWith(normalizedOldCode)) {
+          // Found the start, now find the exact end position
+          let endIndex = originalIndex;
+          let normalizedSoFar = '';
+
+          while (
+            endIndex < content.length &&
+            normalizedSoFar.replace(/\s+/g, ' ').trim() !== normalizedOldCode
+          ) {
+            normalizedSoFar = content.slice(originalIndex, endIndex + 1);
+            endIndex++;
+          }
+
+          normalizedMatches.push({ start: originalIndex, end: endIndex });
+          break;
+        }
+        originalIndex++;
+      }
+
+      if (normalizedMatches.length === 0) {
+        throw new Error(`Failed to locate normalized match in ${path}`);
+      }
+
+      if (normalizedMatches.length > 1) {
+        throw new Error(
+          `Normalized old code appears ${normalizedMatches.length} times in ${path}. Please provide more specific code to avoid ambiguity.`
+        );
+      }
+
+      const match = normalizedMatches[0];
+      const exactOldCode = content.slice(match.start, match.end);
+      afterReplacement =
+        content.slice(0, match.start) + newCode + content.slice(match.end);
+      occurrences = 1;
+
+      console.log('📝 Using normalized matching - replaced exact content:', {
+        normalizedOldCode: normalizedOldCode.substring(0, 50) + '...',
+        exactOldCode: exactOldCode.substring(0, 50) + '...',
+        newCode: newCode.substring(0, 50) + '...',
+      });
     }
 
     // CRITICAL: Validate the replacement will not cause massive deletions
     const originalLength = content.length;
-    const afterReplacement = content.replace(oldCode, newCode);
     const newLength = afterReplacement.length;
     const deletionRatio = (originalLength - newLength) / originalLength;
 
