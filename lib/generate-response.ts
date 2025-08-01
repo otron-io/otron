@@ -322,6 +322,18 @@ export const generateResponse = async (
     error?: string
   ) => {
     await removeActiveSession(sessionId, status, error);
+
+    // Also complete the Linear agent session if this is a Linear agent session
+    if (agentSessionId) {
+      try {
+        await linearAgentSessionManager.completeSession(agentSessionId);
+        console.log(
+          `Completed Linear agent session: ${agentSessionId} with status: ${status}`
+        );
+      } catch (error) {
+        console.error('Error completing Linear agent session:', error);
+      }
+    }
   };
 
   // Check if already aborted

@@ -312,6 +312,14 @@ async function processAgentSessionWork(
         result?.length || 0
       }`
     );
+
+    // Explicitly complete the Linear agent session now that work is done
+    try {
+      await linearAgentSessionManager.completeSession(sessionId);
+      console.log(`Completed Linear agent session: ${sessionId}`);
+    } catch (error) {
+      console.error('Error completing Linear agent session:', error);
+    }
   } catch (error) {
     console.error(`generateResponse failed for session ${sessionId}:`, error);
     await agentActivityDirect.error(
@@ -556,6 +564,14 @@ async function processAgentSessionPrompt(
         result?.length || 0
       }`
     );
+
+    // Explicitly complete the Linear agent session now that work is done
+    try {
+      await linearAgentSessionManager.completeSession(sessionId);
+      console.log(`Completed Linear agent session: ${sessionId}`);
+    } catch (error) {
+      console.error('Error completing Linear agent session:', error);
+    }
   } catch (error) {
     console.error(
       `generateResponse failed for prompt session ${sessionId}:`,
