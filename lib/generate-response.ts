@@ -1281,11 +1281,12 @@ ${memoryContext ? `## Previous Context\n${memoryContext}\n` : ''}${
     return Object.keys(output).length > 0 ? output : null;
   };
 
-  const { text } = await generateText({
+  const { text, reasoning } = await generateText({
     model: openai.responses('o3'),
     providerOptions: {
       openai: {
         reasoningEffort: 'low',
+        reasoningSummary: 'auto', // Enable reasoning summaries to capture LLM thought process
       },
     },
     system: systemPrompt,
@@ -2816,6 +2817,25 @@ ${memoryContext ? `## Previous Context\n${memoryContext}\n` : ''}${
       }),
     },
   });
+
+  // Log LLM reasoning to Linear if available and working on a Linear issue
+  if (reasoning && isLinearIssue && linearClient) {
+    try {
+      // The reasoning field contains the model's thought process
+      const reasoningText =
+        typeof reasoning === 'string'
+          ? reasoning
+          : Array.isArray(reasoning)
+          ? (reasoning as any[]).join('\n')
+          : JSON.stringify(reasoning);
+
+      if (reasoningText && reasoningText.trim()) {
+        await agentActivity.thought(contextId, `Thought: ${reasoningText}`);
+      }
+    } catch (error) {
+      console.error('Error logging LLM reasoning to Linear:', error);
+    }
+  }
 
   // Store the assistant's response in memory
   try {
