@@ -30,10 +30,10 @@ export const getIssueContext = async (
     issue.description || 'No description provided'
   }\n\n`;
 
-  // Add comments
-  const comments = await issue.comments({ first: 10 });
+  // Add ALL comments for comprehensive context
+  const comments = await issue.comments({ first: 50 }); // Increased from 10 to 50 for better context
   if (comments.nodes.length > 0) {
-    context += 'RECENT COMMENTS:\n';
+    context += 'ALL COMMENTS:\n';
 
     for (const comment of comments.nodes) {
       // If this is the triggering comment, highlight it

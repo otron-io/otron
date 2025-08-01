@@ -9,6 +9,7 @@ import {
   linearAgentSessionManager,
   agentActivityDirect,
 } from './linear-agent-session-manager.js';
+import { getIssueContext } from './linear-utils.js';
 
 /**
  * Linear notification handler for Agent Session Events
@@ -223,36 +224,26 @@ async function processAgentSessionWork(
 
   const issue = agentSession.issue;
 
-  // Build context from the issue and any related comments
-  let contextMessage = `You have been assigned to work on Linear issue ${issue.identifier}: ${issue.title}`;
-
-  if (issue.description) {
-    contextMessage += `\n\nDescription: ${issue.description}`;
-  }
-
-  // Check if this agent session was triggered by a specific comment (user mentioning the agent)
+  // Get comprehensive issue context including all comments, description, labels, etc.
   const sourceCommentId =
     agentSession.sourceMetadata?.agentSessionMetadata?.sourceCommentId;
 
-  // Include any recent comments or the specific comment that triggered this
+  const issueContext = await getIssueContext(
+    linearClient,
+    issue.identifier,
+    sourceCommentId
+  );
+
+  // Build context message with comprehensive issue details
+  let contextMessage = `You have been assigned to work on this Linear issue. Here's the complete context:\n\n`;
+  contextMessage += issueContext;
+
+  // Add specific triggering comment information if available
   if (agentSession.comment) {
     const comment = agentSession.comment;
     const user = comment.user;
     const userName = user?.name || 'Unknown';
-    contextMessage += `\n\nTriggering comment by ${userName}: ${comment.body}`;
-  }
-
-  // Include previous comments for context
-  if (previousComments && previousComments.length > 0) {
-    contextMessage += `\n\nPrevious comments for context:`;
-    for (const comment of previousComments) {
-      // Highlight the source comment that triggered the agent
-      const isSourceComment = comment.id === sourceCommentId;
-      const marker = isSourceComment
-        ? '👤 **RESPONDING TO THIS COMMENT**'
-        : 'User';
-      contextMessage += `\n- ${marker}: ${comment.body}`;
-    }
+    contextMessage += `\n\n=== IMMEDIATE TRIGGER ===\nThis agent session was triggered by a comment from ${userName}: ${comment.body}`;
   }
 
   contextMessage += `\n\nPlease analyze this issue thoroughly and take appropriate actions. You can use Linear, GitHub, or Slack tools as needed.`;
@@ -482,31 +473,20 @@ async function processAgentSessionPrompt(
 ) {
   const issue = agentSession.issue;
 
-  // Build context message
-  let contextMessage = `You are continuing work on Linear issue ${issue.identifier}: ${issue.title}`;
-  contextMessage += `\n\nNew user prompt: ${userPrompt}`;
-
-  if (issue.description) {
-    contextMessage += `\n\nIssue description: ${issue.description}`;
-  }
-
-  // Check if this prompt session was triggered by a specific comment
+  // Get comprehensive issue context including all comments, description, labels, etc.
   const sourceCommentId =
     agentSession.sourceMetadata?.agentSessionMetadata?.sourceCommentId;
 
-  // Include previous comments for context
-  if (previousComments && previousComments.length > 0) {
-    contextMessage += `\n\nPrevious comments for context:`;
-    for (const comment of previousComments) {
-      // Highlight the source comment that triggered the agent
-      const isSourceComment = comment.id === sourceCommentId;
-      const marker = isSourceComment
-        ? '👤 **ORIGINAL TRIGGERING COMMENT**'
-        : 'User';
-      contextMessage += `\n- ${marker}: ${comment.body}`;
-    }
-  }
+  const issueContext = await getIssueContext(
+    linearClient,
+    issue.identifier,
+    sourceCommentId
+  );
 
+  // Build context message with comprehensive issue details
+  let contextMessage = `You are continuing work on this Linear issue. Here's the complete context:\n\n`;
+  contextMessage += issueContext;
+  contextMessage += `\n\n=== NEW USER PROMPT ===\n${userPrompt}`;
   contextMessage += `\n\nPlease respond to the user's prompt and take appropriate actions.`;
 
   // Log that we're starting AI processing

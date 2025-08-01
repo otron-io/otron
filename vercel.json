@@ -24,6 +24,8 @@
       "source": "/api/memory-browser",
       "destination": "/api/memory-browser.ts"
     },
-    { "source": "/api/events", "destination": "/api/events.ts" }
+    { "source": "/api/events", "destination": "/api/events.ts" },
+    { "source": "/api/repo-manager", "destination": "/api/repo-manager.ts" },
+    { "source": "/api/github-repos", "destination": "/api/github-repos.ts" }
   ]
 }
