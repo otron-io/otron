@@ -607,11 +607,8 @@ const generateResponseInternal = async (
     phase: 'planning' as 'planning' | 'gathering' | 'acting' | 'completing',
     toolUsageCounts: new Map<string, number>(),
     searchOperations: 0,
-    maxSearchOperations: 3, // Limit search operations
     readOperations: 0,
-    maxReadOperations: 5, // Limit file reading operations
     analysisOperations: 0,
-    maxAnalysisOperations: 2, // Limit analysis operations
     actionOperations: 0,
     hasStartedActions: false,
     shouldForceAction: false,
@@ -724,37 +721,36 @@ const generateResponseInternal = async (
     3. **ACTING (Remaining steps):** Execute the plan and make changes
     4. **COMPLETING:** Finalize and communicate results
     
-    **TOOL USAGE LIMITS - STRICTLY ENFORCE:**
-    - Search operations (searchEmbeddedCode, searchLinearIssues): MAX 3 total 
-    - File reading operations (getFileContent, readFileWithContext): MAX 5 total 
-    - Analysis operations (analyzeFileStructure, getRepositoryStructure): MAX 2 total
-    - Once you hit these limits, you MUST move to action phase immediately
+    **COMPREHENSIVE INFORMATION GATHERING:**
+    - Use search operations (searchEmbeddedCode, searchLinearIssues) as needed to fully understand the problem
+    - Read files (getFileContent, readFileWithContext) thoroughly to get complete context
+    - Analyze structure (analyzeFileStructure, getRepositoryStructure) when necessary for understanding
+    - Gather all the information you need to make informed decisions
     
-    **ANTI-ANALYSIS PARALYSIS RULES - CRITICAL:**
-    1. **No endless searching** - After 2 search operations, start planning actions
-    2. **No perfect information** - Work with what you have, don't seek 100% understanding
-    3. **Bias toward action** - When in doubt, make a reasonable change and iterate
-    4. **Time-box exploration** - Spend max 20% of your steps on information gathering 
-    5. **Force action mode** - If you've used >40% of steps without taking action, immediately switch to action mode
-    6. **PREFER ACTION OVER RESEARCH** - It's better to make a reasonable attempt and iterate than to research endlessly
+    **THOROUGH ANALYSIS APPROACH:**
+    1. **Comprehensive searching** - Search as much as needed to understand the problem fully
+    2. **Complete information** - Gather all relevant information before making decisions
+    3. **Informed action** - Take action based on thorough understanding rather than incomplete knowledge
+    4. **Quality over speed** - Prioritize making the right changes over making quick changes
+    5. **Research-driven development** - Understand the codebase thoroughly before making modifications
     
-    **EXECUTION PRIORITIES - ACTION FIRST:**
-    - For coding tasks: Brief search → Read 1-2 key files → Make changes immediately → Iterate if needed
-    - For issue management: Get issue context → Take action immediately → Update status → Comment
-    - For communication: Understand request → Send appropriate messages immediately → Confirm delivery
-    - **REMEMBER:** Users prefer quick action with minor corrections over slow perfect solutions
+    **EXECUTION PRIORITIES - RESEARCH-DRIVEN:**
+    - For coding tasks: Comprehensive search → Read all relevant files → Understand architecture → Make informed changes
+    - For issue management: Get complete issue context → Research related code → Plan approach → Execute with full understanding
+    - For communication: Understand complete context → Research background → Provide comprehensive responses
+    - **REMEMBER:** Users prefer thorough, well-researched solutions over quick fixes that might introduce problems
     
     **WHEN TO STOP SEARCHING:**
-    - You have enough info to make a reasonable attempt
-    - You've found the relevant files/code sections
-    - You understand the problem and potential solution
-    - You've hit the search/read limits
+    - You have comprehensive understanding of the problem and solution
+    - You've found all relevant files/code sections and understand their relationships
+    - You have complete context including dependencies, edge cases, and potential impacts
+    - You can confidently implement the solution without guessing
     
     **DECISION MAKING:**
-    - Make decisions with incomplete information rather than searching forever
-    - Use your best judgment based on available context
-    - Prefer making a change and iterating over endless analysis
-    - Remember: Done is better than perfect
+    - Make decisions based on comprehensive information and thorough understanding
+    - Use all available tools and resources to gather complete context
+    - Prefer making well-researched changes over quick iterations
+    - Remember: Correct is better than fast
 
     MEMORY & CONTEXT AWARENESS:
     - You have access to previous conversations, actions, and related context through your persistent memory system.
@@ -1050,72 +1046,17 @@ const generateResponseInternal = async (
         'getDirectoryStructure',
       ];
 
-      // Check limits and update counters
+      // Track operations without limits
       if (searchTools.includes(toolName)) {
         executionStrategy.searchOperations++;
-        if (
-          executionStrategy.searchOperations >
-          executionStrategy.maxSearchOperations
-        ) {
-          // Log strategic limit enforcement
-          if (isLinearIssue && linearClient) {
-            await agentActivity.thought(
-              contextId,
-              `🚫 Strategic limit: Search operations maxed out (${executionStrategy.maxSearchOperations}). Enforcing action-focused approach to prevent over-research.`
-            );
-          }
-          return `⚠️ Search limit reached (${executionStrategy.maxSearchOperations}). You must now focus on taking action with the information you have. No more searching allowed.`;
-        }
-        // Log search progress
-        if (
-          isLinearIssue &&
-          linearClient &&
-          executionStrategy.searchOperations ===
-            executionStrategy.maxSearchOperations - 1
-        ) {
-          await agentActivity.thought(
-            contextId,
-            `Search efficiency: ${executionStrategy.searchOperations}/${executionStrategy.maxSearchOperations} searches used`
-          );
-        }
       }
 
       if (readTools.includes(toolName)) {
         executionStrategy.readOperations++;
-        if (
-          executionStrategy.readOperations > executionStrategy.maxReadOperations
-        ) {
-          // Log strategic limit enforcement
-          if (isLinearIssue && linearClient) {
-            await agentActivity.thought(
-              contextId,
-              `File reading limit reached: ${executionStrategy.maxReadOperations} operations completed`
-            );
-          }
-          return `⚠️ File reading limit reached (${executionStrategy.maxReadOperations}). You must now take action with the information you have. No more file reading allowed.`;
-        }
-        // Log reading progress
-        if (
-          isLinearIssue &&
-          linearClient &&
-          executionStrategy.readOperations ===
-            executionStrategy.maxReadOperations - 1
-        ) {
-          await agentActivity.thought(
-            contextId,
-            `📖 Information gathering: ${executionStrategy.readOperations}/${executionStrategy.maxReadOperations} file reads used. Final read opportunity available.`
-          );
-        }
       }
 
       if (analysisTools.includes(toolName)) {
         executionStrategy.analysisOperations++;
-        if (
-          executionStrategy.analysisOperations >
-          executionStrategy.maxAnalysisOperations
-        ) {
-          return `⚠️ Analysis limit reached (${executionStrategy.maxAnalysisOperations}). You must now take action with the information you have. No more analysis allowed.`;
-        }
       }
 
       if (actionTools.includes(toolName)) {
@@ -1133,7 +1074,7 @@ const generateResponseInternal = async (
         executionStrategy.phase = 'acting';
       }
 
-      // Update execution phase based on tool usage
+      // Update execution phase based on tool usage (without limits)
       if (
         executionStrategy.searchOperations +
           executionStrategy.readOperations +
@@ -1151,23 +1092,6 @@ const generateResponseInternal = async (
               executionStrategy.readOperations +
               executionStrategy.analysisOperations
             } operations.`
-          );
-        }
-      }
-
-      if (
-        executionStrategy.searchOperations +
-          executionStrategy.readOperations +
-          executionStrategy.analysisOperations >=
-          6 &&
-        !executionStrategy.hasStartedActions
-      ) {
-        executionStrategy.shouldForceAction = true;
-        // Log strategic decision to force action
-        if (isLinearIssue && linearClient) {
-          await agentActivity.thought(
-            contextId,
-            `⚡ Strategic decision: Information gathering limit reached. Forcing transition to action phase to avoid analysis paralysis.`
           );
         }
       }
@@ -1209,38 +1133,7 @@ const generateResponseInternal = async (
           );
         }
 
-        // Add execution guidance to response for information gathering tools
-        if (
-          (searchTools.includes(toolName) ||
-            readTools.includes(toolName) ||
-            analysisTools.includes(toolName)) &&
-          !executionStrategy.hasStartedActions
-        ) {
-          const remainingSearches = Math.max(
-            0,
-            executionStrategy.maxSearchOperations -
-              executionStrategy.searchOperations
-          );
-          const remainingReads = Math.max(
-            0,
-            executionStrategy.maxReadOperations -
-              executionStrategy.readOperations
-          );
-          const remainingAnalysis = Math.max(
-            0,
-            executionStrategy.maxAnalysisOperations -
-              executionStrategy.analysisOperations
-          );
-
-          if (
-            remainingSearches <= 2 ||
-            remainingReads <= 3 ||
-            remainingAnalysis <= 1 ||
-            executionStrategy.shouldForceAction
-          ) {
-            response += `\n\n🚨 EXECUTION GUIDANCE: You're approaching your information gathering limits (${remainingSearches} searches, ${remainingReads} reads, ${remainingAnalysis} analysis remaining). Start planning your actions now. Don't search for perfect information - work with what you have!`;
-          }
-        }
+        // Information gathering tools can continue without restrictions
 
         // Track tool usage for goal evaluation
         executionTracker.toolsUsed.add(toolName);
@@ -1442,9 +1335,9 @@ ${params.expectedActions.map((action: string) => `• ${action}`).join('\n')}
             let guidance = `📊 **Execution Progress Check**
 
 **Current Status:**
-- Search operations: ${executionStrategy.searchOperations}/${executionStrategy.maxSearchOperations}
-- Read operations: ${executionStrategy.readOperations}/${executionStrategy.maxReadOperations}
-- Analysis operations: ${executionStrategy.analysisOperations}/${executionStrategy.maxAnalysisOperations}
+- Search operations: ${executionStrategy.searchOperations} (unlimited)
+- Read operations: ${executionStrategy.readOperations} (unlimited)
+- Analysis operations: ${executionStrategy.analysisOperations} (unlimited)
 - Action operations: ${executionStrategy.actionOperations}
 - Phase: ${executionStrategy.phase}
 
