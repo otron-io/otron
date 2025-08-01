@@ -556,14 +556,6 @@ async function processAgentSessionPrompt(
         result?.length || 0
       }`
     );
-
-    // Log completion
-    await agentActivityDirect.response(
-      sessionId,
-      result
-        ? `Follow-up analysis completed for ${issue.identifier}`
-        : 'Follow-up analysis completed with no response generated'
-    );
   } catch (error) {
     console.error(
       `generateResponse failed for prompt session ${sessionId}:`,
