@@ -694,11 +694,24 @@ For coding tasks, gather the information you need to understand the problem full
 - Always ask the user what repository they want to use if you are not sure
 
 ## File Reading
-- **getRawFileContent**: The primary tool for reading files. Gets raw, unformatted source code with optional line ranges (max 200 lines). Perfect for both understanding code and preparing for edits
-  - Use startLine=1, endLine=0 to read from beginning (up to 200 lines)
-  - Use startLine=50, endLine=0 to read from line 50 onwards (up to 200 lines)  
-  - Use startLine=10, endLine=50 to read specific range (lines 10-50)
-  - **Important**: Always check the totalLines in the response before requesting specific ranges
+- **getRawFileContent**: Reads file content from GitHub repositories. Uses the same interface as Cursor's read_file tool - impossible to mess up!
+
+**Two Simple Modes:**
+1. **Entire file**: 'should_read_entire_file: true' (reads up to 1500 lines)
+2. **Specific range**: 'should_read_entire_file: false' + 'start_line_one_indexed' + 'end_line_one_indexed_inclusive' (max 200 lines)
+
+**Examples:**
+- Read entire file: '{path: "src/app.ts", repository: "user/repo", should_read_entire_file: true}'
+- Read lines 1-50: '{path: "src/app.ts", repository: "user/repo", should_read_entire_file: false, start_line_one_indexed: 1, end_line_one_indexed_inclusive: 50}'
+- Read lines 100-200: '{should_read_entire_file: false, start_line_one_indexed: 100, end_line_one_indexed_inclusive: 200}'
+
+**Automatic Safety:**
+- Invalid ranges are automatically clamped to file bounds
+- Line numbers beyond file end are auto-corrected  
+- 200-line limit enforced for range reads
+- 1500-line limit for entire file reads
+- Clear error messages if required parameters missing
+
 - **editCode**: ALWAYS use getRawFileContent first to get the exact code you want to replace. Use the raw content directly as oldCode parameter
 
 ## Memory & Context
@@ -2670,24 +2683,29 @@ ${params.expectedActions.map((action: string) => `• ${action}`).join('\n')}
           (params: any) => executeResetBranchToHead(params, updateStatus)
         ),
       }),
-      // Simplified file reading tool
+      // Foolproof file reading tool (modeled after Cursor's read_file)
       getRawFileContent: tool({
         description:
-          'Get the raw, unformatted content of a file with optional line range. Perfect for reading source code for editing or analysis. Returns actual source code without any formatting headers. Max 200 lines per request.',
+          'Read file content from a GitHub repository. Returns raw, unformatted source code. Automatically handles large files by chunking into 200-line sections.',
         parameters: z.object({
           path: z.string().describe('The file path in the repository'),
           repository: z
             .string()
             .describe('The repository in format "owner/repo"'),
-          startLine: z
-            .number()
+          should_read_entire_file: z
+            .boolean()
             .describe(
-              'Starting line number (1-based). Use 1 to start from beginning. Use this to read specific sections of large files.'
+              'Whether to read the entire file. Defaults to false. If true, reads up to 1500 lines total.'
             ),
-          endLine: z
+          start_line_one_indexed: z
             .number()
             .describe(
-              'Ending line number (1-based). Use 0 to read up to 200 lines from startLine. Maximum 200 lines total.'
+              'The one-indexed line number to start reading from (inclusive). Required if should_read_entire_file is false.'
+            ),
+          end_line_one_indexed_inclusive: z
+            .number()
+            .describe(
+              'The one-indexed line number to end reading at (inclusive). Required if should_read_entire_file is false.'
             ),
           branch: z
             .string()
