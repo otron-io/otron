@@ -2825,12 +2825,12 @@ ${repositoryContext ? `${repositoryContext}` : ''}${
         description:
           'Add new code at a specific location in a file using context-based positioning.',
         parameters: z.object({
-          path: z.string().describe('The file path in the repository'),
+          file_path: z.string().describe('The file path in the repository'),
           repository: z
             .string()
             .describe('The repository in format "owner/repo"'),
           branch: z.string().describe('The branch to edit'),
-          newCode: z.string().describe('The new code content to add'),
+          new_string: z.string().describe('The new code content to add'),
           position: z
             .enum(['start', 'end', 'after', 'before'])
             .describe(
@@ -2851,7 +2851,7 @@ ${repositoryContext ? `${repositoryContext}` : ''}${
         description:
           'Remove specific code from a file. Requires exact content matching for safety.',
         parameters: z.object({
-          path: z.string().describe('The file path in the repository'),
+          file_path: z.string().describe('The file path in the repository'),
           repository: z
             .string()
             .describe('The repository in format "owner/repo"'),

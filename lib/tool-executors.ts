@@ -1590,20 +1590,38 @@ export const executeEditCode = async (
     file_path,
     repository,
     branch,
-    old_string_length: old_string.length,
-    new_string_length: new_string.length,
+    old_string_length: old_string?.length,
+    new_string_length: new_string?.length,
     replace_all,
     commit_message,
   });
 
   try {
-    // Validate input parameters
+    // ENHANCED PARAMETER VALIDATION
+    if (!file_path) {
+      throw new Error('file_path parameter is required and cannot be empty');
+    }
+    if (!repository) {
+      throw new Error('repository parameter is required and cannot be empty');
+    }
+    if (!old_string) {
+      throw new Error('old_string parameter is required and cannot be empty');
+    }
+    if (!new_string) {
+      throw new Error('new_string parameter is required and cannot be empty');
+    }
+    if (!commit_message) {
+      throw new Error(
+        'commit_message parameter is required and cannot be empty'
+      );
+    }
+
     if (old_string === new_string) {
       throw new Error('old_string and new_string are exactly the same');
     }
 
     if (!old_string.trim()) {
-      throw new Error('old_string cannot be empty');
+      throw new Error('old_string cannot be empty or just whitespace');
     }
 
     updateStatus?.(`Editing ${file_path}...`);
@@ -1661,22 +1679,66 @@ export const executeEditCode = async (
       }
     }
 
-    // Get the current file content
+    // Get the current file content with error handling and fallback
     const { getFileContent } = await import('./github/github-utils.js');
-    const currentContent = await getFileContent(
-      file_path,
-      repository,
-      1,
-      10000,
-      branch,
-      undefined
-    );
+    let currentContent: string;
+    let content: string;
 
-    // Remove any header line that getFileContent might add
-    const lines = currentContent.split('\n');
-    let content = currentContent;
-    if (lines.length > 0 && lines[0]?.match(/^\/\/ Lines \d+-\d+ of \d+$/)) {
-      content = lines.slice(1).join('\n');
+    try {
+      currentContent = await getFileContent(
+        file_path,
+        repository,
+        1,
+        10000,
+        branch || 'main',
+        undefined
+      );
+
+      // Remove any header line that getFileContent might add
+      const lines = currentContent.split('\n');
+      content = currentContent;
+      if (lines.length > 0 && lines[0]?.match(/^\/\/ Lines \d+-\d+ of \d+$/)) {
+        content = lines.slice(1).join('\n');
+      }
+
+      if (!content) {
+        throw new Error('File content is empty after processing');
+      }
+    } catch (fileError) {
+      // Enhanced error handling with specific guidance
+      const errorMessage =
+        fileError instanceof Error ? fileError.message : String(fileError);
+
+      if (errorMessage.includes('not found') || errorMessage.includes('404')) {
+        throw new Error(
+          `File not found: ${file_path} in repository ${repository} on branch ${
+            branch || 'main'
+          }. ` +
+            `Please verify the file path is correct and the file exists on the specified branch.`
+        );
+      }
+
+      if (errorMessage.includes('permission') || errorMessage.includes('403')) {
+        throw new Error(
+          `Permission denied accessing ${file_path} in repository ${repository}. ` +
+            `Please check if the repository exists and the bot has access permissions.`
+        );
+      }
+
+      if (errorMessage.includes('rate limit') || errorMessage.includes('429')) {
+        throw new Error(
+          `GitHub API rate limit exceeded while trying to read ${file_path}. ` +
+            `Please wait a moment and try again, or use a smaller file chunk.`
+        );
+      }
+
+      // Generic file reading error with helpful context
+      throw new Error(
+        `Failed to read file ${file_path} from ${repository}:${
+          branch || 'main'
+        }. ` +
+          `Error: ${errorMessage}. Please verify the file exists and try again.`
+      );
     }
 
     // Multi-strategy code matching with detailed debugging
@@ -2115,13 +2177,40 @@ export const executeAddCode = async (
     file_path,
     repository,
     branch,
-    new_stringLength: new_string.length,
+    new_stringLength: new_string?.length,
     position,
-    contextLength: context.length,
+    contextLength: context?.length,
     message,
   });
 
   try {
+    // ENHANCED PARAMETER VALIDATION
+    if (!file_path) {
+      throw new Error('file_path parameter is required and cannot be empty');
+    }
+    if (!repository) {
+      throw new Error('repository parameter is required and cannot be empty');
+    }
+    if (!branch) {
+      throw new Error('branch parameter is required and cannot be empty');
+    }
+    if (!new_string) {
+      throw new Error('new_string parameter is required and cannot be empty');
+    }
+    if (!position) {
+      throw new Error('position parameter is required and cannot be empty');
+    }
+    if (!message) {
+      throw new Error('message parameter is required and cannot be empty');
+    }
+
+    // Validate position-specific requirements
+    if ((position === 'after' || position === 'before') && !context) {
+      throw new Error(
+        `context parameter is required when position is "${position}"`
+      );
+    }
+
     updateStatus?.(`is adding code to ${file_path}...`);
 
     // SAFETY CHECKS
@@ -2291,11 +2380,32 @@ export const executeRemoveCode = async (
     file_path,
     repository,
     branch,
-    codeToRemoveLength: codeToRemove.length,
+    codeToRemoveLength: codeToRemove?.length,
     message,
   });
 
   try {
+    // ENHANCED PARAMETER VALIDATION
+    if (!file_path) {
+      throw new Error('file_path parameter is required and cannot be empty');
+    }
+    if (!repository) {
+      throw new Error('repository parameter is required and cannot be empty');
+    }
+    if (!branch) {
+      throw new Error('branch parameter is required and cannot be empty');
+    }
+    if (!codeToRemove) {
+      throw new Error('codeToRemove parameter is required and cannot be empty');
+    }
+    if (!message) {
+      throw new Error('message parameter is required and cannot be empty');
+    }
+
+    if (!codeToRemove.trim()) {
+      throw new Error('codeToRemove cannot be empty or just whitespace');
+    }
+
     updateStatus?.(`is removing code from ${file_path}...`);
 
     // CRITICAL SAFETY CHECKS
