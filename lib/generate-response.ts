@@ -417,6 +417,8 @@ export const generateResponse = async (
             `Goal evaluation passed on attempt ${attemptNumber}:`,
             evaluation.reasoning
           );
+
+          updateStatus?.(`Goal complete! ${evaluation.reasoning}`);
           break;
         }
 
@@ -425,6 +427,8 @@ export const generateResponse = async (
           `Goal evaluation failed on attempt ${attemptNumber}:`,
           evaluation.reasoning
         );
+
+        updateStatus?.(`Goal not complete, retrying...`);
 
         // Generate retry feedback
         const retryFeedback = goalEvaluator.generateRetryFeedback(
@@ -454,11 +458,6 @@ export const generateResponse = async (
         // Otherwise, try again
         attemptNumber++;
       }
-    }
-
-    // Final completion log
-    if (isLinearIssue && linearClient) {
-      await agentActivity.response(contextId, `Session completed successfully`);
     }
 
     return finalResponse;
@@ -959,7 +958,7 @@ ${memoryContext ? `## Previous Context\n${memoryContext}\n` : ''}${
           if (isLinearIssue && linearClient) {
             await agentActivity.thought(
               contextId,
-              `🎬 Phase transition: Moving to action phase. First action tool: ${toolName}. Information gathering complete.`
+              `Starting to take some action with ${toolName}`
             );
           }
         }
@@ -980,7 +979,7 @@ ${memoryContext ? `## Previous Context\n${memoryContext}\n` : ''}${
         if (isLinearIssue && linearClient) {
           await agentActivity.thought(
             contextId,
-            `📊 Phase transition: Moving from planning to information gathering. Completed ${
+            `Moving from planning to information gathering. Completed ${
               executionStrategy.searchOperations +
               executionStrategy.readOperations +
               executionStrategy.analysisOperations
@@ -1040,10 +1039,7 @@ ${memoryContext ? `## Previous Context\n${memoryContext}\n` : ''}${
 
       // Log tool execution to Linear if working on a Linear issue (using thought for less prominent logging)
       if (isLinearIssue && linearClient) {
-        await agentActivity.thought(
-          contextId,
-          `🔧 ${toolName}: ${toolContext}`
-        );
+        await agentActivity.thought(contextId, `${toolName}: ${toolContext}`);
       }
 
       try {
@@ -1133,7 +1129,7 @@ ${memoryContext ? `## Previous Context\n${memoryContext}\n` : ''}${
           ) {
             await agentActivity.thought(
               contextId,
-              `✅ ${toolName}: ${successDetails}`
+              `${toolName}: ${successDetails}`
             );
           } else if (actionTools.includes(toolName)) {
             await agentActivity.action(

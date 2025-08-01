@@ -312,14 +312,6 @@ async function processAgentSessionWork(
         result?.length || 0
       }`
     );
-
-    // Log completion
-    await agentActivityDirect.response(
-      sessionId,
-      result
-        ? `Analysis completed for ${issue.identifier}`
-        : 'Analysis completed with no response generated'
-    );
   } catch (error) {
     console.error(`generateResponse failed for session ${sessionId}:`, error);
     await agentActivityDirect.error(
