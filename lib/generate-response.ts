@@ -373,9 +373,7 @@ export const generateResponse = async (
           status: 'planning',
         });
 
-        updateStatus?.(
-          `is thinking... (Attempt ${attemptNumber}/${MAX_RETRY_ATTEMPTS})`
-        );
+        updateStatus?.(`is thinking...`);
 
         // Generate response using the internal function with abort signal
         const result = await generateResponseInternal(
