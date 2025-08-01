@@ -44,6 +44,7 @@ import {
   executeResetBranchToHead,
   // GitHub file reading tools
   executeReadFileWithContext,
+  executeGetRawFileContent,
   executeAnalyzeFileStructure,
   executeReadRelatedFiles,
   // Embedded repository tools
@@ -692,6 +693,11 @@ For coding tasks, gather the information you need to understand the problem full
 - Analyze structure when necessary
 - Make informed decisions based on comprehensive understanding
 
+## File Reading Tools - Choose the Right Tool
+- **readFileWithContext**: For understanding code structure, finding specific functions/classes, or getting contextual information around specific lines
+- **getRawFileContent**: For getting exact file content when you need to use editCode tool. This provides the raw source code without any formatting
+- **editCode**: ALWAYS use getRawFileContent first to get the exact code you want to replace. Never use formatted output from readFileWithContext as oldCode parameter
+
 ## Memory & Context
 - You have persistent memory across conversations
 - Reference previous interactions when relevant for continuity
@@ -857,6 +863,7 @@ ${memoryContext ? `\n## Previous Context\n${memoryContext}` : ''}
       const readTools = [
         'getFileContent',
         'readFileWithContext',
+        'getRawFileContent',
         'readRelatedFiles',
         'getIssueContext',
       ];
@@ -2708,7 +2715,28 @@ ${params.expectedActions.map((action: string) => `• ${action}`).join('\n')}
         }),
         execute: createMemoryAwareToolExecutor(
           'readFileWithContext',
-          (params: any) => executeReadFileWithContext(params, updateStatus)
+          (params: any) =>
+            executeReadFileWithContext({ ...params, sessionId }, updateStatus)
+        ),
+      }),
+      getRawFileContent: tool({
+        description:
+          'Get the raw, unformatted content of a file. Use this when you need the exact file content for editing with editCode tool. This returns the actual source code without any formatting or context headers.',
+        parameters: z.object({
+          path: z.string().describe('The file path in the repository'),
+          repository: z
+            .string()
+            .describe('The repository in format "owner/repo"'),
+          branch: z
+            .string()
+            .describe(
+              'Branch to read from (defaults to default branch). Leave empty to use default branch.'
+            ),
+        }),
+        execute: createMemoryAwareToolExecutor(
+          'getRawFileContent',
+          (params: any) =>
+            executeGetRawFileContent({ ...params, sessionId }, updateStatus)
         ),
       }),
       analyzeFileStructure: tool({

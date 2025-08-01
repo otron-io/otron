@@ -4,9 +4,57 @@ import { GitHubAppService } from './github-app.js';
 // Get GitHub App service instance
 const githubAppService = GitHubAppService.getInstance();
 
-// Simple in-memory cache for file content
-const fileCache = new Map<string, { content: string; timestamp: number }>();
+// Enhanced in-memory cache for file content with session awareness
+const fileCache = new Map<
+  string,
+  { content: string; timestamp: number; sessionId?: string }
+>();
+const sessionFileCache = new Map<
+  string,
+  Map<string, { content: string; timestamp: number }>
+>();
 const CACHE_TTL = 5 * 60 * 1000; // 5 minutes
+const SESSION_CACHE_TTL = 30 * 60 * 1000; // 30 minutes for session cache
+
+/**
+ * Clean up expired session caches
+ */
+export const cleanupSessionCaches = () => {
+  const now = Date.now();
+  let cleanedSessions = 0;
+  let cleanedFiles = 0;
+
+  for (const [sessionId, sessionCache] of sessionFileCache.entries()) {
+    const expiredFiles = [];
+
+    for (const [fileKey, cached] of sessionCache.entries()) {
+      if (now - cached.timestamp > SESSION_CACHE_TTL) {
+        expiredFiles.push(fileKey);
+      }
+    }
+
+    // Remove expired files from this session
+    for (const fileKey of expiredFiles) {
+      sessionCache.delete(fileKey);
+      cleanedFiles++;
+    }
+
+    // Remove empty session caches
+    if (sessionCache.size === 0) {
+      sessionFileCache.delete(sessionId);
+      cleanedSessions++;
+    }
+  }
+
+  if (cleanedSessions > 0 || cleanedFiles > 0) {
+    console.log(
+      `🧹 Cleaned up ${cleanedFiles} expired files from ${cleanedSessions} sessions`
+    );
+  }
+};
+
+// Run cleanup every 10 minutes
+setInterval(cleanupSessionCaches, 10 * 60 * 1000);
 
 /**
  * Get an authenticated Octokit client for a repository
@@ -23,19 +71,44 @@ export const getFileContent = async (
   repository: string,
   startLine: number = 1,
   maxLines: number = 200,
-  branch?: string
+  branch?: string,
+  sessionId?: string
 ): Promise<string> => {
   try {
     // Validate line ranges
     if (startLine < 1) startLine = 1;
     if (maxLines > 200) maxLines = 200;
 
-    // Check cache
-    const cacheKey = `${repository}:${path}:${branch || 'default'}`;
-    const cached = fileCache.get(cacheKey);
+    // Generate cache keys
+    const fileCacheKey = `${repository}:${path}:${branch || 'default'}`;
+    const sessionCacheKey = sessionId || 'no-session';
 
+    // Check session cache first (higher priority, longer TTL)
+    if (sessionId) {
+      const sessionCache = sessionFileCache.get(sessionCacheKey);
+      if (sessionCache) {
+        const sessionCached = sessionCache.get(fileCacheKey);
+        if (
+          sessionCached &&
+          Date.now() - sessionCached.timestamp < SESSION_CACHE_TTL
+        ) {
+          console.log(
+            `🎯 Using session cache for ${path} in ${repository} (session: ${sessionId})`
+          );
+          const allLines = sessionCached.content.split('\n');
+          const totalLines = allLines.length;
+          const endLine = Math.min(startLine + maxLines - 1, totalLines);
+          const requestedLines = allLines.slice(startLine - 1, endLine);
+          const lineInfo = `// Lines ${startLine}-${endLine} of ${totalLines}\n`;
+          return lineInfo + requestedLines.join('\n');
+        }
+      }
+    }
+
+    // Check global cache
+    const cached = fileCache.get(fileCacheKey);
     if (cached && Date.now() - cached.timestamp < CACHE_TTL) {
-      console.log(`Using cached content for ${path} in ${repository}`);
+      console.log(`📦 Using global cache for ${path} in ${repository}`);
       const allLines = cached.content.split('\n');
       const totalLines = allLines.length;
       const endLine = Math.min(startLine + maxLines - 1, totalLines);
@@ -45,9 +118,9 @@ export const getFileContent = async (
     }
 
     console.log(
-      `Fetching content of ${path} from ${repository}${
+      `🌐 Fetching content of ${path} from ${repository}${
         branch ? ` (branch: ${branch})` : ''
-      }`
+      }${sessionId ? ` (session: ${sessionId})` : ''}`
     );
     const [owner, repo] = repository.split('/');
     const octokit = await getOctokitForRepo(repository);
@@ -66,11 +139,25 @@ export const getFileContent = async (
     // Decode base64 content
     const content = Buffer.from(data.content, 'base64').toString('utf-8');
 
-    // Cache the full content
-    fileCache.set(cacheKey, {
+    // Cache the full content in global cache
+    fileCache.set(fileCacheKey, {
       content,
       timestamp: Date.now(),
     });
+
+    // Cache in session cache if sessionId provided
+    if (sessionId) {
+      let sessionCache = sessionFileCache.get(sessionCacheKey);
+      if (!sessionCache) {
+        sessionCache = new Map();
+        sessionFileCache.set(sessionCacheKey, sessionCache);
+      }
+      sessionCache.set(fileCacheKey, {
+        content,
+        timestamp: Date.now(),
+      });
+      console.log(`💾 Cached ${path} in session cache (session: ${sessionId})`);
+    }
 
     // Split into lines and extract the requested range
     const allLines = content.split('\n');
@@ -318,11 +405,17 @@ export const createOrUpdateFile = async (
     console.log(`✅ File ${path} updated in ${repository}/${branch}`);
 
     // Clear cache for this file
-    const cacheKey = `${repository}:${path}:${branch}`;
-    fileCache.delete(cacheKey);
+    const fileCacheKey = `${repository}:${path}:${branch}`;
+    fileCache.delete(fileCacheKey);
     const defaultCacheKey = `${repository}:${path}:default`;
     fileCache.delete(defaultCacheKey);
-    console.log('🗑️ Cleared file cache');
+
+    // Clear from all session caches
+    for (const [sessionId, sessionCache] of sessionFileCache.entries()) {
+      sessionCache.delete(fileCacheKey);
+      sessionCache.delete(defaultCacheKey);
+    }
+    console.log('🗑️ Cleared file cache (global and session)');
   } catch (error) {
     console.error(
       `❌ Error updating file ${path} in ${repository}/${branch}:`,

@@ -656,7 +656,8 @@ export const executeGetFileContent = async (
     repository,
     startLine === 0 ? undefined : startLine,
     maxLines === 0 ? undefined : maxLines,
-    branch || undefined
+    branch || undefined,
+    undefined
   );
   return { content };
 };
@@ -1660,7 +1661,8 @@ export const executeEditCode = async (
       repository,
       1,
       10000,
-      branch
+      branch,
+      undefined
     );
 
     // Remove any header line that getFileContent might add
@@ -1796,25 +1798,66 @@ export const executeEditCode = async (
       }
     }
 
-    // If no match found, provide detailed debugging
+    // If no match found, provide comprehensive debugging
     if (!matchInfo) {
-      console.error('❌ EditCode matching failed. Debugging info:');
+      console.error('❌ EditCode matching failed. Comprehensive debugging:');
+      console.error('='.repeat(80));
       console.error('File path:', path);
+      console.error('Repository:', repository);
+      console.error('Branch:', branch);
       console.error('Old code length:', oldCode.length);
-      console.error(
-        'Old code preview:',
-        oldCode.substring(0, 200) + (oldCode.length > 200 ? '...' : '')
-      );
       console.error('File content length:', content.length);
-      console.error(
-        'File content preview:',
-        content.substring(0, 200) + (content.length > 200 ? '...' : '')
-      );
 
-      // Try to find partial matches for better error messages
+      // Character-by-character analysis of differences
+      console.error('\n📝 OLD CODE (first 300 chars):');
+      console.error(JSON.stringify(oldCode.substring(0, 300)));
+      console.error('\n📄 FILE CONTENT (first 300 chars):');
+      console.error(JSON.stringify(content.substring(0, 300)));
+
+      // Line-by-line comparison
       const oldCodeLines = oldCode.split('\n');
       const contentLines = content.split('\n');
 
+      console.error('\n📊 Line comparison:');
+      console.error(`Old code lines: ${oldCodeLines.length}`);
+      console.error(`File content lines: ${contentLines.length}`);
+
+      // Check for common issues
+      console.error('\n🔍 Common issues check:');
+      console.error(
+        `Old code starts with BOM: ${oldCode.charCodeAt(0) === 0xfeff}`
+      );
+      console.error(
+        `File content starts with BOM: ${content.charCodeAt(0) === 0xfeff}`
+      );
+      console.error(`Old code has \\r\\n: ${oldCode.includes('\\r\\n')}`);
+      console.error(`File content has \\r\\n: ${content.includes('\\r\\n')}`);
+      console.error(`Old code has tabs: ${oldCode.includes('\\t')}`);
+      console.error(`File content has tabs: ${content.includes('\\t')}`);
+
+      // Check if old code looks like formatted readFileWithContext output
+      const hasFileHeader =
+        oldCode.startsWith('File: ') || oldCode.includes('Lines ');
+      const hasContextHeaders =
+        oldCode.includes('Context:') ||
+        oldCode.includes('Before:') ||
+        oldCode.includes('Target:');
+
+      if (hasFileHeader || hasContextHeaders) {
+        console.error('\n⚠️  POTENTIAL ISSUE DETECTED:');
+        console.error(
+          'Old code appears to be formatted output from readFileWithContext tool!'
+        );
+        console.error(
+          'This suggests the agent is using formatted context as oldCode instead of raw code.'
+        );
+
+        throw new Error(
+          `❌ AGENT ERROR: The oldCode parameter appears to be formatted output from readFileWithContext tool, not raw source code. The agent should extract the actual code content, not use the formatted summary. Please use the raw source code that needs to be replaced.`
+        );
+      }
+
+      // Find the closest matching lines
       const firstLine = oldCodeLines[0]?.trim();
       const lastLine = oldCodeLines[oldCodeLines.length - 1]?.trim();
 
@@ -1825,14 +1868,39 @@ export const executeEditCode = async (
         ? contentLines.findIndex((line) => line.trim().includes(lastLine))
         : -1;
 
+      console.error('\n🎯 Pattern matching results:');
+      console.error(`First line "${firstLine}" found at: ${firstLineMatch}`);
+      console.error(`Last line "${lastLine}" found at: ${lastLineMatch}`);
+
       if (firstLineMatch !== -1) {
         if (lastLineMatch !== -1) {
+          // Show the actual content around the matches
+          console.error(
+            `\n📍 Content around first match (line ${firstLineMatch + 1}):`
+          );
+          const start = Math.max(0, firstLineMatch - 2);
+          const end = Math.min(contentLines.length, firstLineMatch + 3);
+          for (let i = start; i < end; i++) {
+            const marker = i === firstLineMatch ? '➤ ' : '  ';
+            console.error(`${marker}${i + 1}: ${contentLines[i]}`);
+          }
+
+          console.error(
+            `\n📍 Content around last match (line ${lastLineMatch + 1}):`
+          );
+          const lastStart = Math.max(0, lastLineMatch - 2);
+          const lastEnd = Math.min(contentLines.length, lastLineMatch + 3);
+          for (let i = lastStart; i < lastEnd; i++) {
+            const marker = i === lastLineMatch ? '➤ ' : '  ';
+            console.error(`${marker}${i + 1}: ${contentLines[i]}`);
+          }
+
           throw new Error(
             `Code pattern found but exact match failed in ${path}. Found first line at ${
               firstLineMatch + 1
             } and last line at ${
               lastLineMatch + 1
-            }. The content exists but formatting differs. Try reading the file again or use smaller, more specific code chunks.`
+            }. The content exists but formatting differs. Check the detailed debugging output above for character-level differences.`
           );
         } else {
           throw new Error(
@@ -1843,8 +1911,9 @@ export const executeEditCode = async (
         }
       }
 
+      console.error('='.repeat(80));
       throw new Error(
-        `Old code not found in ${path}. The file content may have changed since you last read it. Please read the file again to get the current content and try with the exact code as it appears now.`
+        `Old code not found in ${path}. The file content may have changed since you last read it. Check the comprehensive debugging output above for details.`
       );
     }
 
@@ -2063,7 +2132,8 @@ export const executeAddCode = async (
       repository,
       1,
       10000,
-      branch
+      branch,
+      undefined
     );
 
     // Remove any header line that getFileContent might add
@@ -2230,7 +2300,8 @@ export const executeRemoveCode = async (
       repository,
       1,
       10000,
-      branch
+      branch,
+      undefined
     );
 
     // Remove any header line that getFileContent might add
@@ -2382,7 +2453,8 @@ export const executeEditUrl = async (
       repository,
       1,
       10000,
-      branch
+      branch,
+      undefined
     );
 
     // Remove any header line that getFileContent might add
@@ -2533,6 +2605,7 @@ export const executeReadFileWithContext = async (
     contextLines,
     maxLines,
     branch,
+    sessionId,
   }: {
     path: string;
     repository: string;
@@ -2543,6 +2616,7 @@ export const executeReadFileWithContext = async (
     contextLines: number;
     maxLines: number;
     branch: string;
+    sessionId?: string;
   },
   updateStatus?: (status: string) => void
 ) => {
@@ -2563,6 +2637,11 @@ export const executeReadFileWithContext = async (
     if (maxLines > 0) options.maxLines = maxLines;
     else options.maxLines = 100; // default
     if (branch && branch.trim()) options.branch = branch;
+
+    // Add sessionId to options if provided
+    if (sessionId) {
+      options.sessionId = sessionId;
+    }
 
     const result = await advancedFileReader.readFileWithContext(
       path,
@@ -2597,6 +2676,61 @@ ${
     }`;
     updateStatus?.(errorMessage);
     return errorMessage;
+  }
+};
+
+export const executeGetRawFileContent = async (
+  {
+    path,
+    repository,
+    branch,
+    sessionId,
+  }: {
+    path: string;
+    repository: string;
+    branch?: string;
+    sessionId?: string;
+  },
+  updateStatus?: (status: string) => void
+) => {
+  try {
+    updateStatus?.(`Getting raw content of ${path}...`);
+
+    // Get the raw file content without any formatting
+    const { getFileContent } = await import('./github/github-utils.js');
+    const fullContent = await getFileContent(
+      path,
+      repository,
+      1,
+      10000, // Get full file
+      branch,
+      sessionId
+    );
+
+    // Remove any header line that getFileContent might add
+    const lines = fullContent.split('\n');
+    let rawContent = fullContent;
+
+    // Check if first line is the line info header from getFileContent
+    if (lines.length > 0 && lines[0]?.match(/^\/\/ Lines \d+-\d+ of \d+$/)) {
+      rawContent = lines.slice(1).join('\n');
+    }
+
+    const totalLines = rawContent.split('\n').length;
+
+    updateStatus?.('Raw file content retrieved successfully');
+
+    return {
+      content: rawContent,
+      lines: totalLines,
+      message: `Retrieved raw content from ${path} (${totalLines} lines, ${rawContent.length} characters)`,
+    };
+  } catch (error) {
+    const errorMessage = `Failed to get raw file content: ${
+      error instanceof Error ? error.message : String(error)
+    }`;
+    updateStatus?.(errorMessage);
+    throw new Error(errorMessage);
   }
 };
 

@@ -69,6 +69,7 @@ export class AdvancedFileReader {
       contextLines?: number;
       maxLines?: number;
       branch?: string;
+      sessionId?: string;
     } = {}
   ): Promise<CodeContext> {
     const {
@@ -79,6 +80,7 @@ export class AdvancedFileReader {
       contextLines = 10,
       maxLines = 200,
       branch,
+      sessionId,
     } = options;
 
     // First, get the full file to analyze structure
@@ -87,7 +89,8 @@ export class AdvancedFileReader {
       repository,
       1,
       10000,
-      branch
+      branch,
+      sessionId
     );
     const lines = fullContent.split('\n');
     const totalLines = lines.length;
