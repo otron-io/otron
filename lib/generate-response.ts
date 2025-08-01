@@ -25,6 +25,7 @@ import {
   executeSearchLinearIssues,
   executeGetLinearWorkflowStates,
   executeCreateLinearComment,
+  executeCreateAgentActivity,
   // GitHub tools
   executeGetFileContent,
   executeCreateBranch,
@@ -255,7 +256,8 @@ export const generateResponse = async (
     channelId: string;
     threadTs?: string;
   },
-  abortSignal?: AbortSignal
+  abortSignal?: AbortSignal,
+  agentSessionId?: string
 ): Promise<string> => {
   const MAX_RETRY_ATTEMPTS = 2;
   let attemptNumber = 1;
@@ -264,8 +266,8 @@ export const generateResponse = async (
   let finalResponse = '';
   let endedExplicitly = false;
 
-  // Generate unique session ID for tracking
-  const sessionId = generateSessionId();
+  // Use provided agent session ID or generate unique session ID for tracking
+  const sessionId = agentSessionId || generateSessionId();
   const contextId = extractIssueIdFromContext(messages, slackContext);
 
   // Determine platform
@@ -811,6 +813,16 @@ const generateResponseInternal = async (
     **IMPORTANT: DO NOT assume every Linear interaction is a development assignment!**
     - Simple requests like "set estimate to 5" should just set the estimate directly
     - Only create branches/PRs when explicitly asked to work on implementation
+
+    **LINEAR AGENT ACTIVITIES - PREFERRED FOR RESPONSES:**
+    - When operating in an agent session (sessionId provided in context), use createAgentActivity tool instead of createLinearComment for user responses
+    - Use activityType "response" for final answers - this automatically creates a threaded comment in Linear with better UX
+    - Use activityType "thought" for internal notes or reasoning that users should see
+    - Use activityType "elicitation" when you need clarification from the user
+    - Use activityType "action" to describe tool invocations (with optional result field)
+    - Use activityType "error" to report problems or failures
+    - Agent activities provide better status tracking and native Linear agent experience
+    - When you emit a "response" activity, Linear automatically creates a comment in the issue thread
 
     GITHUB REPO NOTES:
     - Your repository is https://github.com/otron-io/otron, you can develop and improve yourself via this repository.
@@ -2350,6 +2362,50 @@ ${params.expectedActions.map((action: string) => `• ${action}`).join('\n')}
           async (params: any) => {
             return await executeCreateLinearComment(
               params,
+              updateStatus,
+              linearClient
+            );
+          }
+        ),
+      }),
+      createAgentActivity: tool({
+        description:
+          'Create an agent session activity (thought, elicitation, action, response, or error). Use "response" type for final answers - this will automatically create a threaded comment in Linear. The session ID is automatically provided.',
+        parameters: z.object({
+          activityType: z
+            .enum(['thought', 'elicitation', 'action', 'response', 'error'])
+            .describe('The type of activity to create'),
+          body: z
+            .string()
+            .describe(
+              'The message body. Required for thought, elicitation, response, error types. Leave empty for action type.'
+            ),
+          action: z
+            .string()
+            .describe(
+              'The action name. Required for action type. Leave empty for other types.'
+            ),
+          parameter: z
+            .string()
+            .describe(
+              'The action parameter. Required for action type. Leave empty for other types.'
+            ),
+          result: z
+            .string()
+            .describe(
+              'The action result. Optional for action type, can be empty. Leave empty for other types.'
+            ),
+        }),
+        execute: createMemoryAwareToolExecutor(
+          'createAgentActivity',
+          async (params: any) => {
+            // Automatically inject the sessionId from current context
+            const paramsWithSessionId = {
+              ...params,
+              sessionId: sessionId, // Use the sessionId from the current scope
+            };
+            return await executeCreateAgentActivity(
+              paramsWithSessionId,
               updateStatus,
               linearClient
             );

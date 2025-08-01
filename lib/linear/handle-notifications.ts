@@ -188,6 +188,10 @@ async function processAgentSessionWork(
     contextMessage += `\n\nDescription: ${issue.description}`;
   }
 
+  // Check if this agent session was triggered by a specific comment (user mentioning the agent)
+  const sourceCommentId =
+    agentSession.sourceMetadata?.agentSessionMetadata?.sourceCommentId;
+
   // Include any recent comments or the specific comment that triggered this
   if (agentSession.comment) {
     const comment = agentSession.comment;
@@ -200,9 +204,12 @@ async function processAgentSessionWork(
   if (previousComments && previousComments.length > 0) {
     contextMessage += `\n\nPrevious comments for context:`;
     for (const comment of previousComments) {
-      // For now, we just use 'User' since the webhook provides userId but not user names
-      // We could fetch user details from Linear API in the future if needed
-      contextMessage += `\n- User: ${comment.body}`;
+      // Highlight the source comment that triggered the agent
+      const isSourceComment = comment.id === sourceCommentId;
+      const marker = isSourceComment
+        ? '👤 **RESPONDING TO THIS COMMENT**'
+        : 'User';
+      contextMessage += `\n- ${marker}: ${comment.body}`;
     }
   }
 
@@ -235,7 +242,8 @@ async function processAgentSessionWork(
       updateStatus,
       linearClient,
       undefined, // No Slack context
-      undefined // No abort signal
+      undefined, // No abort signal
+      sessionId // Pass the agent session ID for automatic tool injection
     );
 
     console.log(
@@ -388,13 +396,20 @@ async function processAgentSessionPrompt(
     contextMessage += `\n\nIssue description: ${issue.description}`;
   }
 
+  // Check if this prompt session was triggered by a specific comment
+  const sourceCommentId =
+    agentSession.sourceMetadata?.agentSessionMetadata?.sourceCommentId;
+
   // Include previous comments for context
   if (previousComments && previousComments.length > 0) {
     contextMessage += `\n\nPrevious comments for context:`;
     for (const comment of previousComments) {
-      // For now, we just use 'User' since the webhook provides userId but not user names
-      // We could fetch user details from Linear API in the future if needed
-      contextMessage += `\n- User: ${comment.body}`;
+      // Highlight the source comment that triggered the agent
+      const isSourceComment = comment.id === sourceCommentId;
+      const marker = isSourceComment
+        ? '👤 **ORIGINAL TRIGGERING COMMENT**'
+        : 'User';
+      contextMessage += `\n- ${marker}: ${comment.body}`;
     }
   }
 
@@ -427,7 +442,8 @@ async function processAgentSessionPrompt(
       updateStatus,
       linearClient,
       undefined, // No Slack context
-      undefined // No abort signal
+      undefined, // No abort signal
+      sessionId // Pass the agent session ID for automatic tool injection
     );
 
     console.log(

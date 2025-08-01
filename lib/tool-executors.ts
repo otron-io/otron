@@ -1118,6 +1118,140 @@ export const executeCreateLinearComment = async (
   };
 };
 
+export const executeCreateAgentActivity = async (
+  {
+    sessionId,
+    activityType,
+    body,
+    action,
+    parameter,
+    result,
+  }: {
+    sessionId: string;
+    activityType: 'thought' | 'elicitation' | 'action' | 'response' | 'error';
+    body: string;
+    action: string;
+    parameter: string;
+    result: string;
+  },
+  updateStatus?: (status: string) => void,
+  linearClient?: LinearClient
+) => {
+  if (!linearClient) {
+    return {
+      success: false,
+      error: 'LinearClient is required for Linear operations',
+      message: 'Failed to create agent activity: Linear client not available',
+    };
+  }
+
+  updateStatus?.(`is creating ${activityType} activity...`);
+
+  try {
+    // Build the content object based on activity type
+    let content: any = { type: activityType };
+
+    switch (activityType) {
+      case 'thought':
+      case 'elicitation':
+      case 'response':
+      case 'error':
+        if (!body || body.trim() === '') {
+          return {
+            success: false,
+            error: `Body is required for ${activityType} activities`,
+            message: `Failed to create ${activityType} activity: Missing body`,
+          };
+        }
+        content.body = body;
+        break;
+
+      case 'action':
+        if (
+          !action ||
+          action.trim() === '' ||
+          !parameter ||
+          parameter.trim() === ''
+        ) {
+          return {
+            success: false,
+            error: 'Action and parameter are required for action activities',
+            message:
+              'Failed to create action activity: Missing action or parameter',
+          };
+        }
+        content.action = action;
+        content.parameter = parameter;
+        if (result && result.trim() !== '') {
+          content.result = result;
+        }
+        break;
+    }
+
+    // Create the agent activity using direct GraphQL mutation
+    // Note: Using direct HTTP request since createAgentActivity is not available in SDK version 39.1.1
+    const mutation = `
+      mutation AgentActivityCreate($input: AgentActivityCreateInput!) {
+        agentActivityCreate(input: $input) {
+          success
+          agentActivity {
+            id
+          }
+        }
+      }
+    `;
+
+    const variables = {
+      input: {
+        agentSessionId: sessionId,
+        content: content,
+      },
+    };
+
+    // Use fetch to make direct GraphQL request to Linear API
+    const response = await fetch('https://api.linear.app/graphql', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${
+          (linearClient as any).accessToken || (linearClient as any).token
+        }`,
+      },
+      body: JSON.stringify({
+        query: mutation,
+        variables: variables,
+      }),
+    });
+
+    const data = await response.json();
+
+    if (data.data?.agentActivityCreate?.success) {
+      return {
+        success: true,
+        message: `Created ${activityType} activity for session ${sessionId}`,
+        activityId: data.data.agentActivityCreate?.agentActivity?.id,
+      };
+    } else {
+      return {
+        success: false,
+        error: data.errors?.[0]?.message || 'Failed to create agent activity',
+        message: `Linear API rejected the ${activityType} activity: ${
+          data.errors?.[0]?.message || 'Unknown error'
+        }`,
+      };
+    }
+  } catch (error: unknown) {
+    console.error(`Error creating agent activity:`, error);
+    return {
+      success: false,
+      error: error instanceof Error ? error.message : String(error),
+      message: `Failed to create ${activityType} activity: ${
+        error instanceof Error ? error.message : String(error)
+      }`,
+    };
+  }
+};
+
 export async function executeCreateFormattedSlackMessage(
   args: {
     channel: string;
