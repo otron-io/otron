@@ -341,31 +341,12 @@ export const generateResponse = async (
   // Extract issue ID and log initial activity if working on a Linear issue
   const isLinearIssue = contextId && !contextId.startsWith('slack:');
 
-  if (isLinearIssue && linearClient) {
-    await agentActivity.thought(contextId, `Starting analysis of ${contextId}`);
-  }
-
   try {
     while (attemptNumber <= MAX_RETRY_ATTEMPTS) {
       // Check for abort before each attempt
       if (abortSignal?.aborted) {
         await cleanup('cancelled', 'Request was aborted during processing');
         throw new Error('Request was aborted during processing');
-      }
-
-      // Log attempt strategy and thinking
-      if (isLinearIssue && linearClient) {
-        if (attemptNumber === 1) {
-          await agentActivity.thought(
-            contextId,
-            `Planning approach for ${messages.length} message(s)`
-          );
-        } else {
-          await agentActivity.thought(
-            contextId,
-            `Retry attempt ${attemptNumber} in progress`
-          );
-        }
       }
 
       try {
@@ -671,11 +652,8 @@ const generateResponseInternal = async (
   // Create streamlined system prompt focused on core capabilities and flexibility
   const systemPrompt = `You are Otron, an AI agent that operates across Slack, Linear, and GitHub. You execute tasks immediately and communicate results effectively.
 
-## Core Principles
-- **Act decisively**: Execute requests immediately without asking for permission
-- **Be thorough**: Understand the context fully before acting
-- **Communicate appropriately**: Use the right platform and format for responses
-- **Follow through**: Complete tasks end-to-end and report results
+## Core Strategy: Think → Act → Adapt
+**Be smart, not repetitive**. When tools fail, pivot to alternatives rather than retrying the same approach.
 
 ## Request Classification & Immediate Actions
 
@@ -692,14 +670,14 @@ const generateResponseInternal = async (
 - **Project updates**: Summarize current state from Linear/GitHub
 - **Help requests**: Provide specific guidance based on context
 
-### Development Tasks (Full Workflow)
+### Development Tasks (Strategic Workflow)
 - **Bug fixes**: Analyze → Create branch → Read files → Fix → Commit → PR → Update Linear
 - **Feature implementation**: Plan → Branch → Code → Test → PR → Document
 - **Code reviews**: Read PR → Analyze changes → Comment with feedback
 
 ## File Operations (Critical Patterns)
 
-### Reading Files
+### Reading Files Strategically
 **Always determine file size first when unsure:**
 \`\`\`
 {path: "file.ts", repository: "owner/repo", should_read_entire_file: true}
@@ -724,6 +702,30 @@ const generateResponseInternal = async (
 \`\`\`
 {file_path: "file.ts", old_string: "oldVariableName", new_string: "newVariableName", replace_all: true, commit_message: "Rename variable"}
 \`\`\`
+
+## Strategic Error Recovery (CRITICAL)
+
+### When File Operations Fail
+❌ **Don't do**: Retry the exact same call multiple times
+✅ **Do**: Try different approaches:
+- **getRawFileContent fails** → Try searchEmbeddedCode instead
+- **Search returns nothing** → Try broader terms or getDirectoryStructure
+- **File not found** → Verify repository and path, search for similar files
+- **Permission errors** → Check repository access, try alternative approaches
+
+### When Search Tools Fail
+❌ **Don't do**: Keep searching with the same terms
+✅ **Do**: Expand your approach:
+- Try broader search terms
+- Check repository structure  
+- Use alternative repositories if applicable
+- Report what you tried and suggest next steps
+
+### General Failure Strategy
+- **Don't repeat the same failing approach**
+- **Try alternative tools/parameters**  
+- **Report what you tried and why it failed**
+- **Ask for clarification when needed**
 
 ## Platform-Specific Communication
 
@@ -756,7 +758,7 @@ const generateResponseInternal = async (
 
 ### Bug Fix Workflow
 1. **Understand**: Read issue description and related files
-2. **Locate**: Search codebase for relevant components
+2. **Locate**: Search codebase for relevant components (use searchEmbeddedCode)
 3. **Branch**: Create feature branch with descriptive name
 4. **Fix**: Make minimal, targeted changes
 5. **Verify**: Read changes to ensure correctness  
@@ -790,12 +792,7 @@ const generateResponseInternal = async (
 - **Linear issue tracking**: Connect GitHub work to Linear issues
 - **Cross-platform updates**: Notify all relevant channels of important changes
 
-## Error Handling & Recovery
-
-### File Operation Failures
-- **editCode fails**: Re-read file, check for recent changes, use smaller code chunks
-- **File not found**: Verify repository and path, search for similar files
-- **Permission errors**: Check repository access, try alternative approaches
+## API Failures & Communication Issues
 
 ### API Failures
 - **Rate limits**: Wait and retry with exponential backoff
@@ -821,7 +818,8 @@ ${memoryContext ? `## Previous Context\n${memoryContext}\n` : ''}${
         }
 `
       : ''
-  }Remember: Users expect immediate action on clear requests. Be decisive, thorough, and communicate results clearly.`;
+  }## Remember
+**Execute decisively, adapt intelligently**. Users expect immediate action on clear requests and smart problem-solving when tools fail.`;
 
   // Create a wrapper for tool execution that tracks usage and enforces limits
   const createMemoryAwareToolExecutor = (

@@ -333,16 +333,16 @@ class LinearAgentSessionManager {
 
     switch (content.type) {
       case 'thought':
-        return `${prefix} 🤔 THOUGHT: ${content.body}`;
+        return `${prefix} THOUGHT: ${content.body}`;
       case 'elicitation':
-        return `${prefix} ❓ ELICITATION: ${content.body}`;
+        return `${prefix} ELICITATION: ${content.body}`;
       case 'action':
         const result = content.result ? ` → ${content.result}` : '';
-        return `${prefix} 🛠️ ACTION: ${content.action}(${content.parameter})${result}`;
+        return `${prefix} ACTION: ${content.action}(${content.parameter})${result}`;
       case 'response':
-        return `${prefix} ✅ RESPONSE: ${content.body}`;
+        return `${prefix} RESPONSE: ${content.body}`;
       case 'error':
-        return `${prefix} ❌ ERROR: ${content.body}`;
+        return `${prefix} ERROR: ${content.body}`;
       default:
         return `${prefix} ACTIVITY: ${JSON.stringify(content)}`;
     }
@@ -381,6 +381,28 @@ class LinearAgentSessionManager {
 export const linearAgentSessionManager =
   LinearAgentSessionManager.getInstance();
 
+// Helper function to parse action messages into action/parameter format
+const parseActionMessage = (
+  message: string
+): { action: string; parameter: string } => {
+  // Look for patterns like "toolName: details" or "doing something..."
+  const colonMatch = message.match(/^([^:]+):\s*(.+)$/);
+  if (colonMatch) {
+    return { action: colonMatch[1].trim(), parameter: colonMatch[2].trim() };
+  }
+
+  // Look for patterns like "getting something..." or "searching for..."
+  const verbMatch = message.match(
+    /^(getting|searching|reading|creating|updating|deleting|analyzing|processing)\s+(.+)$/i
+  );
+  if (verbMatch) {
+    return { action: verbMatch[1], parameter: verbMatch[2] };
+  }
+
+  // Default: treat whole message as action with empty parameter
+  return { action: message, parameter: '' };
+};
+
 // Convenience functions that replace the old logToLinearIssue functions
 export const agentActivity = {
   thought: async (issueIdOrIdentifier: string, message: string) => {
@@ -388,7 +410,9 @@ export const agentActivity = {
       issueIdOrIdentifier
     );
     if (sessionId) {
-      await linearAgentSessionManager.emitThought(sessionId, message);
+      // Convert thought to action for better Linear display
+      const { action, parameter } = parseActionMessage(message);
+      await linearAgentSessionManager.emitAction(sessionId, action, parameter);
     }
   },
 
@@ -434,7 +458,12 @@ export const agentActivity = {
       issueIdOrIdentifier
     );
     if (sessionId) {
-      await linearAgentSessionManager.emitError(sessionId, message);
+      // Convert error to action for consistency
+      await linearAgentSessionManager.emitAction(
+        sessionId,
+        '❌ Error',
+        message
+      );
     }
   },
 };
@@ -442,7 +471,9 @@ export const agentActivity = {
 // Direct session ID functions for webhook handlers that already have the session ID
 export const agentActivityDirect = {
   thought: async (sessionId: string, message: string) => {
-    await linearAgentSessionManager.emitThought(sessionId, message);
+    // Convert thought to action for better Linear display
+    const { action, parameter } = parseActionMessage(message);
+    await linearAgentSessionManager.emitAction(sessionId, action, parameter);
   },
 
   elicitation: async (sessionId: string, message: string) => {
@@ -468,7 +499,8 @@ export const agentActivityDirect = {
   },
 
   error: async (sessionId: string, message: string) => {
-    await linearAgentSessionManager.emitError(sessionId, message);
+    // Convert error to action for consistency
+    await linearAgentSessionManager.emitAction(sessionId, '❌ Error', message);
   },
 };
 

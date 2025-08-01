@@ -2647,6 +2647,13 @@ export const executeGetRawFileContent = async (
   updateStatus?: (status: string) => void
 ) => {
   try {
+    // Validate required parameters upfront
+    if (!file_path || !repository) {
+      throw new Error(
+        `Missing required parameters: file_path=${file_path}, repository=${repository}`
+      );
+    }
+
     if (should_read_entire_file) {
       updateStatus?.(`Reading entire file: ${file_path}`);
     } else {
@@ -2661,18 +2668,31 @@ export const executeGetRawFileContent = async (
     const { getFileContent } = await import('./github/github-utils.js');
 
     // First, get file metadata to determine total lines
-    const infoContent = await getFileContent(
-      file_path,
-      repository,
-      1,
-      1, // Just first line to get header with total lines
-      branch || undefined,
-      sessionId
-    );
+    let infoContent: string;
+    let totalLines: number;
 
-    // Extract total lines from header (format: "// Lines 1-1 of 1234")
-    const headerMatch = infoContent.match(/^\/\/ Lines \d+-\d+ of (\d+)/);
-    const totalLines = headerMatch ? parseInt(headerMatch[1], 10) : 1000;
+    try {
+      infoContent = await getFileContent(
+        file_path,
+        repository,
+        1,
+        1, // Just first line to get header with total lines
+        branch || 'main',
+        sessionId
+      );
+
+      // Extract total lines from header (format: "// Lines 1-1 of 1234")
+      const headerMatch = infoContent.match(/^\/\/ Lines \d+-\d+ of (\d+)/);
+      totalLines = headerMatch ? parseInt(headerMatch[1], 10) : 1000;
+    } catch (fileError) {
+      throw new Error(
+        `File not found or inaccessible: ${file_path} in ${repository}${
+          branch ? ` (branch: ${branch})` : ''
+        }. ${
+          fileError instanceof Error ? fileError.message : String(fileError)
+        }`
+      );
+    }
 
     // Calculate actual range based on parameters (foolproof logic)
     let actualStartLine: number;
@@ -2716,14 +2736,25 @@ export const executeGetRawFileContent = async (
     }
 
     // Get the actual content for the calculated range
-    const fullContent = await getFileContent(
-      file_path,
-      repository,
-      actualStartLine,
-      actualEndLine - actualStartLine + 1,
-      branch || undefined,
-      sessionId
-    );
+    let fullContent: string;
+    try {
+      fullContent = await getFileContent(
+        file_path,
+        repository,
+        actualStartLine,
+        actualEndLine - actualStartLine + 1,
+        branch || 'main',
+        sessionId
+      );
+    } catch (contentError) {
+      throw new Error(
+        `Failed to retrieve content for ${file_path} lines ${actualStartLine}-${actualEndLine}. ${
+          contentError instanceof Error
+            ? contentError.message
+            : String(contentError)
+        }`
+      );
+    }
 
     // Remove header line if present (getFileContent adds format: "// Lines X-Y of Z")
     const lines = fullContent.split('\n');
