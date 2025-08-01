@@ -25,7 +25,6 @@ import {
   executeSearchLinearIssues,
   executeGetLinearWorkflowStates,
   executeCreateLinearComment,
-  executeCreateAgentActivity,
   // GitHub tools
   executeGetFileContent,
   executeCreateBranch,
@@ -302,9 +301,7 @@ export const generateResponse = async (
   if (contextId && !contextId.startsWith('slack:') && linearClient) {
     await agentActivity.thought(
       contextId,
-      `📋 Session initialized: ${sessionId.substring(
-        -8
-      )} on ${platform} platform. Context: ${contextId}`
+      `Session initialized for ${contextId}`
     );
   }
 
@@ -334,12 +331,7 @@ export const generateResponse = async (
   const isLinearIssue = contextId && !contextId.startsWith('slack:');
 
   if (isLinearIssue && linearClient) {
-    await agentActivity.thought(
-      contextId,
-      `🚀 Starting work on this issue. Request from ${
-        slackContext ? 'Slack' : 'Linear'
-      } (Session: ${sessionId})`
-    );
+    await agentActivity.thought(contextId, `Starting analysis of ${contextId}`);
   }
 
   try {
@@ -355,12 +347,12 @@ export const generateResponse = async (
         if (attemptNumber === 1) {
           await agentActivity.thought(
             contextId,
-            `🎯 Planning approach: Analyzing ${messages.length} message(s) to determine best course of action`
+            `Planning approach for ${messages.length} message(s)`
           );
         } else {
           await agentActivity.thought(
             contextId,
-            `🔄 Retry attempt ${attemptNumber}: Adjusting strategy based on previous attempt results`
+            `Retry attempt ${attemptNumber} in progress`
           );
         }
       }
@@ -394,11 +386,7 @@ export const generateResponse = async (
         if (isLinearIssue && linearClient) {
           await agentActivity.thought(
             contextId,
-            `✅ Task completion analysis: Generated response after attempt ${attemptNumber}/${MAX_RETRY_ATTEMPTS}. Used ${
-              result.toolsUsed.length
-            } tools: [${result.toolsUsed.join(', ')}]. Actions performed: ${
-              result.actionsPerformed.length
-            }. Explicitly ended: ${result.endedExplicitly}.`
+            `Completed analysis using ${result.toolsUsed.length} tools`
           );
         }
 
@@ -480,10 +468,7 @@ export const generateResponse = async (
 
     // Final completion log
     if (isLinearIssue && linearClient) {
-      await agentActivity.response(
-        contextId,
-        `🎯 Session completed successfully. All requested work has been finished and I'm ready to assist with any follow-up questions or additional tasks.`
-      );
+      await agentActivity.response(contextId, `Session completed successfully`);
     }
 
     return finalResponse;
@@ -537,27 +522,9 @@ const generateResponseInternal = async (
   const contextId = extractIssueIdFromContext(messages, slackContext);
   const isLinearIssue = contextId && !contextId.startsWith('slack:');
 
-  // Log strategic thinking about approach
-  if (isLinearIssue && linearClient) {
-    await agentActivity.thought(
-      contextId,
-      `🧠 Strategic analysis: Entering ${executionStrategy.phase} phase with limits: ${executionStrategy.maxSearchOperations} searches, ${executionStrategy.maxReadOperations} reads, ${executionStrategy.maxAnalysisOperations} analysis operations`
-    );
-  }
-
   // Initialize Linear agent session manager if client is available
   if (linearClient) {
     linearAgentSessionManager.setLinearClient(linearClient);
-  }
-
-  // Log initial activity if working on a Linear issue
-  if (isLinearIssue && linearClient) {
-    await agentActivity.thought(
-      contextId,
-      `🔍 Beginning analysis of this issue. Request from ${
-        slackContext ? 'Slack' : 'Linear'
-      }, Attempt ${attemptNumber}, Session: ${sessionId}`
-    );
   }
 
   // Store the incoming message in memory
@@ -814,15 +781,10 @@ const generateResponseInternal = async (
     - Simple requests like "set estimate to 5" should just set the estimate directly
     - Only create branches/PRs when explicitly asked to work on implementation
 
-    **LINEAR AGENT ACTIVITIES - PREFERRED FOR RESPONSES:**
-    - When operating in an agent session (sessionId provided in context), use createAgentActivity tool instead of createLinearComment for user responses
-    - Use activityType "response" for final answers - this automatically creates a threaded comment in Linear with better UX
-    - Use activityType "thought" for internal notes or reasoning that users should see
-    - Use activityType "elicitation" when you need clarification from the user
-    - Use activityType "action" to describe tool invocations (with optional result field)
-    - Use activityType "error" to report problems or failures
-    - Agent activities provide better status tracking and native Linear agent experience
-    - When you emit a "response" activity, Linear automatically creates a comment in the issue thread
+    **LINEAR COMMENT RESPONSES:**
+    - Use createLinearComment to respond to users with your analysis and findings
+    - Make responses contextual and reference the user's specific question when appropriate
+    - Provide clear, professional responses without excessive formatting
 
     GITHUB REPO NOTES:
     - Your repository is https://github.com/otron-io/otron, you can develop and improve yourself via this repository.
@@ -976,7 +938,7 @@ const generateResponseInternal = async (
         ) {
           await agentActivity.thought(
             contextId,
-            `🔍 Search efficiency: ${executionStrategy.searchOperations}/${executionStrategy.maxSearchOperations} searches used. One search remaining before action phase.`
+            `Search efficiency: ${executionStrategy.searchOperations}/${executionStrategy.maxSearchOperations} searches used`
           );
         }
       }
@@ -990,7 +952,7 @@ const generateResponseInternal = async (
           if (isLinearIssue && linearClient) {
             await agentActivity.thought(
               contextId,
-              `📚 Strategic limit: File reading operations maxed out (${executionStrategy.maxReadOperations}). Transitioning to action phase with current information.`
+              `File reading limit reached: ${executionStrategy.maxReadOperations} operations completed`
             );
           }
           return `⚠️ File reading limit reached (${executionStrategy.maxReadOperations}). You must now take action with the information you have. No more file reading allowed.`;
@@ -2362,50 +2324,6 @@ ${params.expectedActions.map((action: string) => `• ${action}`).join('\n')}
           async (params: any) => {
             return await executeCreateLinearComment(
               params,
-              updateStatus,
-              linearClient
-            );
-          }
-        ),
-      }),
-      createAgentActivity: tool({
-        description:
-          'Create an agent session activity (thought, elicitation, action, response, or error). Use "response" type for final answers - this will automatically create a threaded comment in Linear. The session ID is automatically provided.',
-        parameters: z.object({
-          activityType: z
-            .enum(['thought', 'elicitation', 'action', 'response', 'error'])
-            .describe('The type of activity to create'),
-          body: z
-            .string()
-            .describe(
-              'The message body. Required for thought, elicitation, response, error types. Leave empty for action type.'
-            ),
-          action: z
-            .string()
-            .describe(
-              'The action name. Required for action type. Leave empty for other types.'
-            ),
-          parameter: z
-            .string()
-            .describe(
-              'The action parameter. Required for action type. Leave empty for other types.'
-            ),
-          result: z
-            .string()
-            .describe(
-              'The action result. Optional for action type, can be empty. Leave empty for other types.'
-            ),
-        }),
-        execute: createMemoryAwareToolExecutor(
-          'createAgentActivity',
-          async (params: any) => {
-            // Automatically inject the sessionId from current context
-            const paramsWithSessionId = {
-              ...params,
-              sessionId: sessionId, // Use the sessionId from the current scope
-            };
-            return await executeCreateAgentActivity(
-              paramsWithSessionId,
               updateStatus,
               linearClient
             );

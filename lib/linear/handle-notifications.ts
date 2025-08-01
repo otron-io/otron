@@ -221,16 +221,35 @@ async function processAgentSessionWork(
   );
   await agentActivityDirect.thought(
     sessionId,
-    `🧠 Starting AI analysis of the request: "${
-      agentSession.comment?.body || 'No comment'
-    }"`
+    `Analyzing issue context for ${issue.identifier} - ${issue.title}`
   );
 
-  // Simple status update function
+  // Status update function with appropriate activity types
   const updateStatus = async (status: string) => {
     console.log(`Agent Session Status: ${status}`);
-    // Also log status as thought activity
-    await agentActivityDirect.thought(sessionId, `📊 Status: ${status}`);
+
+    // Map status updates to appropriate activity types
+    if (
+      status.includes('is searching') ||
+      status.includes('is getting') ||
+      status.includes('is creating')
+    ) {
+      // Extract action and parameter from status
+      const actionMatch = status.match(/is (\w+)/);
+      const action = actionMatch ? actionMatch[1] : 'processing';
+      await agentActivityDirect.action(
+        sessionId,
+        action,
+        status.replace(`is ${action}`, '').trim()
+      );
+    } else if (status.includes('completed') || status.includes('finished')) {
+      await agentActivityDirect.response(sessionId, status);
+    } else if (status.includes('error') || status.includes('failed')) {
+      await agentActivityDirect.error(sessionId, status);
+    } else {
+      // Default to thought for other statuses
+      await agentActivityDirect.thought(sessionId, status);
+    }
   };
 
   try {
@@ -255,19 +274,15 @@ async function processAgentSessionWork(
     // Log completion
     await agentActivityDirect.response(
       sessionId,
-      `✅ Completed processing the request. ${
-        result
-          ? `Response: ${result.substring(0, 200)}${
-              result.length > 200 ? '...' : ''
-            }`
-          : 'No response generated.'
-      }`
+      result
+        ? `Analysis completed for ${issue.identifier}`
+        : 'Analysis completed with no response generated'
     );
   } catch (error) {
     console.error(`generateResponse failed for session ${sessionId}:`, error);
     await agentActivityDirect.error(
       sessionId,
-      `Failed to generate AI response: ${
+      `Analysis failed: ${
         error instanceof Error ? error.message : String(error)
       }`
     );
@@ -421,16 +436,35 @@ async function processAgentSessionPrompt(
   );
   await agentActivityDirect.thought(
     sessionId,
-    `🧠 Processing user prompt: "${userPrompt.substring(0, 100)}${
-      userPrompt.length > 100 ? '...' : ''
-    }"`
+    `Processing follow-up prompt for ${issue.identifier}`
   );
 
-  // Simple status update function
+  // Status update function with appropriate activity types
   const updateStatus = async (status: string) => {
     console.log(`Agent Session Status: ${status}`);
-    // Also log status as thought activity
-    await agentActivityDirect.thought(sessionId, `📊 Status: ${status}`);
+
+    // Map status updates to appropriate activity types
+    if (
+      status.includes('is searching') ||
+      status.includes('is getting') ||
+      status.includes('is creating')
+    ) {
+      // Extract action and parameter from status
+      const actionMatch = status.match(/is (\w+)/);
+      const action = actionMatch ? actionMatch[1] : 'processing';
+      await agentActivityDirect.action(
+        sessionId,
+        action,
+        status.replace(`is ${action}`, '').trim()
+      );
+    } else if (status.includes('completed') || status.includes('finished')) {
+      await agentActivityDirect.response(sessionId, status);
+    } else if (status.includes('error') || status.includes('failed')) {
+      await agentActivityDirect.error(sessionId, status);
+    } else {
+      // Default to thought for other statuses
+      await agentActivityDirect.thought(sessionId, status);
+    }
   };
 
   try {
@@ -455,13 +489,9 @@ async function processAgentSessionPrompt(
     // Log completion
     await agentActivityDirect.response(
       sessionId,
-      `✅ Completed processing the prompt. ${
-        result
-          ? `Response: ${result.substring(0, 200)}${
-              result.length > 200 ? '...' : ''
-            }`
-          : 'No response generated.'
-      }`
+      result
+        ? `Follow-up analysis completed for ${issue.identifier}`
+        : 'Follow-up analysis completed with no response generated'
     );
   } catch (error) {
     console.error(
@@ -470,7 +500,7 @@ async function processAgentSessionPrompt(
     );
     await agentActivityDirect.error(
       sessionId,
-      `Failed to generate AI response to prompt: ${
+      `Follow-up analysis failed: ${
         error instanceof Error ? error.message : String(error)
       }`
     );
