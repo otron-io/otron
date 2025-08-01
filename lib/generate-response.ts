@@ -2623,7 +2623,7 @@ ${memoryContext ? `## Previous Context\n${memoryContext}\n` : ''}${
         description:
           'Read file content from a GitHub repository. Returns raw, unformatted source code. Automatically handles large files by chunking into 200-line sections.',
         parameters: z.object({
-          path: z.string().describe('The file path in the repository'),
+          file_path: z.string().describe('The file path in the repository'),
           repository: z
             .string()
             .describe('The repository in format "owner/repo"'),
