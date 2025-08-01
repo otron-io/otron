@@ -130,15 +130,66 @@ export const createBranch = async (
       ref: `heads/${baseRef}`,
     });
 
-    // Create new branch
-    await octokit.git.createRef({
-      owner,
-      repo,
-      ref: `refs/heads/${branch}`,
-      sha: refData.object.sha,
-    });
+    try {
+      // Create new branch
+      await octokit.git.createRef({
+        owner,
+        repo,
+        ref: `refs/heads/${branch}`,
+        sha: refData.object.sha,
+      });
 
-    console.log(`Created branch ${branch} in ${repository}`);
+      console.log(`Created branch ${branch} in ${repository}`);
+    } catch (createError: any) {
+      // If branch already exists (422 error), check if it needs to be updated
+      if (
+        createError.status === 422 &&
+        createError.message?.includes('already exists')
+      ) {
+        console.log(
+          `Branch ${branch} already exists, checking if it needs to be updated...`
+        );
+
+        try {
+          // Get the existing branch's SHA
+          const { data: existingBranchData } = await octokit.git.getRef({
+            owner,
+            repo,
+            ref: `heads/${branch}`,
+          });
+
+          // If the existing branch is not at the same SHA as the base, update it
+          if (existingBranchData.object.sha !== refData.object.sha) {
+            console.log(
+              `Updating existing branch ${branch} to match ${baseRef}...`
+            );
+            await octokit.git.updateRef({
+              owner,
+              repo,
+              ref: `heads/${branch}`,
+              sha: refData.object.sha,
+              force: true,
+            });
+            console.log(
+              `Updated branch ${branch} to head of ${baseRef} in ${repository}`
+            );
+          } else {
+            console.log(
+              `Branch ${branch} already exists and is up-to-date with ${baseRef}`
+            );
+          }
+        } catch (checkError) {
+          console.error(
+            `Error checking/updating existing branch ${branch}:`,
+            checkError
+          );
+          throw checkError;
+        }
+      } else {
+        // Re-throw other creation errors
+        throw createError;
+      }
+    }
   } catch (error) {
     console.error(`Error creating branch ${branch} in ${repository}:`, error);
     throw error;
