@@ -1275,27 +1275,52 @@ ${repositoryContext ? `${repositoryContext}` : ''}${
         success = false;
         response = error instanceof Error ? error.message : String(error);
 
+        // Helper functions for error handling
+        const getFailureContext = (
+          toolName: string,
+          error: string,
+          input: any
+        ): string => {
+          switch (toolName) {
+            case 'searchEmbeddedCode':
+              return `Search failed for "${input?.query}" in ${input?.repository}: ${error}`;
+            case 'editCode':
+              return `Code edit failed in ${input?.file_path}: ${error}`;
+            case 'createPullRequest':
+              return `PR creation failed (${input?.head} → ${input?.base}): ${error}`;
+            case 'createBranch':
+              return `Branch creation failed for ${input?.branch}: ${error}`;
+            default:
+              return `${toolName} failed: ${error}`;
+          }
+        };
+
+        const getErrorGuidance = (
+          toolName: string,
+          error: string,
+          input: any
+        ): string => {
+          switch (toolName) {
+            case 'editCode':
+              if (error.includes('similar pattern detected at line')) {
+                return 'Read the current file content around the mentioned line number and use the exact current code as old_string.';
+              }
+              if (error.includes('Old code not found')) {
+                return 'Read the current file content first to get the exact code that exists, then retry with that exact code.';
+              }
+              return 'Read the current file content to understand the current state before making edits.';
+            case 'createPullRequest':
+              if (error.includes('No commits found')) {
+                return 'Make sure code changes were successfully committed before creating a PR. Check if editCode actually worked.';
+              }
+              return 'Verify that commits exist on the branch before creating a pull request.';
+            default:
+              return 'Review the error message and try an alternative approach.';
+          }
+        };
+
         // Log failed tool execution as thought (less prominent than error comments)
         if (isLinearIssue && linearClient) {
-          const getFailureContext = (
-            toolName: string,
-            error: string,
-            input: any
-          ): string => {
-            switch (toolName) {
-              case 'searchEmbeddedCode':
-                return `Search failed for "${input?.query}" in ${input?.repository}: ${error}`;
-              case 'editCode':
-                return `Code edit failed in ${input?.file_path}: ${error}`;
-              case 'createPullRequest':
-                return `PR creation failed (${input?.head} → ${input?.base}): ${error}`;
-              case 'createBranch':
-                return `Branch creation failed for ${input?.branch}: ${error}`;
-              default:
-                return `${toolName} failed: ${error}`;
-            }
-          };
-
           const failureContext = getFailureContext(toolName, response, args[0]);
 
           // Use thought instead of error for less prominent logging
@@ -1310,7 +1335,13 @@ ${repositoryContext ? `${repositoryContext}` : ''}${
           detailedOutput: null,
         });
 
-        return error;
+        // Return structured error response that the agent can understand
+        return {
+          success: false,
+          error: response,
+          message: `❌ TOOL FAILED: ${toolName} - ${response}`,
+          guidance: getErrorGuidance(toolName, response, args[0])
+        };
       }
     };
   };
