@@ -77,7 +77,9 @@ export const getFileContent = async (
   try {
     // Validate line ranges
     if (startLine < 1) startLine = 1;
-    if (maxLines > 200) maxLines = 200;
+    // Remove hard limit for editing tools that need full file access
+    // Keep reasonable bounds to prevent memory issues
+    if (maxLines > 10000) maxLines = 10000;
 
     // Generate cache keys (use 'main' as default to match tool-executors.ts)
     const fileCacheKey = `${repository}:${path}:${branch || 'main'}`;
