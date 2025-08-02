@@ -396,6 +396,8 @@ export const generateResponse = async (
             contextId,
             `Completed analysis using ${result.toolsUsed.length} tools`
           );
+
+          await agentActivity.response(contextId, finalResponse);
         }
 
         // If this is the last attempt, don't evaluate - just return
