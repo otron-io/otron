@@ -7,6 +7,12 @@ import {
   executeExaFindSimilar,
 } from './exa/exa-utils.js';
 import {
+  // New line-based file editing tools
+  executeReplaceLines,
+  executeInsertLines,
+  executeDeleteLines,
+} from './file-editing-tools.js';
+import {
   // Linear tools
   executeGetIssueContext,
   executeUpdateIssueStatus,
@@ -25,28 +31,9 @@ import {
   executeSearchLinearIssues,
   executeGetLinearWorkflowStates,
   executeCreateLinearComment,
-  // GitHub tools
-  executeGetFileContent,
-  executeCreateBranch,
-  executeCreatePullRequest,
-  executeGetPullRequest,
-  executeAddPullRequestComment,
-  executeGetPullRequestFiles,
-  executeGetDirectoryStructure,
-  executeGetRepositoryStructure,
-  executeEditCode,
-  executeAddCode,
-  executeRemoveCode,
-  executeEditUrl,
-  executeDeleteFile,
-  executeCreateFile,
-  // GitHub branch management tools
-  executeResetBranchToHead,
-  // GitHub file reading tools
-  executeGetRawFileContent,
-  executeReadRelatedFiles,
-  // Embedded repository tools
-  executeSearchEmbeddedCode,
+  executeCreateAgentActivity,
+} from './linear-tools.js';
+import {
   // Slack tools
   executeSendSlackMessage,
   executeSendDirectMessage,
@@ -68,6 +55,26 @@ import {
   executeSendRichDirectMessage,
   executeCreateFormattedSlackMessage,
   executeRespondToSlackInteraction,
+} from './slack-tools.js';
+import {
+  // GitHub tools
+  executeGetFileContent,
+  executeCreateBranch,
+  executeCreatePullRequest,
+  executeGetPullRequest,
+  executeAddPullRequestComment,
+  executeGetPullRequestFiles,
+  executeGetDirectoryStructure,
+  executeGetRepositoryStructure,
+  executeDeleteFile,
+  executeCreateFile,
+  // GitHub branch management tools
+  executeResetBranchToHead,
+  // GitHub file reading tools
+  executeGetRawFileContent,
+  executeReadRelatedFiles,
+  // Embedded repository tools
+  executeSearchEmbeddedCode,
 } from './tool-executors.js';
 import { LinearClient } from '@linear/sdk';
 import { memoryManager } from './memory/memory-manager.js';
@@ -2823,10 +2830,10 @@ ${repositoryContext ? `${repositoryContext}` : ''}${
           (params: any) => executeReadRelatedFiles(params, updateStatus)
         ),
       }),
-      // Foolproof file editing tool
-      editCode: tool({
+      // Line-based file editing tool - replaces specific line ranges
+      replaceLines: tool({
         description:
-          'Performs exact string replacements in files. Simple, reliable interface that prevents common editing errors.',
+          'Replace specific line ranges with new content. Uses precise line numbers instead of unreliable string matching.',
         parameters: z.object({
           file_path: z.string().describe('The path to the file to modify'),
           repository: z
@@ -2834,93 +2841,81 @@ ${repositoryContext ? `${repositoryContext}` : ''}${
             .describe('The repository in format "owner/repo"'),
           branch: z
             .string()
+            .optional()
             .describe('Branch to edit. Leave empty to use default branch'),
-          old_string: z
+          start_line: z
+            .number()
+            .int()
+            .min(1)
+            .describe('First line to replace (1-indexed)'),
+          end_line: z
+            .number()
+            .int()
+            .min(1)
+            .describe('Last line to replace (1-indexed, inclusive)'),
+          new_content: z
             .string()
-            .describe('The text to replace (must be unique in the file)'),
-          new_string: z
-            .string()
-            .describe(
-              'The text to replace it with (must be different from old_string)'
-            ),
-          replace_all: z
-            .boolean()
-            .describe('Replace all occurrences of old_string (default false)'),
+            .describe('New content to replace the line range with'),
           commit_message: z.string().describe('Commit message for the change'),
         }),
-        execute: createMemoryAwareToolExecutor('editCode', (params: any) =>
-          executeEditCode(params, updateStatus)
+        execute: createMemoryAwareToolExecutor('replaceLines', (params: any) =>
+          executeReplaceLines(params, updateStatus)
         ),
       }),
-      addCode: tool({
+      // Line-based insertion tool - insert content at specific line numbers
+      insertLines: tool({
         description:
-          'Add new code at a specific location in a file using context-based positioning.',
+          'Insert new content at a specific line number. Uses precise line positioning instead of unreliable context matching.',
         parameters: z.object({
           file_path: z.string().describe('The file path in the repository'),
           repository: z
             .string()
             .describe('The repository in format "owner/repo"'),
-          branch: z.string().describe('The branch to edit'),
-          new_string: z.string().describe('The new code content to add'),
-          position: z
-            .enum(['start', 'end', 'after', 'before'])
-            .describe(
-              'Where to add the code: "start" (beginning of file), "end" (end of file), "after" (after context), "before" (before context)'
-            ),
-          context: z
+          branch: z
             .string()
+            .optional()
+            .describe('Branch to edit. Leave empty to use default branch'),
+          line_number: z
+            .number()
+            .int()
+            .min(1)
             .describe(
-              'Required when position is "after" or "before" - the exact code content to position relative to. Leave empty for "start" or "end".'
+              'Line number where to insert content (1-indexed). Use 1 for start of file, or totalLines+1 for end of file'
             ),
-          message: z.string().describe('Commit message for the change'),
+          new_content: z.string().describe('The new content to insert'),
+          commit_message: z.string().describe('Commit message for the change'),
         }),
-        execute: createMemoryAwareToolExecutor('addCode', (params: any) =>
-          executeAddCode(params, updateStatus)
+        execute: createMemoryAwareToolExecutor('insertLines', (params: any) =>
+          executeInsertLines(params, updateStatus)
         ),
       }),
-      removeCode: tool({
+      // Line-based deletion tool - delete specific line ranges
+      deleteLines: tool({
         description:
-          'Remove specific code from a file. Requires exact content matching for safety.',
+          'Delete specific line ranges from a file. Uses precise line numbers for safe, predictable deletion.',
         parameters: z.object({
           file_path: z.string().describe('The file path in the repository'),
           repository: z
             .string()
             .describe('The repository in format "owner/repo"'),
-          branch: z.string().describe('The branch to edit'),
-          codeToRemove: z
+          branch: z
             .string()
-            .describe(
-              'The exact code content to remove (must match exactly for safety)'
-            ),
-          message: z.string().describe('Commit message for the change'),
+            .optional()
+            .describe('Branch to edit. Leave empty to use default branch'),
+          start_line: z
+            .number()
+            .int()
+            .min(1)
+            .describe('First line to delete (1-indexed)'),
+          end_line: z
+            .number()
+            .int()
+            .min(1)
+            .describe('Last line to delete (1-indexed, inclusive)'),
+          commit_message: z.string().describe('Commit message for the change'),
         }),
-        execute: createMemoryAwareToolExecutor('removeCode', (params: any) =>
-          executeRemoveCode(params, updateStatus)
-        ),
-      }),
-      editUrl: tool({
-        description:
-          'Ultra-safe URL editing specifically for documentation files. Only allows editing of URLs with strict safety checks.',
-        parameters: z.object({
-          path: z.string().describe('The file path in the repository'),
-          repository: z
-            .string()
-            .describe('The repository in format "owner/repo"'),
-          branch: z.string().describe('The branch to edit'),
-          oldUrl: z
-            .string()
-            .describe(
-              'The exact URL to replace (must contain http:// or https://)'
-            ),
-          newUrl: z
-            .string()
-            .describe(
-              'The new URL to replace it with (must contain http:// or https://)'
-            ),
-          message: z.string().describe('Commit message for the change'),
-        }),
-        execute: createMemoryAwareToolExecutor('editUrl', (params: any) =>
-          executeEditUrl(params, updateStatus)
+        execute: createMemoryAwareToolExecutor('deleteLines', (params: any) =>
+          executeDeleteLines(params, updateStatus)
         ),
       }),
     },
