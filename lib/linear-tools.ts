@@ -147,7 +147,7 @@ export const executeCreateIssue = async (
   // Add strategic thinking about issue creation
   await agentActivity.thought(
     'system',
-    `📋 Issue creation strategy: Creating "${title}" in team ${teamId}${
+    `Issue creation strategy: Creating "${title}" in team ${teamId}${
       parentIssueId ? ` as child of ${parentIssueId}` : ''
     }. Priority: ${priority || 'default'}, Status: ${
       status || 'default'

@@ -2283,7 +2283,7 @@ ${repositoryContext ? `${repositoryContext}` : ''}${
           parentIssueId: z
             .string()
             .describe(
-              'Optional parent issue ID to create this as a subtask. Leave empty if not a subtask.'
+              'Optional parent issue ID to create this as a child issue. Leave empty if not a child issue.'
             ),
         }),
         execute: createMemoryAwareToolExecutor('createIssue', (params: any) =>
