@@ -2382,7 +2382,20 @@ export const executeAddCode = async (
             `Context appears ${afterOccurrences} times in ${file_path}. Please provide more specific context.`
           );
         }
-        updatedContent = content.replace(context, context + '\n' + new_string);
+
+        // SAFE REPLACEMENT: Use indexOf and substring to avoid regex issues
+        const afterContextIndex = content.indexOf(context);
+        if (afterContextIndex === -1) {
+          throw new Error(
+            `Context not found in ${file_path}: ${context.substring(0, 100)}...`
+          );
+        }
+
+        updatedContent =
+          content.substring(0, afterContextIndex + context.length) +
+          '\n' +
+          new_string +
+          content.substring(afterContextIndex + context.length);
         break;
 
       case 'before':
@@ -2408,28 +2421,59 @@ export const executeAddCode = async (
             `Context appears ${beforeOccurrences} times in ${file_path}. Please provide more specific context.`
           );
         }
-        updatedContent = content.replace(context, new_string + '\n' + context);
+
+        // SAFE REPLACEMENT: Use indexOf and substring to avoid regex issues
+        const beforeContextIndex = content.indexOf(context);
+        if (beforeContextIndex === -1) {
+          throw new Error(
+            `Context not found in ${file_path}: ${context.substring(0, 100)}...`
+          );
+        }
+
+        updatedContent =
+          content.substring(0, beforeContextIndex) +
+          new_string +
+          '\n' +
+          content.substring(beforeContextIndex);
         break;
 
       default:
         throw new Error(`Invalid position: ${position}`);
     }
 
-    // SAFETY CHECK: Validate file size increase is reasonable
+    // SAFETY CHECK: Validate file size changes are reasonable
     const originalLength = content.length;
     const newLength = updatedContent.length;
-    const increase = newLength - originalLength;
+    const change = newLength - originalLength;
 
-    if (increase > 5000) {
+    if (change > 5000) {
       throw new Error(
-        `SAFETY CHECK FAILED: This would increase the file size by ${increase} characters, which exceeds the safety limit of 5000. Please add smaller chunks.`
+        `SAFETY CHECK FAILED: This would increase the file size by ${change} characters, which exceeds the safety limit of 5000. Please add smaller chunks.`
+      );
+    }
+
+    // CRITICAL SAFETY CHECK: Prevent accidental massive deletions
+    if (change < -100) {
+      throw new Error(
+        `SAFETY CHECK FAILED: This operation would DELETE ${Math.abs(
+          change
+        )} characters from the file. The addCode function should only ADD content, not delete it. This suggests a bug in the context matching logic.`
+      );
+    }
+
+    // Ensure we're actually adding content (unless it's exactly the same length due to whitespace)
+    if (change < 0) {
+      console.warn(
+        `⚠️ WARNING: addCode operation resulted in ${Math.abs(
+          change
+        )} characters being removed. This may indicate an issue.`
       );
     }
 
     console.log('📊 Add code summary:', {
       originalLength,
       newLength,
-      increase,
+      change,
       new_stringPreview:
         new_string.substring(0, 100) + (new_string.length > 100 ? '...' : ''),
       position,
@@ -2454,7 +2498,7 @@ export const executeAddCode = async (
       success: true,
       message: `Successfully added code to ${file_path} (${position}${
         context ? ' context' : ''
-      }) - ${increase} characters added`,
+      }) - ${change} characters added`,
     };
   } catch (error) {
     console.error('❌ Error in executeAddCode:', error);
