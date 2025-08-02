@@ -1340,7 +1340,7 @@ ${repositoryContext ? `${repositoryContext}` : ''}${
           success: false,
           error: response,
           message: `❌ TOOL FAILED: ${toolName} - ${response}`,
-          guidance: getErrorGuidance(toolName, response, args[0])
+          guidance: getErrorGuidance(toolName, response, args[0]),
         };
       }
     };

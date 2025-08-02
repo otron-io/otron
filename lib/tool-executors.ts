@@ -1924,8 +1924,10 @@ export const executeEditCode = async (
         return {
           success: false,
           error: 'FORMATTED_OUTPUT_DETECTED',
-          message: '❌ AGENT ERROR: The old_string parameter appears to be formatted output from readFileWithContext tool, not raw source code.',
-          guidance: 'Extract the actual code content from the file reading tool output, not the formatted headers and context. Use only the raw source code that needs to be replaced.'
+          message:
+            '❌ AGENT ERROR: The old_string parameter appears to be formatted output from readFileWithContext tool, not raw source code.',
+          guidance:
+            'Extract the actual code content from the file reading tool output, not the formatted headers and context. Use only the raw source code that needs to be replaced.',
         };
       }
 
@@ -1994,14 +1996,14 @@ export const executeEditCode = async (
             console.error(`${marker}${i + 1}: ${contentLines[i]}`);
           }
 
-                      return {
-              success: false,
-              error: 'SIMILAR_PATTERN_FOUND',
-              message: `❌ Code not found, but similar pattern detected at line ${bestMatch.lineNum} in ${file_path}.`,
-              guidance: `The file content may have changed since you last read it. Read the current file content around line ${bestMatch.lineNum} and use the exact current code as old_string.`,
-              suggestedLine: bestMatch.lineNum,
-              filePath: file_path
-            };
+          return {
+            success: false,
+            error: 'SIMILAR_PATTERN_FOUND',
+            message: `❌ Code not found, but similar pattern detected at line ${bestMatch.lineNum} in ${file_path}.`,
+            guidance: `The file content may have changed since you last read it. Read the current file content around line ${bestMatch.lineNum} and use the exact current code as old_string.`,
+            suggestedLine: bestMatch.lineNum,
+            filePath: file_path,
+          };
         }
       }
 
@@ -2049,9 +2051,10 @@ export const executeEditCode = async (
             message: `❌ Code pattern found but exact match failed in ${file_path}. Found first line at ${
               firstLineMatch + 1
             } and last line at ${lastLineMatch + 1}.`,
-            guidance: 'The content exists but formatting differs. Read the current file content and use the exact formatting for old_string.',
+            guidance:
+              'The content exists but formatting differs. Read the current file content and use the exact formatting for old_string.',
             suggestedLines: [firstLineMatch + 1, lastLineMatch + 1],
-            filePath: file_path
+            filePath: file_path,
           };
         } else {
           return {
@@ -2060,20 +2063,22 @@ export const executeEditCode = async (
             message: `❌ Partial code match found in ${file_path}. Found first line "${firstLine}" at line ${
               firstLineMatch + 1
             } but couldn't locate the full block.`,
-            guidance: 'Try using a smaller, more specific code chunk from the current file.',
+            guidance:
+              'Try using a smaller, more specific code chunk from the current file.',
             suggestedLine: firstLineMatch + 1,
-            filePath: file_path
+            filePath: file_path,
           };
         }
       }
 
-            console.error('='.repeat(80));
+      console.error('='.repeat(80));
       return {
         success: false,
         error: 'CODE_NOT_FOUND',
         message: `❌ Old code not found in ${file_path}. The file content appears to have changed significantly since you last read it.`,
-        guidance: 'Read the current file content first to get the exact code that needs to be edited, then use that exact code as old_string.',
-        filePath: file_path
+        guidance:
+          'Read the current file content first to get the exact code that needs to be edited, then use that exact code as old_string.',
+        filePath: file_path,
       };
     }
 
