@@ -901,6 +901,17 @@ const generateResponseInternal = async (
 6. **PR**: Comprehensive description with testing notes
 7. **Follow-up**: Update Linear and notify stakeholders
 
+### Example Workflow
+1. **User request**: "Add a button to open the link in a new tab"
+2. **Understand**: Find the required files with code search
+3. **Locate**: Get the files required and target the specific lines
+4. **Branch**: Create a new branch for the changes
+5. **Implement**: Make the changes using the code editing tools on your branch.
+7. **Document**: Update relevant documentation
+8. **PR**: Comprehensive description with testing notes
+9. **Review**: Review the PR and make sure it is correct.
+11. **Follow-up**: Update Linear and notify stakeholders
+
 ## Context Awareness & Memory
 
 ### Repository Context
