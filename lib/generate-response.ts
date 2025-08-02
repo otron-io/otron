@@ -1237,13 +1237,19 @@ ${repositoryContext ? `${repositoryContext}` : ''}${
         const result = await originalExecutor(...args);
         success = true;
         response = typeof result === 'string' ? result : JSON.stringify(result);
+        const reasoning = result.reasoning;
 
         // Extract detailed output for specific tools
         if (typeof result === 'object' && result !== null) {
           detailedOutput = result;
         } else if (typeof result === 'string') {
           // Try to extract structured data from string responses
-          detailedOutput = extractDetailedOutput(toolName, result, args[0]);
+          detailedOutput = extractDetailedOutput(
+            toolName,
+            result,
+            reasoning,
+            args[0]
+          );
         }
 
         // Log successful tool execution with detailed results
@@ -1433,9 +1439,31 @@ ${repositoryContext ? `${repositoryContext}` : ''}${
   const extractDetailedOutput = (
     toolName: string,
     response: string,
+    reasoning: any,
     input: any
   ): any => {
     const output: any = {};
+
+    // Log LLM reasoning to Linear if available and working on a Linear issue
+    if (reasoning && isLinearIssue && linearClient) {
+      try {
+        // The reasoning field contains the model's thought process
+        const reasoningText =
+          typeof reasoning === 'string'
+            ? reasoning
+            : Array.isArray(reasoning)
+            ? (reasoning as any[]).join('\n')
+            : JSON.stringify(reasoning);
+
+        if (reasoningText && reasoningText.trim()) {
+          agentActivity.thought(contextId, `Thought: ${reasoningText}`);
+        }
+      } catch (error) {
+        console.error('Error logging LLM reasoning to Linear:', error);
+      }
+    } else if (reasoning) {
+      console.log('Reasoning:', reasoning);
+    }
 
     switch (toolName) {
       case 'createPullRequest':
