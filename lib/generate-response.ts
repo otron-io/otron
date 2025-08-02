@@ -1078,10 +1078,21 @@ ${repositoryContext ? `${repositoryContext}` : ''}${
               );
 
               // Log the stop command
-              await agentActivity.response(
-                contextId,
-                '🛑 **Otron is immediately stopping all operations** as requested. Processing has been terminated.'
-              );
+              if (isLinearIssue && linearClient) {
+                await agentActivity.response(
+                  contextId,
+                  '🛑 **Otron is immediately stopping all operations** as requested. Processing has been terminated.'
+                );
+              }
+
+              // Reply to Slack thread if conversation originated from Slack
+              if (slackContext) {
+                await slackClient.chat.postMessage({
+                  channel: slackContext.channelId,
+                  thread_ts: slackContext.threadTs,
+                  text: '🛑 **Otron is immediately stopping all operations** as requested. Processing has been terminated.',
+                });
+              }
 
               // Abort the current processing
               throw new Error('STOP_COMMAND_RECEIVED');
