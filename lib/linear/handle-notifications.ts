@@ -11,6 +11,9 @@ import {
 } from './linear-agent-session-manager.js';
 import { getIssueContext } from './linear-utils.js';
 
+// Map to store AbortControllers for active sessions
+const sessionAbortControllers = new Map<string, AbortController>();
+
 /**
  * Linear notification handler for Agent Session Events
  * Uses Linear's official Agents SDK for structured agent interactions
@@ -431,6 +434,14 @@ async function handleAgentSessionPrompted(
   if (userPrompt.trim().toLowerCase() === '/stop') {
     console.log(`🛑 Stop command received for session ${sessionId}`);
 
+    // Abort any active session processing immediately
+    const abortController = sessionAbortControllers.get(sessionId);
+    if (abortController) {
+      console.log(`🛑 Aborting active processing for session ${sessionId}`);
+      abortController.abort();
+      sessionAbortControllers.delete(sessionId);
+    }
+
     // Send immediate response about stopping
     await agentActivityDirect.response(
       sessionId,
@@ -464,7 +475,17 @@ async function handleAgentSessionPrompted(
 
     // If this is a stop command, abort the active session instead of queuing
     if (userPrompt.trim().toLowerCase() === '/stop') {
-      // Send stop command to the active session
+      // Abort the active session processing immediately
+      const abortController = sessionAbortControllers.get(activeSessionId);
+      if (abortController) {
+        console.log(
+          `🛑 Aborting active session processing for ${activeSessionId}`
+        );
+        abortController.abort();
+        sessionAbortControllers.delete(activeSessionId);
+      }
+
+      // Also send stop command to queue as fallback
       const stopMessage: QueuedMessage = {
         timestamp: Date.now(),
         type: 'stop',
