@@ -311,6 +311,10 @@ async function processAgentSessionWork(
 
   contextMessage += `\n\nPlease analyze this issue thoroughly and take appropriate actions. You can use Linear, GitHub, or Slack tools as needed.`;
 
+  // Create AbortController for this session
+  const abortController = new AbortController();
+  sessionAbortControllers.set(sessionId, abortController);
+
   // Log that we're starting AI processing
   console.log(
     `Processing AI response for session ${sessionId}, issue ${issue.identifier}`
@@ -357,7 +361,7 @@ async function processAgentSessionWork(
       updateStatus,
       linearClient,
       undefined, // No Slack context
-      undefined, // No abort signal
+      abortController.signal, // Pass abort signal
       sessionId // Pass the agent session ID for automatic tool injection
     );
 
@@ -367,6 +371,9 @@ async function processAgentSessionWork(
       }`
     );
 
+    // Clean up abort controller on success
+    sessionAbortControllers.delete(sessionId);
+
     // Explicitly complete the Linear agent session now that work is done
     try {
       await linearAgentSessionManager.completeSession(sessionId);
@@ -375,6 +382,9 @@ async function processAgentSessionWork(
       console.error('Error completing Linear agent session:', error);
     }
   } catch (error) {
+    // Clean up abort controller on error
+    sessionAbortControllers.delete(sessionId);
+
     console.error(`generateResponse failed for session ${sessionId}:`, error);
     await agentActivityDirect.error(
       sessionId,
@@ -624,6 +634,10 @@ async function processAgentSessionPrompt(
   contextMessage += `\n\n=== NEW USER PROMPT ===\n${userPrompt}`;
   contextMessage += `\n\nPlease respond to the user's prompt and take appropriate actions.`;
 
+  // Create AbortController for this session
+  const abortController = new AbortController();
+  sessionAbortControllers.set(sessionId, abortController);
+
   // Log that we're starting AI processing
   console.log(
     `Processing AI prompt response for session ${sessionId}, issue ${issue.identifier}`
@@ -670,7 +684,7 @@ async function processAgentSessionPrompt(
       updateStatus,
       linearClient,
       undefined, // No Slack context
-      undefined, // No abort signal
+      abortController.signal, // Pass abort signal
       sessionId // Pass the agent session ID for automatic tool injection
     );
 
@@ -680,6 +694,9 @@ async function processAgentSessionPrompt(
       }`
     );
 
+    // Clean up abort controller on success
+    sessionAbortControllers.delete(sessionId);
+
     // Explicitly complete the Linear agent session now that work is done
     try {
       await linearAgentSessionManager.completeSession(sessionId);
@@ -688,6 +705,9 @@ async function processAgentSessionPrompt(
       console.error('Error completing Linear agent session:', error);
     }
   } catch (error) {
+    // Clean up abort controller on error
+    sessionAbortControllers.delete(sessionId);
+
     console.error(
       `generateResponse failed for prompt session ${sessionId}:`,
       error

@@ -88,6 +88,7 @@ import {
 } from './linear/linear-agent-session-manager.js';
 import { Redis } from '@upstash/redis';
 import { env } from './env.js';
+import { client as slackClient } from './slack/slack-utils.js';
 
 // Initialize Redis client for tracking active responses and message queuing
 const redis = new Redis({
@@ -392,7 +393,7 @@ export const generateResponse = async (
         actionsPerformed = result.actionsPerformed;
         endedExplicitly = result.endedExplicitly;
 
-        // Log completion thinking
+        // Log linear completion thinking
         if (isLinearIssue && linearClient) {
           await agentActivity.thought(
             contextId,
@@ -400,6 +401,19 @@ export const generateResponse = async (
           );
 
           await agentActivity.response(contextId, finalResponse);
+        }
+
+        // Reply to Slack thread if conversation originated from Slack
+        if (slackContext) {
+          try {
+            await slackClient.chat.postMessage({
+              channel: slackContext.channelId,
+              thread_ts: slackContext.threadTs,
+              text: finalResponse,
+            });
+          } catch (error) {
+            console.error('Failed to post response to Slack thread:', error);
+          }
         }
 
         // If this is the last attempt, don't evaluate - just return
@@ -871,8 +885,7 @@ const generateResponseInternal = async (
 - Quick responses without text
 
 ### Linear Communication
-**Always update Linear after completing tasks:**
-- Comment with results: "Completed X, changed Y, next steps Z"
+**Always update Linear when completing tasks:**
 - Update status appropriately
 - Link to relevant PRs/commits
 
