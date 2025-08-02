@@ -14,7 +14,12 @@
     "watch:types": "tsc --noEmit --incremental --watch",
     "fix": "biome check --write .",
     "fix:formatting": "biome format --write .",
-    "fix:linting": "biome lint --write ."
+    "fix:linting": "biome lint --write .",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "test:coverage": "vitest run --coverage",
+    "test:integration": "vitest run --config vitest.integration.config.ts",
+    "test:ui": "vitest --ui"
   },
   "dependencies": {
     "@ai-sdk/anthropic": "^1.2.12",
@@ -42,6 +47,13 @@
     "nodemon": "^3.1.10",
     "ts-node": "^10.9.2",
     "tsx": "^4.19.3",
-    "typescript": "^5.8.3"
+    "typescript": "^5.8.3",
+    "vitest": "^2.0.5",
+    "@vitest/coverage-v8": "^2.0.5",
+    "@vitest/ui": "^2.0.5",
+    "supertest": "^7.0.0",
+    "@types/supertest": "^6.0.2",
+    "msw": "^2.4.9",
+    "happy-dom": "^15.7.4"
   }
 }

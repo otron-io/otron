@@ -1,10 +1,10 @@
 import { Octokit } from '@octokit/rest';
 import { Redis } from '@upstash/redis';
 import type { VercelRequest, VercelResponse } from '@vercel/node';
-import { env } from '../lib/env.js';
+import { env } from '../lib/core/env.js';
 import { GitHubAppService } from '../lib/github/github-app.js';
-import { withInternalAccess } from '../lib/auth.js';
-import { addCorsHeaders } from '../lib/cors.js';
+import { withInternalAccess } from '../lib/core/auth.js';
+import { addCorsHeaders } from '../lib/core/cors.js';
 
 // Extend VercelResponse with flush method which may be available
 interface EnhancedResponse extends VercelResponse {

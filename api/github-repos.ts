@@ -1,7 +1,7 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
-import { env } from '../lib/env.js';
-import { withInternalAccess } from '../lib/auth.js';
-import { addCorsHeaders } from '../lib/cors.js';
+import { env } from '../lib/core/env.js';
+import { withInternalAccess } from '../lib/core/auth.js';
+import { addCorsHeaders } from '../lib/core/cors.js';
 import { GitHubAppService } from '../lib/github/github-app.js';
 
 // Initialize GitHub App service

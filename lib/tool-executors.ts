@@ -1,6 +1,6 @@
 import * as githubUtils from './github/github-utils.js';
 import { advancedFileReader } from './github/file-reader.js';
-import { env } from './env.js';
+import { env } from './core/env.js';
 import { agentActivity } from './linear/linear-agent-session-manager.js';
 
 // Helper function to extract Linear issue ID from branch name or context

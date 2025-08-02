@@ -1,7 +1,7 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
 import { Redis } from '@upstash/redis';
-import { env } from '../lib/env.js';
-import { withCORS } from '../lib/cors.js';
+import { env } from '../lib/core/env.js';
+import { withCORS } from '../lib/core/cors.js';
 
 // Initialize Redis client
 const redis = new Redis({

@@ -1,5 +1,5 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
-import { env } from '../lib/env.js';
+import { env } from '../lib/core/env.js';
 import { LinearService } from '../lib/linear/linear-service.js';
 
 // Initialize Linear service

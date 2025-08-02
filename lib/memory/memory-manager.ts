@@ -1,5 +1,5 @@
 import { Redis } from '@upstash/redis';
-import { env } from '../env.js';
+import { env } from '../core/env.js';
 
 // Memory system constants
 export const MEMORY_EXPIRY = 60 * 60 * 24 * 90; // 90 days in seconds

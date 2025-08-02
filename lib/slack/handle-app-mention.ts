@@ -57,13 +57,13 @@ export async function handleNewAppMention(
   if (thread_ts) {
     const messages = await getThread(channel, thread_ts, botUserId);
     // Let the AI decide whether and how to respond using its tools
-    await generateResponse(
+    await generateResponse({
       messages,
-      updateMessage,
+      updateStatus: updateMessage,
       linearClient,
       slackContext,
-      undefined // No abort signal for app mentions
-    );
+      abortSignal: undefined, // No abort signal for app mentions
+    });
   } else {
     // For non-threaded messages, include current message context
     const currentMessageContext = `[Message from user ${event.user} at ${
@@ -71,13 +71,13 @@ export async function handleNewAppMention(
     }]: ${event.text.replace(`<@${botUserId}> `, '')}`;
 
     // Let the AI decide whether and how to respond using its tools
-    await generateResponse(
-      [{ role: 'user', content: currentMessageContext }],
-      updateMessage,
+    await generateResponse({
+      messages: [{ role: 'user', content: currentMessageContext }],
+      updateStatus: updateMessage,
       linearClient,
       slackContext,
-      undefined // No abort signal for app mentions
-    );
+      abortSignal: undefined, // No abort signal for app mentions
+    });
   }
 
   // Clear status after processing

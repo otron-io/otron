@@ -1,6 +1,6 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
-import { env } from '../lib/env.js';
-import { withCORS } from '../lib/cors.js';
+import { env } from '../lib/core/env.js';
+import { withCORS } from '../lib/core/cors.js';
 
 /**
  * OpenAPI documentation endpoint

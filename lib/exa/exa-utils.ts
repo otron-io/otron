@@ -1,4 +1,4 @@
-import { exa } from '../utils.js';
+import { exa } from '../core/utils.js';
 
 // Enhanced Exa search and answer tools
 export const executeExaSearch = async (

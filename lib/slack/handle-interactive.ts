@@ -135,13 +135,13 @@ async function handleBlockActions(
     : undefined;
 
   // Generate response using AI - let it decide how to respond
-  await generateResponse(
-    [{ role: 'user', content: contextMessage }],
+  await generateResponse({
+    messages: [{ role: 'user', content: contextMessage }],
     updateStatus,
-    undefined, // No Linear client for Slack interactions
+    linearClient: undefined, // No Linear client for Slack interactions
     slackContext,
-    undefined // No abort signal for interactive components
-  );
+    abortSignal: undefined, // No abort signal for interactive components
+  });
 }
 
 async function handleShortcut(

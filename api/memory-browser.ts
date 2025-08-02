@@ -1,6 +1,6 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
 import { Redis } from '@upstash/redis';
-import { env } from '../lib/env.js';
+import { env } from '../lib/core/env.js';
 
 // Initialize Redis client
 const redis = new Redis({

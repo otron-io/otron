@@ -356,14 +356,14 @@ async function processAgentSessionWork(
     console.log(`Calling generateResponse for session ${sessionId}`);
 
     // Generate response using AI
-    const result = await generateResponse(
-      [{ role: 'user', content: contextMessage }],
+    const result = await generateResponse({
+      messages: [{ role: 'user', content: contextMessage }],
       updateStatus,
       linearClient,
-      undefined, // No Slack context
-      abortController.signal, // Pass abort signal
-      sessionId // Pass the agent session ID for automatic tool injection
-    );
+      slackContext: undefined, // No Slack context
+      abortSignal: abortController.signal, // Pass abort signal
+      agentSessionId: sessionId, // Pass the agent session ID for automatic tool injection
+    });
 
     console.log(
       `generateResponse completed for session ${sessionId}, result length: ${
@@ -679,14 +679,14 @@ async function processAgentSessionPrompt(
     console.log(`Calling generateResponse for prompt session ${sessionId}`);
 
     // Generate response using AI
-    const result = await generateResponse(
-      [{ role: 'user', content: contextMessage }],
+    const result = await generateResponse({
+      messages: [{ role: 'user', content: contextMessage }],
       updateStatus,
       linearClient,
-      undefined, // No Slack context
-      abortController.signal, // Pass abort signal
-      sessionId // Pass the agent session ID for automatic tool injection
-    );
+      slackContext: undefined, // No Slack context
+      abortSignal: abortController.signal, // Pass abort signal
+      agentSessionId: sessionId, // Pass the agent session ID for automatic tool injection
+    });
 
     console.log(
       `generateResponse completed for prompt session ${sessionId}, result length: ${
