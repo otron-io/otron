@@ -816,17 +816,16 @@ export const executeGetRawFileContent = async (
           );
         }
       } else {
-        // For range reads, make single optimized call
-        const maxRange = Math.min(
-          end_line_one_indexed_inclusive || 200,
-          (start_line_one_indexed || 1) + 199
-        );
+        // For range reads, calculate correct maxLines parameter
+        const startLine = start_line_one_indexed || 1;
+        const endLine = end_line_one_indexed_inclusive || startLine + 199;
+        const maxLines = Math.min(endLine - startLine + 1, 200); // Convert to line count, cap at 200
 
         fullContent = await getFileContent(
           file_path,
           repository,
-          start_line_one_indexed || 1,
-          maxRange,
+          startLine,
+          maxLines, // This is the COUNT of lines, not the ending line number
           branch || 'main',
           sessionId
         );
@@ -854,17 +853,14 @@ export const executeGetRawFileContent = async (
       actualStartLine = 1;
       actualEndLine = Math.min(totalLines, 1500);
     } else {
-      // For range reads, calculate what we actually returned
+      // For range reads, calculate what we actually returned based on what we got
       actualStartLine = start_line_one_indexed || 1;
-      actualEndLine = Math.min(
-        end_line_one_indexed_inclusive || actualStartLine + 199,
-        totalLines
-      );
+      const requestedEndLine =
+        end_line_one_indexed_inclusive || actualStartLine + 199;
+      const maxPossibleEndLine = Math.min(requestedEndLine, totalLines);
 
-      // Ensure we don't exceed 200-line limit
-      if (actualEndLine - actualStartLine + 1 > 200) {
-        actualEndLine = actualStartLine + 199;
-      }
+      // We're limited by both the 200-line limit and the actual file length
+      actualEndLine = Math.min(maxPossibleEndLine, actualStartLine + 199);
     }
 
     // Note: fullContent already contains the optimized content from above
