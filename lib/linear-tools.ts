@@ -123,6 +123,7 @@ export const executeCreateIssue = async (
     status,
     priority,
     parentIssueId,
+    projectId,
   }: {
     teamId: string;
     title: string;
@@ -130,6 +131,7 @@ export const executeCreateIssue = async (
     status: string;
     priority: number;
     parentIssueId: string;
+    projectId: string;
   },
   updateStatus?: (status: string) => void,
   linearClient?: LinearClient
@@ -161,7 +163,8 @@ export const executeCreateIssue = async (
     description,
     status || undefined,
     priority === 0 ? undefined : priority,
-    parentIssueId || undefined
+    parentIssueId || undefined,
+    projectId || undefined
   );
 
   return result;

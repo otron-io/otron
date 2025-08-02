@@ -2270,21 +2270,16 @@ ${repositoryContext ? `${repositoryContext}` : ''}${
             ),
           title: z.string().describe('The title of the new issue'),
           description: z.string().describe('The description of the new issue'),
-          status: z
-            .string()
-            .describe(
-              'Optional status name for the new issue. Leave empty to use default status.'
-            ),
+          status: z.string().describe('Status name for the new issue.'),
           priority: z
             .number()
-            .describe(
-              'Optional priority level (1-4, where 1 is highest). Use 0 if not setting priority.'
-            ),
+            .describe('Priority level (1-4, where 1 is highest).'),
           parentIssueId: z
             .string()
             .describe(
-              'Optional parent issue ID to create this as a child issue. Leave empty if not a child issue.'
+              'Parent issue ID to create this as a child issue. Only leave empty if this is not a child issue.'
             ),
+          projectId: z.string().describe('Project ID to create this issue in.'),
         }),
         execute: createMemoryAwareToolExecutor('createIssue', (params: any) =>
           executeCreateIssue(
@@ -2295,6 +2290,7 @@ ${repositoryContext ? `${repositoryContext}` : ''}${
               status: string;
               priority: number;
               parentIssueId: string;
+              projectId: string;
             },
             updateStatus,
             linearClient

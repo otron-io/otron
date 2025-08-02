@@ -298,7 +298,8 @@ export const createIssue = async (
   description: string,
   status?: string,
   priority?: number,
-  parentIssueId?: string
+  parentIssueId?: string,
+  projectId?: string
 ): Promise<{
   success: boolean;
   message: string;
@@ -384,6 +385,10 @@ export const createIssue = async (
 
     if (parentIssueId) {
       issuePayload.parentId = parentIssueId;
+    }
+
+    if (projectId) {
+      issuePayload.projectId = projectId;
     }
 
     const newIssue = await linearClient.createIssue(issuePayload);
