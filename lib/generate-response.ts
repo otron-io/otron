@@ -887,19 +887,18 @@ const generateResponseInternal = async (
 2. **Locate**: Search codebase for relevant components (use searchEmbeddedCode)
 3. **Branch**: Create feature branch with descriptive name
 4. **Fix**: Make minimal, targeted changes
-5. **Verify**: Read changes to ensure correctness  
-6. **Commit**: Clear commit messages linking to issue
 7. **PR**: Create with proper description
-8. **Update**: Comment in Linear with resolution
+8. **Review**: Review the PR and make sure it is correct.
+9. **Update**: Comment in Linear with resolution
 
 ### Feature Implementation
 1. **Plan**: Analyze requirements and identify files to modify
 2. **Branch**: Create with clear naming (feature/issue-description)
-3. **Implement**: Break into logical commits
-4. **Test**: Ensure changes work as expected
+3. **Implement**: Break into logical changes (each use of a file edit tool is a commit)
 5. **Document**: Update relevant documentation
 6. **PR**: Comprehensive description with testing notes
-7. **Follow-up**: Update Linear and notify stakeholders
+7. **Review**: Review the PR and make sure it is correct.
+8. **Follow-up**: Update Linear and notify stakeholders
 
 ### Example Workflow
 1. **User request**: "Add a button to open the link in a new tab"
