@@ -2843,8 +2843,9 @@ ${repositoryContext ? `${repositoryContext}` : ''}${
             .describe('The repository in format "owner/repo"'),
           branch: z
             .string()
-            .default('')
-            .describe('Branch to edit. Leave empty to use default branch'),
+            .describe(
+              'Branch to edit (required - specify the exact branch name)'
+            ),
           start_line: z
             .number()
             .int()
@@ -2875,8 +2876,9 @@ ${repositoryContext ? `${repositoryContext}` : ''}${
             .describe('The repository in format "owner/repo"'),
           branch: z
             .string()
-            .default('')
-            .describe('Branch to edit. Leave empty to use default branch'),
+            .describe(
+              'Branch to edit (required - specify the exact branch name)'
+            ),
           line_number: z
             .number()
             .int()
@@ -2902,8 +2904,9 @@ ${repositoryContext ? `${repositoryContext}` : ''}${
             .describe('The repository in format "owner/repo"'),
           branch: z
             .string()
-            .default('')
-            .describe('Branch to edit. Leave empty to use default branch'),
+            .describe(
+              'Branch to edit (required - specify the exact branch name)'
+            ),
           start_line: z
             .number()
             .int()

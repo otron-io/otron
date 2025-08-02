@@ -14,7 +14,7 @@ export const executeReplaceLines = async (
   }: {
     file_path: string;
     repository: string;
-    branch?: string;
+    branch: string;
     start_line: number;
     end_line: number;
     new_content: string;
@@ -36,19 +36,39 @@ export const executeReplaceLines = async (
   try {
     // PARAMETER VALIDATION
     if (!file_path) {
-      throw new Error('file_path parameter is required');
+      return {
+        success: false,
+        error: 'file_path parameter is required',
+        message: 'file_path parameter is required',
+      };
     }
     if (!repository) {
-      throw new Error('repository parameter is required');
+      return {
+        success: false,
+        error: 'repository parameter is required',
+        message: 'repository parameter is required',
+      };
     }
     if (!commit_message) {
-      throw new Error('commit_message parameter is required');
+      return {
+        success: false,
+        error: 'commit_message parameter is required',
+        message: 'commit_message parameter is required',
+      };
     }
     if (start_line < 1) {
-      throw new Error('start_line must be >= 1');
+      return {
+        success: false,
+        error: 'start_line must be >= 1',
+        message: 'start_line must be >= 1',
+      };
     }
     if (end_line < start_line) {
-      throw new Error('end_line must be >= start_line');
+      return {
+        success: false,
+        error: 'end_line must be >= start_line',
+        message: 'end_line must be >= start_line',
+      };
     }
     if (new_content === undefined) {
       new_content = ''; // Allow empty string for deletion
@@ -59,28 +79,30 @@ export const executeReplaceLines = async (
     );
 
     // Extract Linear issue ID for logging
-    const issueId = extractLinearIssueFromBranch(branch || '');
+    const issueId = extractLinearIssueFromBranch(branch);
     if (issueId) {
       await agentActivity.thought(
         issueId,
-        `🎯 Line-based edit: Replacing lines ${start_line}-${end_line} in ${file_path} (${repository}:${
-          branch || 'main'
-        }). New content: ${new_content.length} characters.`
+        `Line-based edit: Replacing lines ${start_line}-${end_line} in ${file_path} (${repository}:${branch}). New content: ${new_content.length} characters.`
       );
     }
 
     // SAFETY CHECKS
     const lineCount = end_line - start_line + 1;
     if (lineCount > 100) {
-      throw new Error(
-        `SAFETY CHECK: Cannot replace more than 100 lines at once. You requested ${lineCount} lines.`
-      );
+      return {
+        success: false,
+        error: 'Cannot replace more than 100 lines at once',
+        message: `Cannot replace more than 100 lines at once. You requested ${lineCount} lines.`,
+      };
     }
 
     if (new_content.length > 10000) {
-      throw new Error(
-        `SAFETY CHECK: New content too large (${new_content.length} characters). Maximum 10,000 characters allowed.`
-      );
+      return {
+        success: false,
+        error: 'New content too large',
+        message: `New content too large (${new_content.length} characters). Maximum 10,000 characters allowed.`,
+      };
     }
 
     // Get current file content
@@ -90,7 +112,7 @@ export const executeReplaceLines = async (
       repository,
       1,
       10000,
-      branch || 'main',
+      branch,
       undefined
     );
 
@@ -106,14 +128,18 @@ export const executeReplaceLines = async (
 
     // Validate line numbers
     if (start_line > totalLines) {
-      throw new Error(
-        `start_line ${start_line} exceeds file length (${totalLines} lines)`
-      );
+      return {
+        success: false,
+        error: 'start_line exceeds file length',
+        message: `start_line ${start_line} exceeds file length (${totalLines} lines)`,
+      };
     }
     if (end_line > totalLines) {
-      throw new Error(
-        `end_line ${end_line} exceeds file length (${totalLines} lines)`
-      );
+      return {
+        success: false,
+        error: 'end_line exceeds file length',
+        message: `end_line ${end_line} exceeds file length (${totalLines} lines)`,
+      };
     }
 
     // Perform line-based replacement
@@ -131,7 +157,7 @@ export const executeReplaceLines = async (
       updatedContent,
       commit_message,
       repository,
-      branch || 'main'
+      branch
     );
 
     if (issueId) {
@@ -153,7 +179,7 @@ export const executeReplaceLines = async (
     };
   } catch (error) {
     console.error('❌ Error in executeReplaceLines:', error);
-    throw error;
+    return error;
   }
 };
 
@@ -169,7 +195,7 @@ export const executeInsertLines = async (
   }: {
     file_path: string;
     repository: string;
-    branch?: string;
+    branch: string;
     line_number: number;
     new_content: string;
     commit_message: string;
@@ -189,16 +215,32 @@ export const executeInsertLines = async (
   try {
     // PARAMETER VALIDATION
     if (!file_path) {
-      throw new Error('file_path parameter is required');
+      return {
+        success: false,
+        error: 'file_path parameter is required',
+        message: 'file_path parameter is required',
+      };
     }
     if (!repository) {
-      throw new Error('repository parameter is required');
+      return {
+        success: false,
+        error: 'repository parameter is required',
+        message: 'repository parameter is required',
+      };
     }
     if (!commit_message) {
-      throw new Error('commit_message parameter is required');
+      return {
+        success: false,
+        error: 'commit_message parameter is required',
+        message: 'commit_message parameter is required',
+      };
     }
     if (line_number < 1) {
-      throw new Error('line_number must be >= 1');
+      return {
+        success: false,
+        error: 'line_number must be >= 1',
+        message: 'line_number must be >= 1',
+      };
     }
     if (new_content === undefined) {
       new_content = ''; // Allow empty string
@@ -209,28 +251,30 @@ export const executeInsertLines = async (
     );
 
     // Extract Linear issue ID for logging
-    const issueId = extractLinearIssueFromBranch(branch || '');
+    const issueId = extractLinearIssueFromBranch(branch);
     if (issueId) {
       await agentActivity.thought(
         issueId,
-        `➕ Line-based insert: Adding content at line ${line_number} in ${file_path} (${repository}:${
-          branch || 'main'
-        }). Content: ${new_content.length} characters.`
+        `➕ Line-based insert: Adding content at line ${line_number} in ${file_path} (${repository}:${branch}). Content: ${new_content.length} characters.`
       );
     }
 
     // SAFETY CHECKS
     if (new_content.length > 5000) {
-      throw new Error(
-        `SAFETY CHECK: New content too large (${new_content.length} characters). Maximum 5,000 characters allowed.`
-      );
+      return {
+        success: false,
+        error: 'New content too large',
+        message: `New content too large (${new_content.length} characters). Maximum 5,000 characters allowed.`,
+      };
     }
 
     const newLines = new_content.split('\n');
     if (newLines.length > 50) {
-      throw new Error(
-        `SAFETY CHECK: New content contains ${newLines.length} lines. Maximum 50 lines allowed.`
-      );
+      return {
+        success: false,
+        error: 'New content too large',
+        message: `New content too large (${new_content.length} characters). Maximum 5,000 characters allowed.`,
+      };
     }
 
     // Get current file content
@@ -240,7 +284,7 @@ export const executeInsertLines = async (
       repository,
       1,
       10000,
-      branch || 'main',
+      branch,
       undefined
     );
 
@@ -256,11 +300,13 @@ export const executeInsertLines = async (
 
     // Validate line number (allow inserting at end + 1)
     if (line_number > totalLines + 1) {
-      throw new Error(
-        `line_number ${line_number} exceeds file length (${totalLines} lines). Maximum allowed is ${
+      return {
+        success: false,
+        error: 'line_number exceeds file length',
+        message: `line_number ${line_number} exceeds file length (${totalLines} lines). Maximum allowed is ${
           totalLines + 1
-        }.`
-      );
+        }.`,
+      };
     }
 
     // Perform line-based insertion
@@ -278,7 +324,7 @@ export const executeInsertLines = async (
       updatedContent,
       commit_message,
       repository,
-      branch || 'main'
+      branch
     );
 
     if (issueId) {
@@ -300,7 +346,7 @@ export const executeInsertLines = async (
     };
   } catch (error) {
     console.error('❌ Error in executeInsertLines:', error);
-    throw error;
+    return error;
   }
 };
 
@@ -316,7 +362,7 @@ export const executeDeleteLines = async (
   }: {
     file_path: string;
     repository: string;
-    branch?: string;
+    branch: string;
     start_line: number;
     end_line: number;
     commit_message: string;
@@ -336,19 +382,39 @@ export const executeDeleteLines = async (
   try {
     // PARAMETER VALIDATION
     if (!file_path) {
-      throw new Error('file_path parameter is required');
+      return {
+        success: false,
+        error: 'file_path parameter is required',
+        message: 'file_path parameter is required',
+      };
     }
     if (!repository) {
-      throw new Error('repository parameter is required');
+      return {
+        success: false,
+        error: 'repository parameter is required',
+        message: 'repository parameter is required',
+      };
     }
     if (!commit_message) {
-      throw new Error('commit_message parameter is required');
+      return {
+        success: false,
+        error: 'commit_message parameter is required',
+        message: 'commit_message parameter is required',
+      };
     }
     if (start_line < 1) {
-      throw new Error('start_line must be >= 1');
+      return {
+        success: false,
+        error: 'start_line must be >= 1',
+        message: 'start_line must be >= 1',
+      };
     }
     if (end_line < start_line) {
-      throw new Error('end_line must be >= start_line');
+      return {
+        success: false,
+        error: 'end_line must be >= start_line',
+        message: 'end_line must be >= start_line',
+      };
     }
 
     updateStatus?.(
@@ -356,22 +422,22 @@ export const executeDeleteLines = async (
     );
 
     // Extract Linear issue ID for logging
-    const issueId = extractLinearIssueFromBranch(branch || '');
+    const issueId = extractLinearIssueFromBranch(branch);
     if (issueId) {
       await agentActivity.thought(
         issueId,
-        `🗑️ Line-based delete: Removing lines ${start_line}-${end_line} in ${file_path} (${repository}:${
-          branch || 'main'
-        }).`
+        `🗑️ Line-based delete: Removing lines ${start_line}-${end_line} in ${file_path} (${repository}:${branch}).`
       );
     }
 
     // SAFETY CHECKS
     const lineCount = end_line - start_line + 1;
     if (lineCount > 50) {
-      throw new Error(
-        `SAFETY CHECK: Cannot delete more than 50 lines at once. You requested ${lineCount} lines.`
-      );
+      return {
+        success: false,
+        error: 'Cannot delete more than 50 lines at once',
+        message: `Cannot delete more than 50 lines at once. You requested ${lineCount} lines.`,
+      };
     }
 
     // Get current file content
@@ -381,7 +447,7 @@ export const executeDeleteLines = async (
       repository,
       1,
       10000,
-      branch || 'main',
+      branch,
       undefined
     );
 
@@ -397,14 +463,18 @@ export const executeDeleteLines = async (
 
     // Validate line numbers
     if (start_line > totalLines) {
-      throw new Error(
-        `start_line ${start_line} exceeds file length (${totalLines} lines)`
-      );
+      return {
+        success: false,
+        error: 'start_line exceeds file length',
+        message: `start_line ${start_line} exceeds file length (${totalLines} lines)`,
+      };
     }
     if (end_line > totalLines) {
-      throw new Error(
-        `end_line ${end_line} exceeds file length (${totalLines} lines)`
-      );
+      return {
+        success: false,
+        error: 'end_line exceeds file length',
+        message: `end_line ${end_line} exceeds file length (${totalLines} lines)`,
+      };
     }
 
     // Perform line-based deletion
@@ -421,7 +491,7 @@ export const executeDeleteLines = async (
       updatedContent,
       commit_message,
       repository,
-      branch || 'main'
+      branch
     );
 
     if (issueId) {
@@ -443,6 +513,6 @@ export const executeDeleteLines = async (
     };
   } catch (error) {
     console.error('❌ Error in executeDeleteLines:', error);
-    throw error;
+    return error;
   }
 };
