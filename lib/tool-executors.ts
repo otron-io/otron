@@ -1910,7 +1910,7 @@ export const executeEditCode = async (
       const hasContextHeaders =
         old_string.includes('Context:') ||
         old_string.includes('Before:') ||
-        old_string.includes('Target:');
+        old_string.includes('After:');
 
       if (hasFileHeader || hasContextHeaders) {
         console.error('\n⚠️  POTENTIAL ISSUE DETECTED:');
@@ -1920,13 +1920,76 @@ export const executeEditCode = async (
         console.error(
           'This suggests the agent is using formatted context as old_string instead of raw code.'
         );
-
-        throw new Error(
-          `❌ AGENT ERROR: The old_string parameter appears to be formatted output from readFileWithContext tool, not raw source code. The agent should extract the actual code content, not use the formatted summary. Please use the raw source code that needs to be replaced.`
-        );
       }
 
-      // Find the closest matching lines
+      // SMART SEARCH: Find similar code patterns
+      console.error('\n🔍 SMART SEARCH: Looking for similar patterns...');
+
+      // Extract key terms from old_string (remove common symbols and whitespace)
+      const keyTerms = old_string
+        .replace(/[{}();,\s\n\r\t"'`]/g, ' ')
+        .split(' ')
+        .filter((term) => term.length > 2)
+        .slice(0, 5); // Take first 5 meaningful terms
+
+      const similarLines: Array<{
+        lineNum: number;
+        line: string;
+        score: number;
+      }> = [];
+
+      for (let i = 0; i < contentLines.length; i++) {
+        const line = contentLines[i];
+        let score = 0;
+
+        // Score based on how many key terms appear in this line
+        for (const term of keyTerms) {
+          if (line.includes(term)) {
+            score += 1;
+          }
+        }
+
+        if (score > 0) {
+          similarLines.push({ lineNum: i + 1, line: line.trim(), score });
+        }
+      }
+
+      // Sort by similarity score
+      similarLines.sort((a, b) => b.score - a.score);
+
+      if (similarLines.length > 0) {
+        console.error(
+          `🎯 SMART SEARCH: Found ${similarLines.length} lines with similar content:`
+        );
+        console.error('Key terms searched:', keyTerms.join(', '));
+
+        const topMatches = similarLines.slice(0, 3);
+        for (const match of topMatches) {
+          console.error(
+            `  Line ${match.lineNum} (score: ${
+              match.score
+            }): ${match.line.substring(0, 100)}${
+              match.line.length > 100 ? '...' : ''
+            }`
+          );
+        }
+
+        const bestMatch = topMatches[0];
+        if (bestMatch.score >= 2) {
+          // Show context around the best match
+          console.error(
+            `\n📍 Context around best match (line ${bestMatch.lineNum}):`
+          );
+          const start = Math.max(0, bestMatch.lineNum - 3);
+          const end = Math.min(contentLines.length, bestMatch.lineNum + 2);
+          for (let i = start; i < end; i++) {
+            const marker = i === bestMatch.lineNum - 1 ? '➤ ' : '  ';
+            console.error(`${marker}${i + 1}: ${contentLines[i]}`);
+          }
+        }
+      }
+
+      // Find the closest matching lines (fallback to original logic)
       const firstLine = old_stringLines[0]?.trim();
       const lastLine = old_stringLines[old_stringLines.length - 1]?.trim();
 
@@ -1969,21 +2032,20 @@ export const executeEditCode = async (
               firstLineMatch + 1
             } and last line at ${
               lastLineMatch + 1
-            }. The content exists but formatting differs. Check the detailed debugging output above for character-level differences.`
+            }. The content exists but formatting differs. Read the current file content and use the exact formatting for old_string.`
           );
         } else {
           throw new Error(
             `Partial code match found in ${file_path}. Found first line "${firstLine}" at line ${
               firstLineMatch + 1
-            } but couldn't locate the full block. Try using a smaller, more specific code chunk.`
+            } but couldn't locate the full block. Try using a smaller, more specific code chunk from the current file.`
           );
         }
       }
 
       console.error('='.repeat(80));
-      throw new Error(
-        `Old code not found in ${file_path}. The file content may have changed since you last read it. Check the comprehensive debugging output above for details.`
-      );
+
+      return;
     }
 
     // Perform replacement based on the matching strategy

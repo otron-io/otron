@@ -1286,7 +1286,7 @@ ${repositoryContext ? `${repositoryContext}` : ''}${
               case 'searchEmbeddedCode':
                 return `Search failed for "${input?.query}" in ${input?.repository}: ${error}`;
               case 'editCode':
-                return `Code edit failed in ${input?.path}: ${error}`;
+                return `Code edit failed in ${input?.file_path}: ${error}`;
               case 'createPullRequest':
                 return `PR creation failed (${input?.head} → ${input?.base}): ${error}`;
               case 'createBranch':
