@@ -98,7 +98,7 @@ const redis = new Redis({
 // Interface for queued messages during agent processing
 export interface QueuedMessage {
   timestamp: number;
-  type: 'created' | 'prompted';
+  type: 'created' | 'prompted' | 'stop';
   content: string;
   sessionId: string;
   issueId: string;
@@ -1055,14 +1055,35 @@ ${repositoryContext ? `${repositoryContext}` : ''}${
               `Processing ${queuedMessages.length} new message(s) received during analysis`
             );
 
-            // Add queued messages to the conversation context
+            // Check for stop commands first
+            const stopMessage = queuedMessages.find(
+              (msg) => msg.type === 'stop'
+            );
+            if (stopMessage) {
+              console.log(
+                `🛑 Stop command found in queued messages for session ${sessionId}`
+              );
+
+              // Log the stop command
+              await agentActivity.response(
+                contextId,
+                '🛑 **Otron is immediately stopping all operations** as requested. Processing has been terminated.'
+              );
+
+              // Abort the current processing
+              throw new Error('STOP_COMMAND_RECEIVED');
+            }
+
+            // Add non-stop queued messages to the conversation context
             for (const queuedMsg of queuedMessages) {
-              messages.push({
-                role: 'user',
-                content: `[INTERJECTION ${new Date(
-                  queuedMsg.timestamp
-                ).toISOString()}] ${queuedMsg.content}`,
-              });
+              if (queuedMsg.type !== 'stop') {
+                messages.push({
+                  role: 'user',
+                  content: `[INTERJECTION ${new Date(
+                    queuedMsg.timestamp
+                  ).toISOString()}] ${queuedMsg.content}`,
+                });
+              }
             }
 
             // Update the session with new messages

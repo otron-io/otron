@@ -106,15 +106,75 @@ async function handleAgentSessionCreated(
     `Agent session created for issue ${issue.identifier}: ${issue.title}`
   );
 
+  // Check for /stop command in the initial comment
+  const initialComment = agentSession.comment?.body || '';
+  if (initialComment.trim().toLowerCase() === '/stop') {
+    console.log(
+      `🛑 Stop command received in initial session creation for ${sessionId}`
+    );
+
+    // Send immediate response about stopping
+    await agentActivityDirect.response(
+      sessionId,
+      '🛑 **Otron is immediately stopping all operations** as requested. No actions will be taken.'
+    );
+
+    // Complete the session
+    try {
+      await linearAgentSessionManager.completeSession(sessionId);
+      console.log(
+        `Completed Linear agent session after initial stop command: ${sessionId}`
+      );
+    } catch (error) {
+      console.error(
+        'Error completing Linear agent session after initial stop:',
+        error
+      );
+    }
+
+    return;
+  }
+
   // Check if there's already an active agent session for this issue
   const activeSessionId = await getActiveSessionForIssue(issue.id);
 
   if (activeSessionId && activeSessionId !== sessionId) {
     console.log(
-      `Found active session ${activeSessionId} for issue ${issue.id}, queuing this request`
+      `Found active session ${activeSessionId} for issue ${issue.id}, ${
+        initialComment.trim().toLowerCase() === '/stop'
+          ? 'stopping active session'
+          : 'queuing this request'
+      }`
     );
 
-    // IMMEDIATE ACKNOWLEDGMENT still required
+    // If this is a stop command, abort the active session instead of queuing
+    if (initialComment.trim().toLowerCase() === '/stop') {
+      // Send stop command to the active session
+      const stopMessage: QueuedMessage = {
+        timestamp: Date.now(),
+        type: 'stop',
+        content: 'STOP_COMMAND',
+        sessionId: sessionId,
+        issueId: issue.id,
+        metadata: {
+          agentSession,
+          previousComments,
+          originalSessionId: activeSessionId,
+        },
+      };
+
+      await queueMessageForSession(activeSessionId, stopMessage);
+
+      // Send immediate response about stopping
+      await agentActivityDirect.response(
+        sessionId,
+        '🛑 **Otron is immediately stopping all operations** as requested. The active session has been terminated.'
+      );
+
+      return;
+    }
+
+    // IMMEDIATE ACKNOWLEDGMENT still required for non-stop commands
     await agentActivityDirect.thought(
       sessionId,
       `Agent session acknowledged - joining active analysis for ${issue.identifier}`
@@ -367,15 +427,69 @@ async function handleAgentSessionPrompted(
     return;
   }
 
+  // Check for /stop command
+  if (userPrompt.trim().toLowerCase() === '/stop') {
+    console.log(`🛑 Stop command received for session ${sessionId}`);
+
+    // Send immediate response about stopping
+    await agentActivityDirect.response(
+      sessionId,
+      '🛑 **Otron is immediately stopping all operations** as requested. Any ongoing tasks have been cancelled.'
+    );
+
+    // Complete the session
+    try {
+      await linearAgentSessionManager.completeSession(sessionId);
+      console.log(
+        `Completed Linear agent session after stop command: ${sessionId}`
+      );
+    } catch (error) {
+      console.error('Error completing Linear agent session after stop:', error);
+    }
+
+    return;
+  }
+
   // Check if there's already an active agent session for this issue
   const activeSessionId = await getActiveSessionForIssue(issue.id);
 
   if (activeSessionId && activeSessionId !== sessionId) {
     console.log(
-      `Found active session ${activeSessionId} for issue ${issue.id}, queuing this prompt`
+      `Found active session ${activeSessionId} for issue ${issue.id}, ${
+        userPrompt.trim().toLowerCase() === '/stop'
+          ? 'stopping active session'
+          : 'queuing this prompt'
+      }`
     );
 
-    // IMMEDIATE ACKNOWLEDGMENT still required
+    // If this is a stop command, abort the active session instead of queuing
+    if (userPrompt.trim().toLowerCase() === '/stop') {
+      // Send stop command to the active session
+      const stopMessage: QueuedMessage = {
+        timestamp: Date.now(),
+        type: 'stop',
+        content: 'STOP_COMMAND',
+        sessionId: sessionId,
+        issueId: issue.id,
+        metadata: {
+          agentActivity,
+          agentSession,
+          originalSessionId: activeSessionId,
+        },
+      };
+
+      await queueMessageForSession(activeSessionId, stopMessage);
+
+      // Send immediate response about stopping
+      await agentActivityDirect.response(
+        sessionId,
+        '🛑 **Otron is immediately stopping all operations** as requested. The active session has been terminated.'
+      );
+
+      return;
+    }
+
+    // IMMEDIATE ACKNOWLEDGMENT still required for non-stop commands
     await agentActivityDirect.thought(
       sessionId,
       `Prompt acknowledged - joining active analysis for ${issue.identifier}`
