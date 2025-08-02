@@ -821,6 +821,8 @@ const generateResponseInternal = async (
 {file_path: "file.ts", old_string: "oldVariableName", new_string: "newVariableName", replace_all: true, commit_message: "Rename variable"}
 \`\`\`
 
+**Note**: Once you know what to do, make the change. Don't read files repeatedly, nothing will change.
+
 ## Strategic Error Recovery (CRITICAL)
 
 ### When File Operations Fail (ANTI-LOOP PROTECTION)
@@ -876,6 +878,7 @@ const generateResponseInternal = async (
 - Detailed body with changes
 - Link to Linear issue
 - Clear commit messages
+- After opening a PR, review the PR and make sure it is correct.
 
 ## Development Workflow Patterns
 
@@ -1463,11 +1466,12 @@ ${repositoryContext ? `${repositoryContext}` : ''}${
     model: openai.responses('o3'),
     providerOptions: {
       openai: {
-        reasoningEffort: 'low',
+        reasoningEffort: 'high',
         reasoningSummary: 'auto', // Enable reasoning summaries to capture LLM thought process
       },
     },
     system: systemPrompt,
+    temperature: 0.8,
     messages,
     maxSteps: 30,
     abortSignal,
