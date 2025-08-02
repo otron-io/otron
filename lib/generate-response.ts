@@ -2236,7 +2236,9 @@ ${repositoryContext ? `${repositoryContext}` : ''}${
       addLabel: tool({
         description: 'Add a label to a Linear issue',
         parameters: z.object({
-          issueId: z.string().describe('The Linear issue ID'),
+          issueId: z
+            .string()
+            .describe('The Linear issue ID or identifier (e.g., "OTR-123")'),
           labelName: z.string().describe('The name of the label to add'),
         }),
         execute: createMemoryAwareToolExecutor('addLabel', (params: any) =>
@@ -2250,7 +2252,9 @@ ${repositoryContext ? `${repositoryContext}` : ''}${
       removeLabel: tool({
         description: 'Remove a label from a Linear issue',
         parameters: z.object({
-          issueId: z.string().describe('The Linear issue ID'),
+          issueId: z
+            .string()
+            .describe('The Linear issue ID or identifier (e.g., "OTR-123")'),
           labelName: z.string().describe('The name of the label to remove'),
         }),
         execute: createMemoryAwareToolExecutor('removeLabel', (params: any) =>
@@ -2264,7 +2268,9 @@ ${repositoryContext ? `${repositoryContext}` : ''}${
       assignIssue: tool({
         description: 'Assign a Linear issue to a team member',
         parameters: z.object({
-          issueId: z.string().describe('The Linear issue ID'),
+          issueId: z
+            .string()
+            .describe('The Linear issue ID or identifier (e.g., "OTR-123")'),
           assigneeEmail: z
             .string()
             .describe('The email address of the person to assign the issue to'),
@@ -2317,7 +2323,9 @@ ${repositoryContext ? `${repositoryContext}` : ''}${
       addIssueAttachment: tool({
         description: 'Add a URL attachment to a Linear issue',
         parameters: z.object({
-          issueId: z.string().describe('The Linear issue ID'),
+          issueId: z
+            .string()
+            .describe('The Linear issue ID or identifier (e.g., "OTR-123")'),
           url: z.string().describe('The URL to attach'),
           title: z.string().describe('The title for the attachment'),
         }),
@@ -2376,7 +2384,7 @@ ${repositoryContext ? `${repositoryContext}` : ''}${
       }),
       getLinearProjects: tool({
         description:
-          'Get all projects in the Linear workspace with status, progress, and team information',
+          'Get all projects in the Linear workspace with their IDs, status, progress, and team information',
         parameters: z.object({}),
         execute: createMemoryAwareToolExecutor(
           'getLinearProjects',
@@ -2387,7 +2395,7 @@ ${repositoryContext ? `${repositoryContext}` : ''}${
       }),
       getLinearInitiatives: tool({
         description:
-          'Get all initiatives in the Linear workspace with associated projects and progress',
+          'Get all initiatives in the Linear workspace with their IDs, associated projects and progress',
         parameters: z.object({}),
         execute: createMemoryAwareToolExecutor(
           'getLinearInitiatives',
@@ -2401,7 +2409,7 @@ ${repositoryContext ? `${repositoryContext}` : ''}${
       }),
       getLinearUsers: tool({
         description:
-          'Get all users in the Linear workspace with their details and status',
+          'Get all users in the Linear workspace with their IDs, details and status',
         parameters: z.object({}),
         execute: createMemoryAwareToolExecutor('getLinearUsers', async () => {
           return await executeGetLinearUsers(updateStatus, linearClient);
@@ -2501,8 +2509,16 @@ ${repositoryContext ? `${repositoryContext}` : ''}${
         description:
           'Set an issue as a child of another issue (parent-child relationship)',
         parameters: z.object({
-          issueId: z.string().describe('The ID of the issue to make a child'),
-          parentIssueId: z.string().describe('The ID of the parent issue'),
+          issueId: z
+            .string()
+            .describe(
+              'The ID or identifier of the issue to make a child (e.g., "OTR-123")'
+            ),
+          parentIssueId: z
+            .string()
+            .describe(
+              'The ID or identifier of the parent issue (e.g., "OTR-456")'
+            ),
         }),
         execute: createMemoryAwareToolExecutor(
           'setIssueParent',
@@ -2518,7 +2534,11 @@ ${repositoryContext ? `${repositoryContext}` : ''}${
       addIssueToProject: tool({
         description: 'Add an issue to a Linear project',
         parameters: z.object({
-          issueId: z.string().describe('The ID of the issue to add'),
+          issueId: z
+            .string()
+            .describe(
+              'The ID or identifier of the issue to add (e.g., "OTR-123")'
+            ),
           projectId: z
             .string()
             .describe('The ID of the project to add the issue to'),

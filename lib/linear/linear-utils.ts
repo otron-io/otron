@@ -203,7 +203,7 @@ export const updateIssueStatus = async (
  */
 export const addLabel = async (
   linearClient: LinearClient,
-  issueId: string,
+  issueIdOrIdentifier: string,
   labelName: string
 ): Promise<void> => {
   try {
@@ -217,11 +217,11 @@ export const addLabel = async (
     }
 
     // Add the label to the issue
-    await linearClient.issueAddLabel(issueId, label.id);
-    console.log(`Added label "${labelName}" to issue ${issueId}`);
+    await linearClient.issueAddLabel(issueIdOrIdentifier, label.id);
+    console.log(`Added label "${labelName}" to issue ${issueIdOrIdentifier}`);
   } catch (error: unknown) {
     console.error(
-      `Error adding label "${labelName}" to issue ${issueId}:`,
+      `Error adding label "${labelName}" to issue ${issueIdOrIdentifier}:`,
       error instanceof Error ? error.message : String(error)
     );
   }
@@ -232,7 +232,7 @@ export const addLabel = async (
  */
 export const removeLabel = async (
   linearClient: LinearClient,
-  issueId: string,
+  issueIdOrIdentifier: string,
   labelName: string
 ): Promise<void> => {
   try {
@@ -246,11 +246,13 @@ export const removeLabel = async (
     }
 
     // Remove the label from the issue
-    await linearClient.issueRemoveLabel(issueId, label.id);
-    console.log(`Removed label "${labelName}" from issue ${issueId}`);
+    await linearClient.issueRemoveLabel(issueIdOrIdentifier, label.id);
+    console.log(
+      `Removed label "${labelName}" from issue ${issueIdOrIdentifier}`
+    );
   } catch (error: unknown) {
     console.error(
-      `Error removing label "${labelName}" from issue ${issueId}:`,
+      `Error removing label "${labelName}" from issue ${issueIdOrIdentifier}:`,
       error instanceof Error ? error.message : String(error)
     );
   }
@@ -261,7 +263,7 @@ export const removeLabel = async (
  */
 export const assignIssue = async (
   linearClient: LinearClient,
-  issueId: string,
+  issueIdOrIdentifier: string,
   assigneeEmail: string
 ): Promise<void> => {
   try {
@@ -277,12 +279,12 @@ export const assignIssue = async (
     }
 
     // Assign the issue to the user
-    const issue = await linearClient.issue(issueId);
+    const issue = await linearClient.issue(issueIdOrIdentifier);
     await issue.update({ assigneeId: user.id });
-    console.log(`Assigned issue ${issueId} to ${assigneeEmail}`);
+    console.log(`Assigned issue ${issueIdOrIdentifier} to ${assigneeEmail}`);
   } catch (error: unknown) {
     console.error(
-      `Error assigning issue ${issueId} to ${assigneeEmail}:`,
+      `Error assigning issue ${issueIdOrIdentifier} to ${assigneeEmail}:`,
       error instanceof Error ? error.message : String(error)
     );
   }
@@ -424,20 +426,27 @@ export const createIssue = async (
  */
 export const addIssueAttachment = async (
   linearClient: LinearClient,
-  issueId: string,
+  issueIdOrIdentifier: string,
   url: string,
   title: string
 ): Promise<void> => {
   try {
+    // Get the issue to ensure we have the UUID for the attachment API
+    const issue = await linearClient.issue(issueIdOrIdentifier);
+    if (!issue) {
+      console.error(`Issue ${issueIdOrIdentifier} not found`);
+      return;
+    }
+
     await linearClient.createAttachment({
-      issueId,
+      issueId: issue.id, // Use the UUID for the attachment API
       url,
       title,
     });
-    console.log(`Added attachment "${title}" to issue ${issueId}`);
+    console.log(`Added attachment "${title}" to issue ${issueIdOrIdentifier}`);
   } catch (error: unknown) {
     console.error(
-      `Error adding attachment to issue ${issueId}:`,
+      `Error adding attachment to issue ${issueIdOrIdentifier}:`,
       error instanceof Error ? error.message : String(error)
     );
   }
@@ -557,6 +566,7 @@ export const getProjects = async (
 
     for (const project of projects.nodes) {
       result += `**${project.name}**\n`;
+      result += `  ID: ${project.id}\n`;
       if (project.description) {
         result += `  Description: ${project.description}\n`;
       }
@@ -616,6 +626,7 @@ export const getInitiatives = async (
 
     for (const initiative of initiatives.nodes) {
       result += `**${initiative.name}**\n`;
+      result += `  ID: ${initiative.id}\n`;
       if (initiative.description) {
         result += `  Description: ${initiative.description}\n`;
       }
@@ -664,6 +675,7 @@ export const getUsers = async (linearClient: LinearClient): Promise<string> => {
 
     for (const user of users.nodes) {
       result += `**${user.name}**\n`;
+      result += `  ID: ${user.id}\n`;
       result += `  Email: ${user.email}\n`;
       if (user.displayName && user.displayName !== user.name) {
         result += `  Display Name: ${user.displayName}\n`;
@@ -947,8 +959,8 @@ export const createComment = async (
  */
 export const setIssueParent = async (
   linearClient: LinearClient,
-  issueId: string,
-  parentIssueId: string
+  issueIdOrIdentifier: string,
+  parentIssueIdOrIdentifier: string
 ): Promise<{
   success: boolean;
   message: string;
@@ -956,39 +968,39 @@ export const setIssueParent = async (
 }> => {
   try {
     // Validate both issues exist
-    const issue = await linearClient.issue(issueId);
+    const issue = await linearClient.issue(issueIdOrIdentifier);
     if (!issue) {
       return {
         success: false,
-        error: `Child issue ${issueId} not found`,
+        error: `Child issue ${issueIdOrIdentifier} not found`,
         message: `Failed to set parent: Child issue not found`,
       };
     }
 
-    const parentIssue = await linearClient.issue(parentIssueId);
+    const parentIssue = await linearClient.issue(parentIssueIdOrIdentifier);
     if (!parentIssue) {
       return {
         success: false,
-        error: `Parent issue ${parentIssueId} not found`,
+        error: `Parent issue ${parentIssueIdOrIdentifier} not found`,
         message: `Failed to set parent: Parent issue not found`,
       };
     }
 
     // Log the relationship creation
     await agentActivity.action(
-      issueId,
+      issueIdOrIdentifier,
       'Setting issue parent',
       `Making ${issue.identifier} a child of ${parentIssue.identifier}`
     );
 
     // Update the issue with the parent relationship
-    await issue.update({ parentId: parentIssueId });
+    await issue.update({ parentId: parentIssue.id });
 
     const successMessage = `Successfully made ${issue.identifier} a child of ${parentIssue.identifier}`;
     console.log(successMessage);
 
     await agentActivity.action(
-      issueId,
+      issueIdOrIdentifier,
       'Parent relationship created',
       successMessage
     );
@@ -999,9 +1011,15 @@ export const setIssueParent = async (
     };
   } catch (error: unknown) {
     const errorMessage = error instanceof Error ? error.message : String(error);
-    console.error(`Error setting parent for issue ${issueId}:`, errorMessage);
+    console.error(
+      `Error setting parent for issue ${issueIdOrIdentifier}:`,
+      errorMessage
+    );
 
-    await agentActivity.error(issueId, `Failed to set parent: ${errorMessage}`);
+    await agentActivity.error(
+      issueIdOrIdentifier,
+      `Failed to set parent: ${errorMessage}`
+    );
 
     return {
       success: false,
@@ -1016,7 +1034,7 @@ export const setIssueParent = async (
  */
 export const addIssueToProject = async (
   linearClient: LinearClient,
-  issueId: string,
+  issueIdOrIdentifier: string,
   projectId: string
 ): Promise<{
   success: boolean;
@@ -1025,11 +1043,11 @@ export const addIssueToProject = async (
 }> => {
   try {
     // Validate issue exists
-    const issue = await linearClient.issue(issueId);
+    const issue = await linearClient.issue(issueIdOrIdentifier);
     if (!issue) {
       return {
         success: false,
-        error: `Issue ${issueId} not found`,
+        error: `Issue ${issueIdOrIdentifier} not found`,
         message: `Failed to add to project: Issue not found`,
       };
     }
@@ -1046,7 +1064,7 @@ export const addIssueToProject = async (
 
     // Log the project assignment
     await agentActivity.action(
-      issueId,
+      issueIdOrIdentifier,
       'Adding issue to project',
       `Adding ${issue.identifier} to project ${project.name}`
     );
@@ -1057,7 +1075,11 @@ export const addIssueToProject = async (
     const successMessage = `Successfully added ${issue.identifier} to project ${project.name}`;
     console.log(successMessage);
 
-    await agentActivity.action(issueId, 'Added to project', successMessage);
+    await agentActivity.action(
+      issueIdOrIdentifier,
+      'Added to project',
+      successMessage
+    );
 
     return {
       success: true,
@@ -1065,10 +1087,13 @@ export const addIssueToProject = async (
     };
   } catch (error: unknown) {
     const errorMessage = error instanceof Error ? error.message : String(error);
-    console.error(`Error adding issue ${issueId} to project:`, errorMessage);
+    console.error(
+      `Error adding issue ${issueIdOrIdentifier} to project:`,
+      errorMessage
+    );
 
     await agentActivity.error(
-      issueId,
+      issueIdOrIdentifier,
       `Failed to add to project: ${errorMessage}`
     );
 
