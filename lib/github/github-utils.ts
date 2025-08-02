@@ -79,8 +79,8 @@ export const getFileContent = async (
     if (startLine < 1) startLine = 1;
     if (maxLines > 200) maxLines = 200;
 
-    // Generate cache keys
-    const fileCacheKey = `${repository}:${path}:${branch || 'default'}`;
+    // Generate cache keys (use 'main' as default to match tool-executors.ts)
+    const fileCacheKey = `${repository}:${path}:${branch || 'main'}`;
     const sessionCacheKey = sessionId || 'no-session';
 
     // Check session cache first (higher priority, longer TTL)

@@ -778,23 +778,63 @@ export const executeGetRawFileContent = async (
     // Foolproof file reading logic
     const { getFileContent } = await import('./github/github-utils.js');
 
-    // First, get file metadata to determine total lines
-    let infoContent: string;
+    // Get file content with smart metadata extraction (single network call)
     let totalLines: number;
+    let fullContent: string;
 
     try {
-      infoContent = await getFileContent(
-        file_path,
-        repository,
-        1,
-        1, // Just first line to get header with total lines
-        branch || 'main',
-        sessionId
-      );
+      if (should_read_entire_file) {
+        // For entire files, get a reasonable chunk first to determine size
+        const initialContent = await getFileContent(
+          file_path,
+          repository,
+          1,
+          200, // Get first 200 lines to extract total line count
+          branch || 'main',
+          sessionId
+        );
 
-      // Extract total lines from header (format: "// Lines 1-1 of 1234")
-      const headerMatch = infoContent.match(/^\/\/ Lines \d+-\d+ of (\d+)/);
-      totalLines = headerMatch ? parseInt(headerMatch[1], 10) : 1000;
+        // Extract total lines from header (format: "// Lines 1-200 of 1234")
+        const headerMatch = initialContent.match(
+          /^\/\/ Lines \d+-\d+ of (\d+)/
+        );
+        totalLines = headerMatch ? parseInt(headerMatch[1], 10) : 1000;
+
+        // If file is small enough, use what we already got
+        if (totalLines <= 200) {
+          fullContent = initialContent;
+        } else {
+          // Need to get more content, make second call for up to 1500 lines
+          const maxLines = Math.min(totalLines, 1500);
+          fullContent = await getFileContent(
+            file_path,
+            repository,
+            1,
+            maxLines,
+            branch || 'main',
+            sessionId
+          );
+        }
+      } else {
+        // For range reads, make single optimized call
+        const maxRange = Math.min(
+          end_line_one_indexed_inclusive || 200,
+          (start_line_one_indexed || 1) + 199
+        );
+
+        fullContent = await getFileContent(
+          file_path,
+          repository,
+          start_line_one_indexed || 1,
+          maxRange,
+          branch || 'main',
+          sessionId
+        );
+
+        // Extract total lines from header
+        const headerMatch = fullContent.match(/^\/\/ Lines \d+-\d+ of (\d+)/);
+        totalLines = headerMatch ? parseInt(headerMatch[1], 10) : 1000;
+      }
     } catch (fileError) {
       throw new Error(
         `File not found or inaccessible: ${file_path} in ${repository}${
@@ -805,67 +845,29 @@ export const executeGetRawFileContent = async (
       );
     }
 
-    // Calculate actual range based on parameters (foolproof logic)
+    // Calculate actual range returned (we already have the content)
     let actualStartLine: number;
     let actualEndLine: number;
 
     if (should_read_entire_file) {
-      // Read entire file (up to 1500 lines)
+      // Return what we got from the optimized entire file read
       actualStartLine = 1;
       actualEndLine = Math.min(totalLines, 1500);
     } else {
-      // Validate required parameters
-      if (
-        start_line_one_indexed === undefined ||
-        end_line_one_indexed_inclusive === undefined
-      ) {
-        return {
-          content: '',
-          startLine: 0,
-          endLine: 0,
-          totalLines,
-          message: `❌ When should_read_entire_file is false, both start_line_one_indexed and end_line_one_indexed_inclusive are required.`,
-        };
-      }
-
-      // Clamp start line to valid range
-      actualStartLine = Math.max(
-        1,
-        Math.min(start_line_one_indexed, totalLines)
+      // For range reads, calculate what we actually returned
+      actualStartLine = start_line_one_indexed || 1;
+      actualEndLine = Math.min(
+        end_line_one_indexed_inclusive || actualStartLine + 199,
+        totalLines
       );
 
-      // Clamp end line to valid range
-      actualEndLine = Math.max(
-        actualStartLine,
-        Math.min(end_line_one_indexed_inclusive, totalLines)
-      );
-
-      // Enforce 200-line limit for range reads
+      // Ensure we don't exceed 200-line limit
       if (actualEndLine - actualStartLine + 1 > 200) {
         actualEndLine = actualStartLine + 199;
       }
     }
 
-    // Get the actual content for the calculated range
-    let fullContent: string;
-    try {
-      fullContent = await getFileContent(
-        file_path,
-        repository,
-        actualStartLine,
-        actualEndLine - actualStartLine + 1,
-        branch || 'main',
-        sessionId
-      );
-    } catch (contentError) {
-      throw new Error(
-        `Failed to retrieve content for ${file_path} lines ${actualStartLine}-${actualEndLine}. ${
-          contentError instanceof Error
-            ? contentError.message
-            : String(contentError)
-        }`
-      );
-    }
+    // Note: fullContent already contains the optimized content from above
 
     // Remove header line if present (getFileContent adds format: "// Lines X-Y of Z")
     const lines = fullContent.split('\n');

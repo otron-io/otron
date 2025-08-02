@@ -690,6 +690,7 @@ const generateResponseInternal = async (
     toolsUsed: new Set<string>(),
     actionsPerformed: [] as string[],
     endedExplicitly: false,
+    recentToolCalls: [] as string[], // For circuit breaker protection
   };
 
   // Add execution strategy tracking
@@ -792,16 +793,19 @@ const generateResponseInternal = async (
 ## File Operations (Critical Patterns)
 
 ### Reading Files Strategically
-**Always determine file size first when unsure:**
+**Start with entire file for small files (<300 lines):**
 \`\`\`
-{path: "file.ts", repository: "owner/repo", should_read_entire_file: true}
+{file_path: "file.ts", repository: "owner/repo", should_read_entire_file: true}
 \`\`\`
 
-**For large files (>200 lines), read in sections:**
+**For large files, read specific sections you need:**
 \`\`\`
-{path: "file.ts", repository: "owner/repo", should_read_entire_file: false, start_line_one_indexed: 1, end_line_one_indexed_inclusive: 200}
-{path: "file.ts", repository: "owner/repo", should_read_entire_file: false, start_line_one_indexed: 201, end_line_one_indexed_inclusive: 400}
+{file_path: "file.ts", repository: "owner/repo", should_read_entire_file: false, start_line_one_indexed: 1, end_line_one_indexed_inclusive: 200}
 \`\`\`
+
+**CRITICAL: If file reading fails, do NOT retry the same parameters:**
+- ❌ **Never**: Call getRawFileContent with identical parameters multiple times
+- ✅ **Instead**: Try searchEmbeddedCode, getDirectoryStructure, or report what you tried
 
 ### Editing Files  
 **Always read the target section first:**
@@ -819,13 +823,18 @@ const generateResponseInternal = async (
 
 ## Strategic Error Recovery (CRITICAL)
 
-### When File Operations Fail
-❌ **Don't do**: Retry the exact same call multiple times
-✅ **Do**: Try different approaches:
-- **getRawFileContent fails** → Try searchEmbeddedCode instead
-- **Search returns nothing** → Try broader terms or getDirectoryStructure
-- **File not found** → Verify repository and path, search for similar files
-- **Permission errors** → Check repository access, try alternative approaches
+### When File Operations Fail (ANTI-LOOP PROTECTION)
+❌ **NEVER DO**: Retry the exact same getRawFileContent call multiple times
+❌ **NEVER DO**: Make the same file request with identical parameters
+❌ **NEVER DO**: Repeat failed operations hoping for different results
+
+✅ **IMMEDIATELY DO**: Switch to alternative approaches:
+- **getRawFileContent fails** → Use searchEmbeddedCode to find relevant code
+- **File not found** → Use getDirectoryStructure to explore repository
+- **Permission/network errors** → Report the issue and suggest manual verification
+- **Any repeated failure** → Stop and explain what you tried, ask for guidance
+
+**RULE**: If a tool fails twice with the same parameters, STOP using that tool and explain the issue.
 
 ### When Search Tools Fail
 ❌ **Don't do**: Keep searching with the same terms
@@ -979,6 +988,39 @@ ${repositoryContext ? `${repositoryContext}` : ''}${
           // Don't fail on Redis errors, but log them
           console.warn('Error checking cancellation status:', redisError);
         }
+      }
+
+      // Circuit breaker: Prevent identical repeated calls (anti-loop protection)
+      const callSignature = `${toolName}:${JSON.stringify(args[0] || {})}`;
+      const recentCalls = executionTracker.recentToolCalls || [];
+      const identicalCallCount = recentCalls.filter(
+        (call: string) => call === callSignature
+      ).length;
+
+      if (identicalCallCount >= 3) {
+        const errorMsg = `🚫 Circuit breaker activated: ${toolName} called ${
+          identicalCallCount + 1
+        } times with identical parameters. This suggests an infinite retry loop. Try a different approach or tool.`;
+        console.warn(errorMsg);
+
+        // Log to Linear if available
+        if (isLinearIssue && linearClient) {
+          await agentActivity.thought(contextId, `❌ ${errorMsg}`);
+        }
+
+        throw new Error(errorMsg);
+      }
+
+      // Track this call
+      if (!executionTracker.recentToolCalls) {
+        executionTracker.recentToolCalls = [];
+      }
+      executionTracker.recentToolCalls.push(callSignature);
+
+      // Keep only last 10 calls to prevent memory bloat
+      if (executionTracker.recentToolCalls.length > 10) {
+        executionTracker.recentToolCalls =
+          executionTracker.recentToolCalls.slice(-10);
       }
 
       // Check for queued messages from other webhooks/interjections
