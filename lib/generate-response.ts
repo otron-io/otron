@@ -2224,7 +2224,9 @@ ${repositoryContext ? `${repositoryContext}` : ''}${
         description:
           'Get the context for a Linear issue including comments, child issues, and parent issue',
         parameters: z.object({
-          issueId: z.string().describe('The Linear issue ID or identifier'),
+          issueId: z
+            .string()
+            .describe('The Linear issue ID or identifier (e.g., "OTR-123")'),
           commentId: z
             .string()
             .describe(
@@ -2244,7 +2246,9 @@ ${repositoryContext ? `${repositoryContext}` : ''}${
       updateIssueStatus: tool({
         description: 'Update the status of a Linear issue',
         parameters: z.object({
-          issueId: z.string().describe('The Linear issue ID or identifier'),
+          issueId: z
+            .string()
+            .describe('The Linear issue ID or identifier (e.g., "OTR-123")'),
           statusName: z
             .string()
             .describe(
@@ -2370,7 +2374,9 @@ ${repositoryContext ? `${repositoryContext}` : ''}${
       updateIssuePriority: tool({
         description: 'Update the priority of a Linear issue',
         parameters: z.object({
-          issueId: z.string().describe('The Linear issue ID or identifier'),
+          issueId: z
+            .string()
+            .describe('The Linear issue ID or identifier (e.g., "OTR-123")'),
           priority: z
             .number()
             .describe('The priority level (1-4, where 1 is highest)'),
@@ -2388,7 +2394,9 @@ ${repositoryContext ? `${repositoryContext}` : ''}${
       setPointEstimate: tool({
         description: 'Set the point estimate for a Linear issue',
         parameters: z.object({
-          issueId: z.string().describe('The Linear issue ID or identifier'),
+          issueId: z
+            .string()
+            .describe('The Linear issue ID or identifier (e.g., "OTR-123")'),
           pointEstimate: z.number().describe('The point estimate value'),
         }),
         execute: createMemoryAwareToolExecutor(
@@ -2519,7 +2527,9 @@ ${repositoryContext ? `${repositoryContext}` : ''}${
       createLinearComment: tool({
         description: 'Create a comment on a Linear issue',
         parameters: z.object({
-          issueId: z.string().describe('The Linear issue ID or identifier'),
+          issueId: z
+            .string()
+            .describe('The Linear issue ID or identifier (e.g., "OTR-123")'),
           body: z.string().describe('The comment text to add'),
         }),
         execute: createMemoryAwareToolExecutor(
