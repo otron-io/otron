@@ -403,19 +403,6 @@ export const generateResponse = async (
           await agentActivity.response(contextId, finalResponse);
         }
 
-        // Reply to Slack thread if conversation originated from Slack
-        if (slackContext) {
-          try {
-            await slackClient.chat.postMessage({
-              channel: slackContext.channelId,
-              thread_ts: slackContext.threadTs,
-              text: finalResponse,
-            });
-          } catch (error) {
-            console.error('Failed to post response to Slack thread:', error);
-          }
-        }
-
         // If this is the last attempt, don't evaluate - just return
         if (attemptNumber >= MAX_RETRY_ATTEMPTS) {
           break;
