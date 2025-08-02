@@ -32,6 +32,8 @@ import {
   executeGetLinearWorkflowStates,
   executeCreateLinearComment,
   executeCreateAgentActivity,
+  executeSetIssueParent,
+  executeAddIssueToProject,
 } from './linear-tools.js';
 import {
   // Slack tools
@@ -1102,6 +1104,9 @@ ${repositoryContext ? `${repositoryContext}` : ''}${
         'createPullRequest',
         'updateIssueStatus',
         'createLinearComment',
+        'setIssueParent',
+        'addIssueToProject',
+        'createAgentActivity',
         'sendSlackMessage',
         'sendChannelMessage',
         'sendDirectMessage',
@@ -1195,6 +1200,18 @@ ${repositoryContext ? `${repositoryContext}` : ''}${
           case 'addCode':
           case 'removeCode':
             return `Path: ${params.path}, Repository: ${params.repository}, Branch: ${params.branch}`;
+          case 'createAgentActivity':
+            return `Session: ${params.sessionId}, Type: ${params.activityType}${
+              params.body
+                ? `, Body: "${params.body?.substring(0, 1000)}${
+                    params.body?.length > 1000 ? '...' : ''
+                  }"`
+                : ''
+            }${params.action ? `, Action: "${params.action}"` : ''}`;
+          case 'setIssueParent':
+            return `Child: ${params.issueId}, Parent: ${params.parentIssueId}`;
+          case 'addIssueToProject':
+            return `Issue: ${params.issueId}, Project: ${params.projectId}`;
           default:
             return Object.keys(params)
               .map(
@@ -2473,6 +2490,83 @@ ${repositoryContext ? `${repositoryContext}` : ''}${
           'createLinearComment',
           async (params: any) => {
             return await executeCreateLinearComment(
+              params,
+              updateStatus,
+              linearClient
+            );
+          }
+        ),
+      }),
+      setIssueParent: tool({
+        description:
+          'Set an issue as a child of another issue (parent-child relationship)',
+        parameters: z.object({
+          issueId: z.string().describe('The ID of the issue to make a child'),
+          parentIssueId: z.string().describe('The ID of the parent issue'),
+        }),
+        execute: createMemoryAwareToolExecutor(
+          'setIssueParent',
+          async (params: any) => {
+            return await executeSetIssueParent(
+              params,
+              updateStatus,
+              linearClient
+            );
+          }
+        ),
+      }),
+      addIssueToProject: tool({
+        description: 'Add an issue to a Linear project',
+        parameters: z.object({
+          issueId: z.string().describe('The ID of the issue to add'),
+          projectId: z
+            .string()
+            .describe('The ID of the project to add the issue to'),
+        }),
+        execute: createMemoryAwareToolExecutor(
+          'addIssueToProject',
+          async (params: any) => {
+            return await executeAddIssueToProject(
+              params,
+              updateStatus,
+              linearClient
+            );
+          }
+        ),
+      }),
+      createAgentActivity: tool({
+        description:
+          'Create a Linear agent activity (thought, action, response, error, or elicitation). Use response for any output to the user in the chat.',
+        parameters: z.object({
+          sessionId: z.string().describe('The Linear agent session ID'),
+          activityType: z
+            .enum(['thought', 'action', 'response', 'error', 'elicitation'])
+            .describe('The type of activity to create'),
+          body: z
+            .string()
+            .describe(
+              'The body text (required for thought, response, error, elicitation types, use empty string if not needed)'
+            ),
+          action: z
+            .string()
+            .describe(
+              'The action description (required for action type, use empty string if not needed)'
+            ),
+          parameter: z
+            .string()
+            .describe(
+              'The action parameter (required for action type, use empty string if not needed)'
+            ),
+          result: z
+            .string()
+            .describe(
+              'The action result (optional for action type, use empty string if not provided)'
+            ),
+        }),
+        execute: createMemoryAwareToolExecutor(
+          'createAgentActivity',
+          async (params: any) => {
+            return await executeCreateAgentActivity(
               params,
               updateStatus,
               linearClient

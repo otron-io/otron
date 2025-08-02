@@ -351,6 +351,26 @@ export class MemoryManager {
         summary.actionType = 'linear_comment';
         break;
 
+      case 'setIssueParent':
+        summary.issueId = input.issueId;
+        summary.parentIssueId = input.parentIssueId;
+        summary.actionType = 'issue_parent_assignment';
+        break;
+
+      case 'addIssueToProject':
+        summary.issueId = input.issueId;
+        summary.projectId = input.projectId;
+        summary.actionType = 'issue_project_assignment';
+        break;
+
+      case 'createAgentActivity':
+        summary.sessionId = input.sessionId;
+        summary.activityType = input.activityType;
+        summary.activityPreview =
+          input.body?.substring(0, 100) || input.action || 'Activity created';
+        summary.actionType = 'agent_activity_creation';
+        break;
+
       case 'sendSlackMessage':
       case 'sendChannelMessage':
       case 'sendDirectMessage':

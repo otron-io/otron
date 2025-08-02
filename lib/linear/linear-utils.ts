@@ -941,3 +941,141 @@ export const createComment = async (
     );
   }
 };
+
+/**
+ * Set an issue as a child of another issue (parent-child relationship)
+ */
+export const setIssueParent = async (
+  linearClient: LinearClient,
+  issueId: string,
+  parentIssueId: string
+): Promise<{
+  success: boolean;
+  message: string;
+  error?: string;
+}> => {
+  try {
+    // Validate both issues exist
+    const issue = await linearClient.issue(issueId);
+    if (!issue) {
+      return {
+        success: false,
+        error: `Child issue ${issueId} not found`,
+        message: `Failed to set parent: Child issue not found`,
+      };
+    }
+
+    const parentIssue = await linearClient.issue(parentIssueId);
+    if (!parentIssue) {
+      return {
+        success: false,
+        error: `Parent issue ${parentIssueId} not found`,
+        message: `Failed to set parent: Parent issue not found`,
+      };
+    }
+
+    // Log the relationship creation
+    await agentActivity.action(
+      issueId,
+      'Setting issue parent',
+      `Making ${issue.identifier} a child of ${parentIssue.identifier}`
+    );
+
+    // Update the issue with the parent relationship
+    await issue.update({ parentId: parentIssueId });
+
+    const successMessage = `Successfully made ${issue.identifier} a child of ${parentIssue.identifier}`;
+    console.log(successMessage);
+
+    await agentActivity.action(
+      issueId,
+      'Parent relationship created',
+      successMessage
+    );
+
+    return {
+      success: true,
+      message: successMessage,
+    };
+  } catch (error: unknown) {
+    const errorMessage = error instanceof Error ? error.message : String(error);
+    console.error(`Error setting parent for issue ${issueId}:`, errorMessage);
+
+    await agentActivity.error(issueId, `Failed to set parent: ${errorMessage}`);
+
+    return {
+      success: false,
+      error: errorMessage,
+      message: `Failed to set parent relationship: ${errorMessage}`,
+    };
+  }
+};
+
+/**
+ * Add an issue to a project
+ */
+export const addIssueToProject = async (
+  linearClient: LinearClient,
+  issueId: string,
+  projectId: string
+): Promise<{
+  success: boolean;
+  message: string;
+  error?: string;
+}> => {
+  try {
+    // Validate issue exists
+    const issue = await linearClient.issue(issueId);
+    if (!issue) {
+      return {
+        success: false,
+        error: `Issue ${issueId} not found`,
+        message: `Failed to add to project: Issue not found`,
+      };
+    }
+
+    // Validate project exists
+    const project = await linearClient.project(projectId);
+    if (!project) {
+      return {
+        success: false,
+        error: `Project ${projectId} not found`,
+        message: `Failed to add to project: Project not found`,
+      };
+    }
+
+    // Log the project assignment
+    await agentActivity.action(
+      issueId,
+      'Adding issue to project',
+      `Adding ${issue.identifier} to project ${project.name}`
+    );
+
+    // Update the issue with the project assignment
+    await issue.update({ projectId: projectId });
+
+    const successMessage = `Successfully added ${issue.identifier} to project ${project.name}`;
+    console.log(successMessage);
+
+    await agentActivity.action(issueId, 'Added to project', successMessage);
+
+    return {
+      success: true,
+      message: successMessage,
+    };
+  } catch (error: unknown) {
+    const errorMessage = error instanceof Error ? error.message : String(error);
+    console.error(`Error adding issue ${issueId} to project:`, errorMessage);
+
+    await agentActivity.error(
+      issueId,
+      `Failed to add to project: ${errorMessage}`
+    );
+
+    return {
+      success: false,
+      error: errorMessage,
+      message: `Failed to add to project: ${errorMessage}`,
+    };
+  }
+};

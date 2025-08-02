@@ -510,3 +510,51 @@ export const executeCreateAgentActivity = async (
     };
   }
 };
+
+export const executeSetIssueParent = async (
+  { issueId, parentIssueId }: { issueId: string; parentIssueId: string },
+  updateStatus?: (status: string) => void,
+  linearClient?: LinearClient
+) => {
+  if (!linearClient) {
+    return {
+      success: false,
+      error: 'LinearClient is required for Linear operations',
+      message: 'Failed to set parent: Linear client not available',
+    };
+  }
+
+  updateStatus?.(`Setting ${issueId} as child of ${parentIssueId}...`);
+
+  const result = await linearUtils.setIssueParent(
+    linearClient,
+    issueId,
+    parentIssueId
+  );
+
+  return result;
+};
+
+export const executeAddIssueToProject = async (
+  { issueId, projectId }: { issueId: string; projectId: string },
+  updateStatus?: (status: string) => void,
+  linearClient?: LinearClient
+) => {
+  if (!linearClient) {
+    return {
+      success: false,
+      error: 'LinearClient is required for Linear operations',
+      message: 'Failed to add to project: Linear client not available',
+    };
+  }
+
+  updateStatus?.(`Adding issue ${issueId} to project ${projectId}...`);
+
+  const result = await linearUtils.addIssueToProject(
+    linearClient,
+    issueId,
+    projectId
+  );
+
+  return result;
+};
