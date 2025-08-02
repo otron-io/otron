@@ -793,7 +793,7 @@ const generateResponseInternal = async (
 ## File Operations (Critical Patterns)
 
 ### Reading Files Strategically
-**Start with entire file for small files (<300 lines):**
+**Start with entire file for small files (<200 lines):**
 \`\`\`
 {file_path: "file.ts", repository: "owner/repo", should_read_entire_file: true}
 \`\`\`
@@ -806,6 +806,8 @@ const generateResponseInternal = async (
 **CRITICAL: If file reading fails, do NOT retry the same parameters:**
 - ❌ **Never**: Call getRawFileContent with identical parameters multiple times
 - ✅ **Instead**: Try searchEmbeddedCode, getDirectoryStructure, or report what you tried
+
+**Note**: You are limited to reading 200 lines at a time. Just specify the next start and end line if you want to read more.
 
 ### Editing Files  
 **Always read the target section first:**
