@@ -1,11 +1,11 @@
-import * as githubUtils from './github/github-utils.js';
-import { advancedFileReader } from './github/file-reader.js';
-import { env } from './core/env.js';
-import { agentActivity } from './linear/linear-agent-session-manager.js';
+import { env } from "./core/env.js";
+import { advancedFileReader } from "./github/file-reader.js";
+import * as githubUtils from "./github/github-utils.js";
+import { agentActivity } from "./linear/linear-agent-session-manager.js";
 
 // Helper function to extract Linear issue ID from branch name or context
 export const extractLinearIssueFromBranch = (
-  branchName: string
+  branchName: string,
 ): string | null => {
   // Look for Linear issue patterns like OTR-123, ABC-456, etc. in branch names
   const issueMatch = branchName.match(/\b([A-Z]{2,}-\d+)\b/);
@@ -27,7 +27,7 @@ export const executeGetFileContent = async (
     maxLines: number;
     branch: string;
   },
-  updateStatus?: (status: string) => void
+  updateStatus?: (status: string) => void,
 ) => {
   updateStatus?.(`is getting content for ${file_path}...`);
 
@@ -37,7 +37,7 @@ export const executeGetFileContent = async (
     startLine === 0 ? undefined : startLine,
     maxLines === 0 ? undefined : maxLines,
     branch || undefined,
-    undefined
+    undefined,
   );
   return { content };
 };
@@ -48,7 +48,7 @@ export const executeCreateBranch = async (
     repository,
     baseBranch,
   }: { branch: string; repository: string; baseBranch: string },
-  updateStatus?: (status: string) => void
+  updateStatus?: (status: string) => void,
 ) => {
   updateStatus?.(`is creating branch ${branch}...`);
 
@@ -58,8 +58,8 @@ export const executeCreateBranch = async (
     await agentActivity.thought(
       issueId,
       `🌿 Branch strategy: Creating '${branch}' from '${
-        baseBranch || 'default'
-      }' in ${repository}. This will be our working branch for implementing changes.`
+        baseBranch || "default"
+      }' in ${repository}. This will be our working branch for implementing changes.`,
     );
   }
 
@@ -68,9 +68,9 @@ export const executeCreateBranch = async (
   if (issueId) {
     await agentActivity.action(
       issueId,
-      'Created branch',
-      `${branch} from ${baseBranch || 'default'}`,
-      `Branch ready for development in ${repository}`
+      "Created branch",
+      `${branch} from ${baseBranch || "default"}`,
+      `Branch ready for development in ${repository}`,
     );
   }
 
@@ -94,7 +94,7 @@ export const executeCreateFile = async (
     repository: string;
     branch: string;
   },
-  updateStatus?: (status: string) => void
+  updateStatus?: (status: string) => void,
 ) => {
   try {
     updateStatus?.(`Creating file ${file_path}...`);
@@ -104,12 +104,12 @@ export const executeCreateFile = async (
     if (issueId) {
       await agentActivity.thought(
         issueId,
-        `💭 File creation strategy: Creating ${file_path} with ${content.length} characters in ${repository}:${branch}. Commit message: "${message}"`
+        `💭 File creation strategy: Creating ${file_path} with ${content.length} characters in ${repository}:${branch}. Commit message: "${message}"`,
       );
       await agentActivity.action(
         issueId,
-        'Creating file',
-        `${file_path} in ${repository}:${branch}`
+        "Creating file",
+        `${file_path} in ${repository}:${branch}`,
       );
     }
 
@@ -118,15 +118,15 @@ export const executeCreateFile = async (
       content,
       message,
       repository,
-      branch
+      branch,
     );
 
     if (issueId) {
       await agentActivity.action(
         issueId,
-        'Created file',
+        "Created file",
         `${file_path} in ${repository}:${branch}`,
-        `File created successfully (${content.length} characters)`
+        `File created successfully (${content.length} characters)`,
       );
     }
 
@@ -138,7 +138,7 @@ export const executeCreateFile = async (
         issueId,
         `Failed to create file ${file_path}: ${
           error instanceof Error ? error.message : String(error)
-        }`
+        }`,
       );
     }
     throw error;
@@ -157,10 +157,10 @@ export const executeDeleteFile = async (
     repository: string;
     branch: string;
   },
-  updateStatus?: (status: string) => void
+  updateStatus?: (status: string) => void,
 ) => {
   updateStatus?.(
-    `is deleting file ${file_path} from ${repository}/${branch}...`
+    `is deleting file ${file_path} from ${repository}/${branch}...`,
   );
 
   await githubUtils.deleteFile(file_path, message, repository, branch);
@@ -184,7 +184,7 @@ export const executeCreatePullRequest = async (
     base: string;
     repository: string;
   },
-  updateStatus?: (status: string) => void
+  updateStatus?: (status: string) => void,
 ) => {
   updateStatus?.(`is creating pull request "${title}" in ${repository}...`);
 
@@ -193,13 +193,13 @@ export const executeCreatePullRequest = async (
   if (issueId) {
     await agentActivity.thought(
       issueId,
-      `🔄 Pull request strategy: Creating PR to merge '${head}' → '${base}' in ${repository}. Title: "${title}". Body length: ${body.length} chars.`
+      `🔄 Pull request strategy: Creating PR to merge '${head}' → '${base}' in ${repository}. Title: "${title}". Body length: ${body.length} chars.`,
     );
     await agentActivity.thought(
       issueId,
       `📝 PR content preview: "${body.substring(0, 150)}${
-        body.length > 150 ? '...' : ''
-      }"`
+        body.length > 150 ? "..." : ""
+      }"`,
     );
   }
 
@@ -208,15 +208,15 @@ export const executeCreatePullRequest = async (
     body,
     head,
     base,
-    repository
+    repository,
   );
 
   if (issueId) {
     await agentActivity.action(
       issueId,
-      'Created pull request',
+      "Created pull request",
       `#${result.number}: ${title}`,
-      `PR ready for review at ${result.url}`
+      `PR ready for review at ${result.url}`,
     );
   }
 
@@ -230,10 +230,10 @@ export const executeCreatePullRequest = async (
 
 export const executeGetPullRequest = async (
   { repository, pullNumber }: { repository: string; pullNumber: number },
-  updateStatus?: (status: string) => void
+  updateStatus?: (status: string) => void,
 ) => {
   updateStatus?.(
-    `is getting details for PR #${pullNumber} in ${repository}...`
+    `is getting details for PR #${pullNumber} in ${repository}...`,
   );
 
   const pullRequest = await githubUtils.getPullRequest(repository, pullNumber);
@@ -246,14 +246,14 @@ export const executeAddPullRequestComment = async (
     pullNumber,
     body,
   }: { repository: string; pullNumber: number; body: string },
-  updateStatus?: (status: string) => void
+  updateStatus?: (status: string) => void,
 ) => {
   updateStatus?.(`is adding comment to PR #${pullNumber} in ${repository}...`);
 
   const result = await githubUtils.addPullRequestComment(
     repository,
     pullNumber,
-    body
+    body,
   );
   return {
     success: true,
@@ -265,7 +265,7 @@ export const executeAddPullRequestComment = async (
 
 export const executeGetPullRequestFiles = async (
   { repository, pullNumber }: { repository: string; pullNumber: number },
-  updateStatus?: (status: string) => void
+  updateStatus?: (status: string) => void,
 ) => {
   updateStatus?.(`is getting files for PR #${pullNumber} in ${repository}...`);
 
@@ -285,7 +285,7 @@ export const executeSearchCode = async (
     fileFilter: string;
     maxResults: number;
   },
-  updateStatus?: (status: string) => void
+  updateStatus?: (status: string) => void,
 ) => {
   updateStatus?.(`is searching for code: "${query}"...`);
 
@@ -298,49 +298,49 @@ export const executeSearchCode = async (
 
 export const executeGetDirectoryStructure = async (
   { repository, directoryPath }: { repository: string; directoryPath: string },
-  updateStatus?: (status: string) => void
+  updateStatus?: (status: string) => void,
 ) => {
   try {
     updateStatus?.(
       `is getting directory structure for ${
-        directoryPath || 'root'
-      } in ${repository}...`
+        directoryPath || "root"
+      } in ${repository}...`,
     );
 
     const structure = await githubUtils.getDirectoryStructure(
       repository,
-      directoryPath || ''
+      directoryPath || "",
     );
     return {
       success: true,
       structure,
       message: `Retrieved directory structure for ${
-        directoryPath || 'root'
+        directoryPath || "root"
       } in ${repository}`,
     };
   } catch (error) {
     console.error(
       `Error getting directory structure for ${
-        directoryPath || 'root'
+        directoryPath || "root"
       } in ${repository}:`,
-      error
+      error,
     );
 
     // Handle specific error cases
-    if (error instanceof Error && 'status' in error) {
+    if (error instanceof Error && "status" in error) {
       const httpError = error as any;
       if (httpError.status === 404) {
         return {
           success: false,
           structure: [
             {
-              name: `Directory not found: ${directoryPath || 'root'}`,
-              file_path: directoryPath || '',
-              type: 'file' as const,
+              name: `Directory not found: ${directoryPath || "root"}`,
+              file_path: directoryPath || "",
+              type: "file" as const,
             },
           ],
           message: `Directory "${
-            directoryPath || 'root'
+            directoryPath || "root"
           }" not found in repository ${repository}. This directory may not exist or you may not have access to it.`,
         };
       }
@@ -350,13 +350,13 @@ export const executeGetDirectoryStructure = async (
       success: false,
       structure: [
         {
-          name: 'Error retrieving directory structure',
-          file_path: directoryPath || '',
-          type: 'file' as const,
+          name: "Error retrieving directory structure",
+          file_path: directoryPath || "",
+          type: "file" as const,
         },
       ],
       message: `Failed to get directory structure: ${
-        error instanceof Error ? error.message : 'Unknown error'
+        error instanceof Error ? error.message : "Unknown error"
       }`,
     };
   }
@@ -374,11 +374,11 @@ export const executeSearchEmbeddedCode = async (
     fileFilter?: string;
     maxResults: number;
   },
-  updateStatus?: (status: string) => void
+  updateStatus?: (status: string) => void,
 ) => {
   // Add very visible logging to confirm function is called
-  console.log('🚨🚨🚨 executeSearchEmbeddedCode CALLED 🚨🚨🚨');
-  console.log('Parameters received:', {
+  console.log("🚨🚨🚨 executeSearchEmbeddedCode CALLED 🚨🚨🚨");
+  console.log("Parameters received:", {
     repository,
     query,
     fileFilter,
@@ -386,16 +386,16 @@ export const executeSearchEmbeddedCode = async (
   });
 
   try {
-    updateStatus?.('is searching embedded code...');
+    updateStatus?.("is searching embedded code...");
 
     // Extract Linear issue ID and add strategic thinking
-    const issueId = extractLinearIssueFromBranch('current'); // Use current context
+    const issueId = extractLinearIssueFromBranch("current"); // Use current context
     if (issueId) {
       await agentActivity.thought(
         issueId,
         `🔍 Code search strategy: Searching ${repository} for "${query}"${
-          fileFilter ? ` in files matching: ${fileFilter}` : ''
-        }. Max results: ${maxResults}. This will help understand the codebase structure and locate relevant code.`
+          fileFilter ? ` in files matching: ${fileFilter}` : ""
+        }. Max results: ${maxResults}. This will help understand the codebase structure and locate relevant code.`,
       );
     }
 
@@ -403,40 +403,40 @@ export const executeSearchEmbeddedCode = async (
     const searchParams = new URLSearchParams({
       repository,
       query,
-      method: 'vector',
+      method: "vector",
       limit: ((maxResults <= 10 ? maxResults : 10) || 10).toString(),
     });
 
     if (fileFilter) {
-      searchParams.append('fileFilter', fileFilter);
+      searchParams.append("fileFilter", fileFilter);
     }
 
     // Add detailed logging
-    console.log('🔍 Code Search Debug Info:');
-    console.log('  Repository:', repository);
-    console.log('  Query:', query);
-    console.log('  FileFilter:', fileFilter);
-    console.log('  MaxResults:', maxResults);
-    console.log('  SearchParams:', searchParams.toString());
-    console.log('  INTERNAL_API_TOKEN exists:', !!env.INTERNAL_API_TOKEN);
+    console.log("🔍 Code Search Debug Info:");
+    console.log("  Repository:", repository);
+    console.log("  Query:", query);
+    console.log("  FileFilter:", fileFilter);
+    console.log("  MaxResults:", maxResults);
+    console.log("  SearchParams:", searchParams.toString());
+    console.log("  INTERNAL_API_TOKEN exists:", !!env.INTERNAL_API_TOKEN);
 
     // Use absolute URL directly since relative URLs don't work in server environment
-    const baseUrl = process.env.OTRON_URL || 'http://localhost:3000';
-    const absoluteUrl = baseUrl.startsWith('http')
+    const baseUrl = process.env.OTRON_URL || "http://localhost:3000";
+    const absoluteUrl = baseUrl.startsWith("http")
       ? `${baseUrl}/api/code-search?${searchParams}`
       : `https://${baseUrl}/api/code-search?${searchParams}`;
 
-    console.log('  Using absolute URL:', absoluteUrl);
+    console.log("  Using absolute URL:", absoluteUrl);
 
     let response: Response;
-    let debugInfo = '';
+    let debugInfo = "";
 
     // Make the API call directly with absolute URL
     response = await fetch(absoluteUrl, {
-      method: 'GET',
+      method: "GET",
       headers: {
-        'X-Internal-Token': env.INTERNAL_API_TOKEN,
-        'Content-Type': 'application/json',
+        "X-Internal-Token": env.INTERNAL_API_TOKEN,
+        "Content-Type": "application/json",
       },
     });
 
@@ -444,23 +444,23 @@ export const executeSearchEmbeddedCode = async (
     debugInfo += `Response status: ${response.status}\n`;
     debugInfo += `Response ok: ${response.ok}\n`;
 
-    console.log('  Response status:', response.status);
-    console.log('  Response ok:', response.ok);
+    console.log("  Response status:", response.status);
+    console.log("  Response ok:", response.ok);
 
     if (!response.ok) {
       const errorData = await response.json().catch(() => ({}));
       debugInfo += `Error data: ${JSON.stringify(errorData)}\n`;
-      console.log('  Error data:', errorData);
+      console.log("  Error data:", errorData);
       throw new Error(
         `Code search API error: ${response.status} - ${
           errorData.error || response.statusText
-        }`
+        }`,
       );
     }
 
     const data = await response.json();
     debugInfo += `Response data: ${JSON.stringify(data, null, 2)}\n`;
-    console.log('  Response data:', JSON.stringify(data, null, 2));
+    console.log("  Response data:", JSON.stringify(data, null, 2));
 
     return {
       success: true,
@@ -468,12 +468,12 @@ export const executeSearchEmbeddedCode = async (
       message: `Found ${data.results.length} code matches for "${query}" in ${repository}\n\nDEBUG INFO:\n${debugInfo}`,
     };
   } catch (error) {
-    console.error('Error searching embedded code:', error);
+    console.error("Error searching embedded code:", error);
     return {
       success: false,
-      error: error instanceof Error ? error.message : 'Unknown error occurred',
+      error: error instanceof Error ? error.message : "Unknown error occurred",
       message: `Code search failed: ${
-        error instanceof Error ? error.message : 'Unknown error occurred'
+        error instanceof Error ? error.message : "Unknown error occurred"
       }`,
     };
   }
@@ -481,29 +481,29 @@ export const executeSearchEmbeddedCode = async (
 
 export const executeGetRepositoryStructure = async (
   { repository, file_path }: { repository: string; file_path?: string },
-  updateStatus?: (status: string) => void
+  updateStatus?: (status: string) => void,
 ) => {
   try {
-    updateStatus?.('Getting repository structure...');
+    updateStatus?.("Getting repository structure...");
 
     // Use the direct GitHub utils approach
     const structure = await githubUtils.getDirectoryStructure(
       repository,
-      file_path || ''
+      file_path || "",
     );
 
     return {
       success: true,
       structure: structure,
       message: `Retrieved structure for ${repository}${
-        file_path ? ` at file_path ${file_path}` : ''
+        file_path ? ` at file_path ${file_path}` : ""
       }`,
     };
   } catch (error) {
-    console.error('Error getting repository structure:', error);
+    console.error("Error getting repository structure:", error);
     return {
       success: false,
-      error: error instanceof Error ? error.message : 'Unknown error occurred',
+      error: error instanceof Error ? error.message : "Unknown error occurred",
     };
   }
 };
@@ -525,10 +525,10 @@ export const executeEditUrl = async (
     newUrl: string;
     message: string;
   },
-  updateStatus?: (status: string) => void
+  updateStatus?: (status: string) => void,
 ) => {
-  console.log('🔧 executeEditUrl CALLED');
-  console.log('Parameters:', {
+  console.log("🔧 executeEditUrl CALLED");
+  console.log("Parameters:", {
     file_path,
     repository,
     branch,
@@ -543,61 +543,61 @@ export const executeEditUrl = async (
     // 🚨 ULTRA-STRICT SAFETY CHECKS FOR URL EDITING
 
     // 1. Only allow URL-like content
-    if (!oldUrl.includes('http://') && !oldUrl.includes('https://')) {
+    if (!oldUrl.includes("http://") && !oldUrl.includes("https://")) {
       throw new Error(
         `SAFETY CHECK FAILED: oldUrl must contain http:// or https:// to be recognized as a URL. Got: ${oldUrl.substring(
           0,
-          100
-        )}...`
+          100,
+        )}...`,
       );
     }
 
-    if (!newUrl.includes('http://') && !newUrl.includes('https://')) {
+    if (!newUrl.includes("http://") && !newUrl.includes("https://")) {
       throw new Error(
         `SAFETY CHECK FAILED: newUrl must contain http:// or https:// to be recognized as a URL. Got: ${newUrl.substring(
           0,
-          100
-        )}...`
+          100,
+        )}...`,
       );
     }
 
     // 2. Prevent large URL blocks (should be single line URLs)
     if (oldUrl.length > 2000) {
       throw new Error(
-        `SAFETY CHECK FAILED: oldUrl is too large (${oldUrl.length} characters). URLs should typically be under 2000 characters.`
+        `SAFETY CHECK FAILED: oldUrl is too large (${oldUrl.length} characters). URLs should typically be under 2000 characters.`,
       );
     }
 
     if (newUrl.length > 2000) {
       throw new Error(
-        `SAFETY CHECK FAILED: newUrl is too large (${newUrl.length} characters). URLs should typically be under 2000 characters.`
+        `SAFETY CHECK FAILED: newUrl is too large (${newUrl.length} characters). URLs should typically be under 2000 characters.`,
       );
     }
 
     // 3. Prevent multi-line URLs (which might indicate accidental large matches)
-    const oldUrlLines = oldUrl.split('\n').length;
+    const oldUrlLines = oldUrl.split("\n").length;
     if (oldUrlLines > 3) {
       throw new Error(
-        `SAFETY CHECK FAILED: oldUrl contains ${oldUrlLines} lines. For safety, URL edits should be 1-3 lines maximum.`
+        `SAFETY CHECK FAILED: oldUrl contains ${oldUrlLines} lines. For safety, URL edits should be 1-3 lines maximum.`,
       );
     }
 
     // Get the current file content
-    const { getFileContent } = await import('./github/github-utils.js');
+    const { getFileContent } = await import("./github/github-utils.js");
     const currentContent = await getFileContent(
       file_path,
       repository,
       1,
       10000,
       branch,
-      undefined
+      undefined,
     );
 
     // Remove any header line that getFileContent might add
-    const lines = currentContent.split('\n');
+    const lines = currentContent.split("\n");
     let content = currentContent;
     if (lines.length > 0 && lines[0]?.match(/^\/\/ Lines \d+-\d+ of \d+$/)) {
-      content = lines.slice(1).join('\n');
+      content = lines.slice(1).join("\n");
     }
 
     // Check if the old URL exists in the file
@@ -605,8 +605,8 @@ export const executeEditUrl = async (
       throw new Error(
         `Old URL not found in ${file_path}. The file content may have changed since you last read it. Looking for: ${oldUrl.substring(
           0,
-          200
-        )}...`
+          200,
+        )}...`,
       );
     }
 
@@ -614,7 +614,7 @@ export const executeEditUrl = async (
     const occurrences = content.split(oldUrl).length - 1;
     if (occurrences > 1) {
       throw new Error(
-        `Old URL appears ${occurrences} times in ${file_path}. Please provide more specific URL text to avoid ambiguity.`
+        `Old URL appears ${occurrences} times in ${file_path}. Please provide more specific URL text to avoid ambiguity.`,
       );
     }
 
@@ -627,42 +627,42 @@ export const executeEditUrl = async (
     // For URL edits, the difference should be small (typically just added/removed parameters)
     if (difference > 1000) {
       throw new Error(
-        `🚨 URL EDIT SAFETY CHECK FAILED: This URL replacement would change ${difference} characters in the file. URL edits should typically change less than 1000 characters. This suggests the oldUrl parameter might be matching more content than intended.`
+        `🚨 URL EDIT SAFETY CHECK FAILED: This URL replacement would change ${difference} characters in the file. URL edits should typically change less than 1000 characters. This suggests the oldUrl parameter might be matching more content than intended.`,
       );
     }
 
     // Log the change details for debugging
-    console.log('📊 URL edit summary:', {
+    console.log("📊 URL edit summary:", {
       originalLength,
       newLength,
       difference,
       oldUrlPreview:
-        oldUrl.substring(0, 150) + (oldUrl.length > 150 ? '...' : ''),
+        oldUrl.substring(0, 150) + (oldUrl.length > 150 ? "..." : ""),
       newUrlPreview:
-        newUrl.substring(0, 150) + (newUrl.length > 150 ? '...' : ''),
+        newUrl.substring(0, 150) + (newUrl.length > 150 ? "..." : ""),
     });
 
     // Replace the old URL with the new URL
     const updatedContent = afterReplacement;
 
     // Update the file
-    const { createOrUpdateFile } = await import('./github/github-utils.js');
+    const { createOrUpdateFile } = await import("./github/github-utils.js");
     await createOrUpdateFile(
       file_path,
       updatedContent,
       message,
       repository,
-      branch
+      branch,
     );
 
-    console.log('✅ executeEditUrl completed successfully');
+    console.log("✅ executeEditUrl completed successfully");
 
     return {
       success: true,
       message: `Successfully updated URL in ${file_path} (${difference} character difference)`,
     };
   } catch (error) {
-    console.error('❌ Error in executeEditUrl:', error);
+    console.error("❌ Error in executeEditUrl:", error);
     throw error;
   }
 };
@@ -678,7 +678,7 @@ export const executeEndActions = async (
     summary: string;
     nextSteps?: string;
   },
-  updateStatus?: (status: string) => void
+  updateStatus?: (status: string) => void,
 ) => {
   updateStatus?.(`is ending actions: ${reason}`);
 
@@ -688,7 +688,7 @@ export const executeEndActions = async (
 
 **Summary:** ${summary}
 
-${nextSteps ? `**Next Steps:** ${nextSteps}` : ''}
+${nextSteps ? `**Next Steps:** ${nextSteps}` : ""}
 
 *No further actions will be taken at this time.*`;
 
@@ -709,19 +709,19 @@ export const executeResetBranchToHead = async (
     branch: string;
     baseBranch?: string;
   },
-  updateStatus?: (status: string) => void
+  updateStatus?: (status: string) => void,
 ) => {
   updateStatus?.(`is resetting branch ${branch} to head...`);
 
   try {
-    const { resetBranchToHead } = await import('./github/github-utils.js');
+    const { resetBranchToHead } = await import("./github/github-utils.js");
 
     await resetBranchToHead(repository, branch, baseBranch);
 
     return {
       success: true,
       message: `Successfully reset branch ${branch} to head of ${
-        baseBranch || 'default branch'
+        baseBranch || "default branch"
       }`,
     };
   } catch (error) {
@@ -755,13 +755,13 @@ export const executeGetRawFileContent = async (
     branch: string;
     sessionId?: string;
   },
-  updateStatus?: (status: string) => void
+  updateStatus?: (status: string) => void,
 ) => {
   try {
     // Validate required parameters upfront
     if (!file_path || !repository) {
       throw new Error(
-        `Missing required parameters: file_path=${file_path}, repository=${repository}`
+        `Missing required parameters: file_path=${file_path}, repository=${repository}`,
       );
     }
 
@@ -770,13 +770,13 @@ export const executeGetRawFileContent = async (
     } else {
       updateStatus?.(
         `Reading ${file_path} (lines ${start_line_one_indexed || 1}-${
-          end_line_one_indexed_inclusive || 'end'
-        })`
+          end_line_one_indexed_inclusive || "end"
+        })`,
       );
     }
 
     // Foolproof file reading logic
-    const { getFileContent } = await import('./github/github-utils.js');
+    const { getFileContent } = await import("./github/github-utils.js");
 
     // Get file content with smart metadata extraction (single network call)
     let totalLines: number;
@@ -790,15 +790,15 @@ export const executeGetRawFileContent = async (
           repository,
           1,
           200, // Get first 200 lines to extract total line count
-          branch || 'main',
-          sessionId
+          branch || "main",
+          sessionId,
         );
 
         // Extract total lines from header (format: "// Lines 1-200 of 1234")
         const headerMatch = initialContent.match(
-          /^\/\/ Lines \d+-\d+ of (\d+)/
+          /^\/\/ Lines \d+-\d+ of (\d+)/,
         );
-        totalLines = headerMatch ? parseInt(headerMatch[1], 10) : 1000;
+        totalLines = headerMatch ? Number.parseInt(headerMatch[1], 10) : 1000;
 
         // If file is small enough, use what we already got
         if (totalLines <= 200) {
@@ -811,8 +811,8 @@ export const executeGetRawFileContent = async (
             repository,
             1,
             maxLines,
-            branch || 'main',
-            sessionId
+            branch || "main",
+            sessionId,
           );
         }
       } else {
@@ -826,21 +826,21 @@ export const executeGetRawFileContent = async (
           repository,
           startLine,
           maxLines, // This is the COUNT of lines, not the ending line number
-          branch || 'main',
-          sessionId
+          branch || "main",
+          sessionId,
         );
 
         // Extract total lines from header
         const headerMatch = fullContent.match(/^\/\/ Lines \d+-\d+ of (\d+)/);
-        totalLines = headerMatch ? parseInt(headerMatch[1], 10) : 1000;
+        totalLines = headerMatch ? Number.parseInt(headerMatch[1], 10) : 1000;
       }
     } catch (fileError) {
       throw new Error(
         `File not found or inaccessible: ${file_path} in ${repository}${
-          branch ? ` (branch: ${branch})` : ''
+          branch ? ` (branch: ${branch})` : ""
         }. ${
           fileError instanceof Error ? fileError.message : String(fileError)
-        }`
+        }`,
       );
     }
 
@@ -866,84 +866,84 @@ export const executeGetRawFileContent = async (
     // Note: fullContent already contains the optimized content from above
 
     // Remove header line if present (getFileContent adds format: "// Lines X-Y of Z")
-    const lines = fullContent.split('\n');
+    const lines = fullContent.split("\n");
     const rawContent =
       lines.length > 0 && lines[0]?.match(/^\/\/ Lines \d+-\d+ of \d+$/)
-        ? lines.slice(1).join('\n')
+        ? lines.slice(1).join("\n")
         : fullContent;
 
     // Extract Linear issue ID from sessionId or repository for activity logging
     const issueId =
-      extractLinearIssueFromBranch(branch || '') ||
+      extractLinearIssueFromBranch(branch || "") ||
       sessionId?.match(/[A-Z]{2,}-\d+/)?.[0];
 
     if (issueId) {
       await agentActivity.thought(
         issueId,
         `📄 Reading file content from \`${file_path}\` in \`${repository}\`${
-          branch && branch.trim() ? ` (branch: ${branch})` : ''
-        }`
+          branch?.trim() ? ` (branch: ${branch})` : ""
+        }`,
       );
 
       // Get proper file extension for syntax highlighting
       const getFileExtension = (filePath: string): string => {
-        const ext = filePath.split('.').pop()?.toLowerCase();
+        const ext = filePath.split(".").pop()?.toLowerCase();
         const extensionMap: { [key: string]: string } = {
-          ts: 'typescript',
-          tsx: 'typescript',
-          js: 'javascript',
-          jsx: 'javascript',
-          py: 'python',
-          java: 'java',
-          cpp: 'cpp',
-          c: 'c',
-          h: 'c',
-          cs: 'csharp',
-          php: 'php',
-          rb: 'ruby',
-          go: 'go',
-          rs: 'rust',
-          swift: 'swift',
-          kt: 'kotlin',
-          dart: 'dart',
-          html: 'html',
-          css: 'css',
-          scss: 'scss',
-          sass: 'sass',
-          less: 'less',
-          json: 'json',
-          xml: 'xml',
-          yaml: 'yaml',
-          yml: 'yaml',
-          md: 'markdown',
-          sh: 'bash',
-          bash: 'bash',
-          zsh: 'bash',
-          fish: 'bash',
-          ps1: 'powershell',
-          sql: 'sql',
-          graphql: 'graphql',
-          gql: 'graphql',
-          dockerfile: 'dockerfile',
-          toml: 'toml',
-          ini: 'ini',
+          ts: "typescript",
+          tsx: "typescript",
+          js: "javascript",
+          jsx: "javascript",
+          py: "python",
+          java: "java",
+          cpp: "cpp",
+          c: "c",
+          h: "c",
+          cs: "csharp",
+          php: "php",
+          rb: "ruby",
+          go: "go",
+          rs: "rust",
+          swift: "swift",
+          kt: "kotlin",
+          dart: "dart",
+          html: "html",
+          css: "css",
+          scss: "scss",
+          sass: "sass",
+          less: "less",
+          json: "json",
+          xml: "xml",
+          yaml: "yaml",
+          yml: "yaml",
+          md: "markdown",
+          sh: "bash",
+          bash: "bash",
+          zsh: "bash",
+          fish: "bash",
+          ps1: "powershell",
+          sql: "sql",
+          graphql: "graphql",
+          gql: "graphql",
+          dockerfile: "dockerfile",
+          toml: "toml",
+          ini: "ini",
         };
-        return extensionMap[ext || ''] || 'text';
+        return extensionMap[ext || ""] || "text";
       };
 
       // Create detailed markdown content with proper syntax highlighting
       const markdownContent = `## 📄 File Content: \`${file_path}\`
 
 **Repository:** \`${repository}\`${
-        branch && branch.trim()
+        branch?.trim()
           ? `  
 **Branch:** \`${branch}\``
-          : ''
+          : ""
       }  
 **Lines:** ${actualStartLine}-${actualEndLine} of ${totalLines}  
 **Size:** ${rawContent.length} characters  
 **Range:** ${actualEndLine - actualStartLine + 1} lines returned
-**Mode:** ${should_read_entire_file ? 'Entire file' : 'Range read'}
+**Mode:** ${should_read_entire_file ? "Entire file" : "Range read"}
 
 \`\`\`${getFileExtension(file_path)}
 ${rawContent}
@@ -952,18 +952,18 @@ ${rawContent}
       await agentActivity.thought(issueId, markdownContent);
     }
 
-    updateStatus?.('Raw file content retrieved successfully');
+    updateStatus?.("Raw file content retrieved successfully");
 
     // Debug logging - now foolproof!
-    console.log(`📊 getRawFileContent (foolproof):`, {
+    console.log("📊 getRawFileContent (foolproof):", {
       requested: should_read_entire_file
-        ? 'entire file'
+        ? "entire file"
         : `lines ${start_line_one_indexed}-${end_line_one_indexed_inclusive}`,
       actual: `lines ${actualStartLine}-${actualEndLine}`,
       totalLines,
       linesReturned: actualEndLine - actualStartLine + 1,
       contentLength: rawContent.length,
-      mode: should_read_entire_file ? 'entire' : 'range',
+      mode: should_read_entire_file ? "entire" : "range",
     });
 
     return {
@@ -994,16 +994,16 @@ export const executeAnalyzeFileStructure = async (
     repository: string;
     branch: string;
   },
-  updateStatus?: (status: string) => void
+  updateStatus?: (status: string) => void,
 ) => {
   try {
-    updateStatus?.('Analyzing file structure...');
+    updateStatus?.("Analyzing file structure...");
 
-    const branchToUse = branch && branch.trim() ? branch : undefined;
+    const branchToUse = branch?.trim() ? branch : undefined;
     const analysis = await advancedFileReader.analyzeFileStructure(
       file_path,
       repository,
-      branchToUse
+      branchToUse,
     );
 
     const summary = `File Analysis: ${analysis.path}
@@ -1013,31 +1013,31 @@ Total Lines: ${analysis.totalLines}
 Functions (${analysis.functions.length}):
 ${analysis.functions
   .map((f: any) => `  - ${f.name} (lines ${f.startLine}-${f.endLine})`)
-  .join('\n')}
+  .join("\n")}
 
 Classes (${analysis.classes.length}):
 ${analysis.classes
   .map((c: any) => `  - ${c.name} (lines ${c.startLine}-${c.endLine})`)
-  .join('\n')}
+  .join("\n")}
 
 Imports (${analysis.imports.length}):
 ${analysis.imports
   .map((i: any) => `  - ${i.module} (line ${i.line})`)
-  .join('\n')}
+  .join("\n")}
 
 Exports (${analysis.exports.length}):
 ${analysis.exports
   .map((e: any) => `  - ${e.name} (${e.type}, line ${e.line})`)
-  .join('\n')}
+  .join("\n")}
 
-Dependencies: ${analysis.dependencies.join(', ')}
+Dependencies: ${analysis.dependencies.join(", ")}
 
 Complexity:
   - Cyclomatic: ${analysis.complexity.cyclomaticComplexity}
   - Cognitive: ${analysis.complexity.cognitiveComplexity}
   - Maintainability: ${analysis.complexity.maintainabilityIndex}`;
 
-    updateStatus?.('File structure analyzed successfully');
+    updateStatus?.("File structure analyzed successfully");
     return summary;
   } catch (error) {
     const errorMessage = `Failed to analyze file structure: ${
@@ -1066,10 +1066,10 @@ export const executeReadRelatedFiles = async (
     maxFiles: number;
     branch: string;
   },
-  updateStatus?: (status: string) => void
+  updateStatus?: (status: string) => void,
 ) => {
   try {
-    updateStatus?.('Reading related files...');
+    updateStatus?.("Reading related files...");
 
     const options: any = {
       includeImports: includeImports,
@@ -1078,12 +1078,12 @@ export const executeReadRelatedFiles = async (
       maxFiles: maxFiles > 0 ? maxFiles : 10, // default to 10
     };
 
-    if (branch && branch.trim()) options.branch = branch;
+    if (branch?.trim()) options.branch = branch;
 
     const relatedFiles = await advancedFileReader.readRelatedFiles(
       mainPath,
       repository,
-      options
+      options,
     );
 
     const summary = `Related Files for ${mainPath}:
@@ -1092,14 +1092,14 @@ ${relatedFiles
   .map(
     (file: any) => `
 ${file.relationship}: ${file.file_path}
-${file.content.substring(0, 200)}${file.content.length > 200 ? '...' : ''}
-`
+${file.content.substring(0, 200)}${file.content.length > 200 ? "..." : ""}
+`,
   )
-  .join('\n---\n')}
+  .join("\n---\n")}
 
 Total related files found: ${relatedFiles.length}`;
 
-    updateStatus?.('Related files read successfully');
+    updateStatus?.("Related files read successfully");
     return summary;
   } catch (error) {
     const errorMessage = `Failed to read related files: ${
@@ -1126,23 +1126,23 @@ export const executeSearchCodeWithContext = async (
     maxResults: number;
     branch: string;
   },
-  updateStatus?: (status: string) => void
+  updateStatus?: (status: string) => void,
 ) => {
   try {
-    updateStatus?.('Searching code with context...');
+    updateStatus?.("Searching code with context...");
 
     const options: any = {
       contextLines: contextLines > 0 ? contextLines : 3, // default to 3
       maxResults: maxResults > 0 ? maxResults : 10, // default to 10
     };
 
-    if (filePattern && filePattern.trim()) options.filePattern = filePattern;
-    if (branch && branch.trim()) options.branch = branch;
+    if (filePattern?.trim()) options.filePattern = filePattern;
+    if (branch?.trim()) options.branch = branch;
 
     const searchResults = await advancedFileReader.searchWithContext(
       pattern,
       repository,
-      options
+      options,
     );
 
     const summary = `Search Results for "${pattern}":
@@ -1156,21 +1156,21 @@ ${file.matches
     (match: any) => `
   Line ${match.line}: ${match.content}
   Context:
-${match.context.map((ctx: any) => `    ${ctx}`).join('\n')}
-`
+${match.context.map((ctx: any) => `    ${ctx}`).join("\n")}
+`,
   )
-  .join('\n')}
-`
+  .join("\n")}
+`,
   )
-  .join('\n---\n')}
+  .join("\n---\n")}
 
 Total files with matches: ${searchResults.length}
 Total matches: ${searchResults.reduce(
       (sum: number, file: any) => sum + file.matches.length,
-      0
+      0,
     )}`;
 
-    updateStatus?.('Code search completed successfully');
+    updateStatus?.("Code search completed successfully");
     return summary;
   } catch (error) {
     const errorMessage = `Failed to search code with context: ${

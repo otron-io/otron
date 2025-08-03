@@ -1,10 +1,10 @@
-import { LinearClient } from '@linear/sdk';
-import { Redis } from '@upstash/redis';
-import type { VercelRequest, VercelResponse } from '@vercel/node';
-import { env } from '../lib/core/env.js';
-import { verifyLinearWebhook } from '../lib/core/auth.js';
-import { waitUntil } from '@vercel/functions';
-import { handleLinearNotification } from '../lib/linear/handle-notifications.js';
+import { LinearClient } from "@linear/sdk";
+import { Redis } from "@upstash/redis";
+import { waitUntil } from "@vercel/functions";
+import type { VercelRequest, VercelResponse } from "@vercel/node";
+import { verifyLinearWebhook } from "../lib/core/auth.js";
+import { env } from "../lib/core/env.js";
+import { handleLinearNotification } from "../lib/linear/handle-notifications.js";
 
 // Initialize Redis client
 const redis = new Redis({
@@ -18,43 +18,43 @@ export const maxDuration = 300;
 // Main webhook handler
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   // Only handle POST requests
-  if (req.method !== 'POST') {
-    return res.status(405).json({ error: 'Method not allowed' });
+  if (req.method !== "POST") {
+    return res.status(405).json({ error: "Method not allowed" });
   }
 
   const rawBody = JSON.stringify(req.body);
-  const signature = req.headers['linear-signature'] as string;
+  const signature = req.headers["linear-signature"] as string;
 
   // Verify webhook signature
   if (!signature || !verifyLinearWebhook(signature, rawBody)) {
-    console.error('Invalid webhook signature');
-    return res.status(401).json({ error: 'Invalid signature' });
+    console.error("Invalid webhook signature");
+    return res.status(401).json({ error: "Invalid signature" });
   }
 
   const payload = req.body;
-  console.log('Received webhook:', JSON.stringify(payload, null, 2));
+  console.log("Received webhook:", JSON.stringify(payload, null, 2));
 
   try {
     // Get stored tokens from Redis
     const orgId = payload.organizationId;
     const accessToken = (await redis.get(
-      `linear:${orgId}:accessToken`
+      `linear:${orgId}:accessToken`,
     )) as string;
     const appUserId = (await redis.get(`linear:${orgId}:appUserId`)) as string;
 
     if (!accessToken) {
       console.error(`No access token found for organization ${orgId}`);
-      return res.status(500).json({ error: 'Authentication missing' });
+      return res.status(500).json({ error: "Authentication missing" });
     }
 
     // Initialize Linear client with stored credentials
     const linearClient = new LinearClient({ accessToken });
 
     // Handle different notification types
-    if (payload.type === 'AppUserNotification') {
+    if (payload.type === "AppUserNotification") {
       // Use waitUntil to handle the notification asynchronously like events
       waitUntil(handleLinearNotification(payload, linearClient, appUserId));
-    } else if (payload.type === 'AgentSessionEvent') {
+    } else if (payload.type === "AgentSessionEvent") {
       // Handle new Agent Session Events (created/prompted)
       console.log(`Processing AgentSessionEvent: ${payload.action}`);
       waitUntil(handleLinearNotification(payload, linearClient, appUserId));
@@ -64,7 +64,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
     return res.status(200).json({ success: true });
   } catch (error) {
-    console.error('Error processing webhook:', error);
-    return res.status(500).json({ error: 'Failed to process webhook' });
+    console.error("Error processing webhook:", error);
+    return res.status(500).json({ error: "Failed to process webhook" });
   }
 }

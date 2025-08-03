@@ -1,4 +1,4 @@
-import { getFileContent } from './github-utils.js';
+import { getFileContent } from "./github-utils.js";
 
 export interface FileAnalysis {
   path: string;
@@ -20,16 +20,16 @@ export interface FileAnalysis {
   imports: Array<{
     module: string;
     line: number;
-    type: 'import' | 'require' | 'from';
+    type: "import" | "require" | "from";
   }>;
   exports: Array<{
     name: string;
     line: number;
-    type: 'default' | 'named' | 'all';
+    type: "default" | "named" | "all";
   }>;
   comments: Array<{
     line: number;
-    type: 'single' | 'multi' | 'doc';
+    type: "single" | "multi" | "doc";
     content: string;
   }>;
   dependencies: string[];
@@ -70,7 +70,7 @@ export class AdvancedFileReader {
       maxLines?: number;
       branch?: string;
       sessionId?: string;
-    } = {}
+    } = {},
   ): Promise<CodeContext> {
     const {
       targetLine,
@@ -90,9 +90,9 @@ export class AdvancedFileReader {
       1,
       10000,
       branch,
-      sessionId
+      sessionId,
     );
-    const lines = fullContent.split('\n');
+    const lines = fullContent.split("\n");
     const totalLines = lines.length;
 
     let startLine = 1;
@@ -149,10 +149,10 @@ export class AdvancedFileReader {
   async analyzeFileStructure(
     path: string,
     repository: string,
-    branch?: string
+    branch?: string,
   ): Promise<FileAnalysis> {
     const content = await getFileContent(path, repository, 1, 10000, branch);
-    const lines = content.split('\n');
+    const lines = content.split("\n");
     const language = this.detectLanguage(path);
 
     const analysis: FileAnalysis = {
@@ -183,7 +183,7 @@ export class AdvancedFileReader {
       includeTypes?: boolean;
       maxFiles?: number;
       branch?: string;
-    } = {}
+    } = {},
   ): Promise<Array<{ path: string; content: string; relationship: string }>> {
     const {
       includeImports = true,
@@ -205,18 +205,18 @@ export class AdvancedFileReader {
       repository,
       1,
       200,
-      branch
+      branch,
     );
     results.push({
       path: mainPath,
       content: mainContent,
-      relationship: 'main',
+      relationship: "main",
     });
 
     if (includeImports) {
       const imports = this.extractImports(
-        mainContent.split('\n'),
-        this.detectLanguage(mainPath)
+        mainContent.split("\n"),
+        this.detectLanguage(mainPath),
       );
       for (const imp of imports.slice(0, maxFiles - 1)) {
         try {
@@ -227,12 +227,12 @@ export class AdvancedFileReader {
               repository,
               1,
               100,
-              branch
+              branch,
             );
             results.push({
               path: importPath,
               content,
-              relationship: 'import',
+              relationship: "import",
             });
           }
         } catch (error) {
@@ -250,12 +250,12 @@ export class AdvancedFileReader {
             repository,
             1,
             100,
-            branch
+            branch,
           );
           results.push({
             path: testPath,
             content,
-            relationship: 'test',
+            relationship: "test",
           });
         } catch (error) {
           // Skip test files that don't exist
@@ -263,7 +263,7 @@ export class AdvancedFileReader {
       }
     }
 
-    if (includeTypes && this.detectLanguage(mainPath) === 'typescript') {
+    if (includeTypes && this.detectLanguage(mainPath) === "typescript") {
       const typePaths = this.generateTypePaths(mainPath);
       for (const typePath of typePaths.slice(0, 2)) {
         try {
@@ -272,12 +272,12 @@ export class AdvancedFileReader {
             repository,
             1,
             100,
-            branch
+            branch,
           );
           results.push({
             path: typePath,
             content,
-            relationship: 'types',
+            relationship: "types",
           });
         } catch (error) {
           // Skip type files that don't exist
@@ -299,7 +299,7 @@ export class AdvancedFileReader {
       contextLines?: number;
       maxResults?: number;
       branch?: string;
-    } = {}
+    } = {},
   ): Promise<
     Array<{
       path: string;
@@ -321,47 +321,47 @@ export class AdvancedFileReader {
   // Helper methods for code analysis
 
   private detectLanguage(path: string): string {
-    const ext = path.split('.').pop()?.toLowerCase();
+    const ext = path.split(".").pop()?.toLowerCase();
     const languageMap: Record<string, string> = {
-      ts: 'typescript',
-      tsx: 'typescript',
-      js: 'javascript',
-      jsx: 'javascript',
-      py: 'python',
-      java: 'java',
-      cpp: 'cpp',
-      c: 'c',
-      cs: 'csharp',
-      go: 'go',
-      rs: 'rust',
-      php: 'php',
-      rb: 'ruby',
-      swift: 'swift',
-      kt: 'kotlin',
-      scala: 'scala',
-      sh: 'shell',
-      bash: 'shell',
-      zsh: 'shell',
-      fish: 'shell',
-      ps1: 'powershell',
-      sql: 'sql',
-      html: 'html',
-      css: 'css',
-      scss: 'scss',
-      sass: 'sass',
-      less: 'less',
-      json: 'json',
-      yaml: 'yaml',
-      yml: 'yaml',
-      xml: 'xml',
-      md: 'markdown',
-      dockerfile: 'dockerfile',
+      ts: "typescript",
+      tsx: "typescript",
+      js: "javascript",
+      jsx: "javascript",
+      py: "python",
+      java: "java",
+      cpp: "cpp",
+      c: "c",
+      cs: "csharp",
+      go: "go",
+      rs: "rust",
+      php: "php",
+      rb: "ruby",
+      swift: "swift",
+      kt: "kotlin",
+      scala: "scala",
+      sh: "shell",
+      bash: "shell",
+      zsh: "shell",
+      fish: "shell",
+      ps1: "powershell",
+      sql: "sql",
+      html: "html",
+      css: "css",
+      scss: "scss",
+      sass: "sass",
+      less: "less",
+      json: "json",
+      yaml: "yaml",
+      yml: "yaml",
+      xml: "xml",
+      md: "markdown",
+      dockerfile: "dockerfile",
     };
-    return languageMap[ext || ''] || 'text';
+    return languageMap[ext || ""] || "text";
   }
 
   private findPatternInLines(lines: string[], pattern: string): number {
-    const regex = new RegExp(pattern, 'i');
+    const regex = new RegExp(pattern, "i");
     for (let i = 0; i < lines.length; i++) {
       if (regex.test(lines[i])) {
         return i + 1; // Return 1-based line number
@@ -372,11 +372,11 @@ export class AdvancedFileReader {
 
   private findFunctionRange(
     lines: string[],
-    functionName: string
+    functionName: string,
   ): { start: number; end: number } | null {
     const functionRegex = new RegExp(
       `(function\\s+${functionName}|${functionName}\\s*[=:]|const\\s+${functionName}\\s*=|${functionName}\\s*\\()`,
-      'i'
+      "i",
     );
 
     for (let i = 0; i < lines.length; i++) {
@@ -389,11 +389,11 @@ export class AdvancedFileReader {
         // Find the end of the function
         for (let j = i; j < lines.length; j++) {
           const line = lines[j];
-          if (line.includes('{')) {
+          if (line.includes("{")) {
             braceCount += (line.match(/\{/g) || []).length;
             inFunction = true;
           }
-          if (line.includes('}')) {
+          if (line.includes("}")) {
             braceCount -= (line.match(/\}/g) || []).length;
           }
           if (inFunction && braceCount === 0) {
@@ -410,9 +410,9 @@ export class AdvancedFileReader {
 
   private findClassRange(
     lines: string[],
-    className: string
+    className: string,
   ): { start: number; end: number } | null {
-    const classRegex = new RegExp(`class\\s+${className}`, 'i');
+    const classRegex = new RegExp(`class\\s+${className}`, "i");
 
     for (let i = 0; i < lines.length; i++) {
       if (classRegex.test(lines[i])) {
@@ -424,11 +424,11 @@ export class AdvancedFileReader {
         // Find the end of the class
         for (let j = i; j < lines.length; j++) {
           const line = lines[j];
-          if (line.includes('{')) {
+          if (line.includes("{")) {
             braceCount += (line.match(/\{/g) || []).length;
             inClass = true;
           }
-          if (line.includes('}')) {
+          if (line.includes("}")) {
             braceCount -= (line.match(/\}/g) || []).length;
           }
           if (inClass && braceCount === 0) {
@@ -445,9 +445,9 @@ export class AdvancedFileReader {
 
   private extractFunctions(
     lines: string[],
-    language: string
-  ): FileAnalysis['functions'] {
-    const functions: FileAnalysis['functions'] = [];
+    language: string,
+  ): FileAnalysis["functions"] {
+    const functions: FileAnalysis["functions"] = [];
 
     // Language-specific function patterns
     const patterns: Record<string, RegExp[]> = {
@@ -473,7 +473,7 @@ export class AdvancedFileReader {
       const line = lines[i].trim();
       for (const pattern of langPatterns) {
         const match = line.match(pattern);
-        if (match && match[1]) {
+        if (match?.[1]) {
           const range = this.findFunctionRange(lines, match[1]);
           if (range) {
             functions.push({
@@ -491,16 +491,16 @@ export class AdvancedFileReader {
 
   private extractClasses(
     lines: string[],
-    language: string
-  ): FileAnalysis['classes'] {
-    const classes: FileAnalysis['classes'] = [];
+    language: string,
+  ): FileAnalysis["classes"] {
+    const classes: FileAnalysis["classes"] = [];
 
     const classPattern = /class\s+(\w+)/;
 
     for (let i = 0; i < lines.length; i++) {
       const line = lines[i].trim();
       const match = line.match(classPattern);
-      if (match && match[1]) {
+      if (match?.[1]) {
         const range = this.findClassRange(lines, match[1]);
         if (range) {
           classes.push({
@@ -518,9 +518,9 @@ export class AdvancedFileReader {
 
   private extractImports(
     lines: string[],
-    language: string
-  ): FileAnalysis['imports'] {
-    const imports: FileAnalysis['imports'] = [];
+    language: string,
+  ): FileAnalysis["imports"] {
+    const imports: FileAnalysis["imports"] = [];
 
     const patterns: Record<string, RegExp[]> = {
       typescript: [
@@ -542,15 +542,15 @@ export class AdvancedFileReader {
       const line = lines[i].trim();
       for (const pattern of langPatterns) {
         const match = line.match(pattern);
-        if (match && match[1]) {
+        if (match?.[1]) {
           imports.push({
             module: match[1],
             line: i + 1,
-            type: line.includes('from')
-              ? 'from'
-              : line.includes('require')
-              ? 'require'
-              : 'import',
+            type: line.includes("from")
+              ? "from"
+              : line.includes("require")
+                ? "require"
+                : "import",
           });
         }
       }
@@ -561,9 +561,9 @@ export class AdvancedFileReader {
 
   private extractExports(
     lines: string[],
-    language: string
-  ): FileAnalysis['exports'] {
-    const exports: FileAnalysis['exports'] = [];
+    language: string,
+  ): FileAnalysis["exports"] {
+    const exports: FileAnalysis["exports"] = [];
 
     const patterns = [
       /export\s+default\s+(\w+)/,
@@ -577,11 +577,11 @@ export class AdvancedFileReader {
       const line = lines[i].trim();
       for (const pattern of patterns) {
         const match = line.match(pattern);
-        if (match && match[1]) {
+        if (match?.[1]) {
           exports.push({
             name: match[1],
             line: i + 1,
-            type: line.includes('default') ? 'default' : 'named',
+            type: line.includes("default") ? "default" : "named",
           });
         }
       }
@@ -592,32 +592,32 @@ export class AdvancedFileReader {
 
   private extractComments(
     lines: string[],
-    language: string
-  ): FileAnalysis['comments'] {
-    const comments: FileAnalysis['comments'] = [];
+    language: string,
+  ): FileAnalysis["comments"] {
+    const comments: FileAnalysis["comments"] = [];
 
     for (let i = 0; i < lines.length; i++) {
       const line = lines[i].trim();
 
-      if (line.startsWith('//')) {
+      if (line.startsWith("//")) {
         comments.push({
           line: i + 1,
-          type: 'single',
+          type: "single",
           content: line.substring(2).trim(),
         });
-      } else if (line.startsWith('/*') || line.startsWith('/**')) {
+      } else if (line.startsWith("/*") || line.startsWith("/**")) {
         comments.push({
           line: i + 1,
-          type: line.startsWith('/**') ? 'doc' : 'multi',
+          type: line.startsWith("/**") ? "doc" : "multi",
           content: line,
         });
       } else if (
-        line.startsWith('#') &&
-        (language === 'python' || language === 'shell')
+        line.startsWith("#") &&
+        (language === "python" || language === "shell")
       ) {
         comments.push({
           line: i + 1,
-          type: 'single',
+          type: "single",
           content: line.substring(1).trim(),
         });
       }
@@ -632,7 +632,7 @@ export class AdvancedFileReader {
     for (const line of lines) {
       // Extract from package.json-like dependencies
       const depMatch = line.match(/"([^"]+)":\s*"[^"]+"/);
-      if (depMatch && depMatch[1] && !depMatch[1].startsWith('@types/')) {
+      if (depMatch?.[1] && !depMatch[1].startsWith("@types/")) {
         dependencies.add(depMatch[1]);
       }
     }
@@ -642,21 +642,21 @@ export class AdvancedFileReader {
 
   private calculateComplexity(
     lines: string[],
-    language: string
-  ): FileAnalysis['complexity'] {
+    language: string,
+  ): FileAnalysis["complexity"] {
     // Simplified complexity calculation
     let cyclomaticComplexity = 1; // Base complexity
     let cognitiveComplexity = 0;
 
     const complexityKeywords = [
-      'if',
-      'else',
-      'while',
-      'for',
-      'switch',
-      'case',
-      'catch',
-      'try',
+      "if",
+      "else",
+      "while",
+      "for",
+      "switch",
+      "case",
+      "catch",
+      "try",
     ];
 
     for (const line of lines) {
@@ -670,7 +670,7 @@ export class AdvancedFileReader {
 
     const maintainabilityIndex = Math.max(
       0,
-      171 - 5.2 * Math.log(lines.length) - 0.23 * cyclomaticComplexity
+      171 - 5.2 * Math.log(lines.length) - 0.23 * cyclomaticComplexity,
     );
 
     return {
@@ -682,22 +682,22 @@ export class AdvancedFileReader {
 
   private resolveImportPath(
     module: string,
-    currentPath: string
+    currentPath: string,
   ): string | null {
     // Simplified import resolution
-    if (module.startsWith('./') || module.startsWith('../')) {
-      const dir = currentPath.split('/').slice(0, -1).join('/');
+    if (module.startsWith("./") || module.startsWith("../")) {
+      const dir = currentPath.split("/").slice(0, -1).join("/");
       return `${dir}/${module}`;
     }
     return null;
   }
 
   private generateTestPaths(mainPath: string): string[] {
-    const dir = mainPath.split('/').slice(0, -1).join('/');
+    const dir = mainPath.split("/").slice(0, -1).join("/");
     const filename = mainPath
-      .split('/')
+      .split("/")
       .pop()
-      ?.replace(/\.(ts|js)$/, '');
+      ?.replace(/\.(ts|js)$/, "");
 
     return [
       `${dir}/${filename}.test.ts`,
@@ -710,11 +710,11 @@ export class AdvancedFileReader {
   }
 
   private generateTypePaths(mainPath: string): string[] {
-    const dir = mainPath.split('/').slice(0, -1).join('/');
+    const dir = mainPath.split("/").slice(0, -1).join("/");
     const filename = mainPath
-      .split('/')
+      .split("/")
       .pop()
-      ?.replace(/\.(ts|js)$/, '');
+      ?.replace(/\.(ts|js)$/, "");
 
     return [
       `${dir}/${filename}.d.ts`,

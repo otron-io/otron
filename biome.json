@@ -7,7 +7,17 @@
   },
   "files": {
     "ignoreUnknown": false,
-    "ignore": []
+    "ignore": [
+      ".next/**",
+      ".vercel/**",
+      "dist/**",
+      "build/**",
+      "node_modules/**",
+      "coverage/**",
+      "test-results/**",
+      "playwright-report/**",
+      ".vscode/**"
+    ]
   },
   "formatter": {
     "enabled": true,

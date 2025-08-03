@@ -1,12 +1,14 @@
-import { VercelRequest, VercelResponse } from '@vercel/node';
-import { env } from './env.js';
-import { createHmac, timingSafeEqual } from 'crypto';
+import { createHmac, timingSafeEqual } from 'node:crypto';
+import type { VercelRequest, VercelResponse } from '@vercel/node';
 import { addCorsHeaders } from './cors.js';
+import { env } from './env.js';
 
 /**
  * Middleware to protect routes with a simple password
  */
-export function withPasswordProtection(handler: Function) {
+export function withPasswordProtection(
+  handler: (req: VercelRequest, res: VercelResponse) => Promise<void>
+) {
   return async (req: VercelRequest, res: VercelResponse) => {
     // Get auth header
     const authHeader = req.headers.authorization;
@@ -37,7 +39,9 @@ export function withPasswordProtection(handler: Function) {
 /**
  * Middleware to protect API routes that should only be accessible from the app
  */
-export function withInternalAccess(handler: Function) {
+export function withInternalAccess(
+  handler: (req: VercelRequest, res: VercelResponse) => Promise<void>
+) {
   return async (req: VercelRequest, res: VercelResponse) => {
     // Add CORS headers for cross-origin requests
     const isPreflight = addCorsHeaders(req, res);

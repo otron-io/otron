@@ -1,7 +1,7 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
-import { env } from '../lib/core/env.js';
 import { withInternalAccess } from '../lib/core/auth.js';
 import { addCorsHeaders } from '../lib/core/cors.js';
+import { env } from '../lib/core/env.js';
 import { GitHubAppService } from '../lib/github/github-app.js';
 
 // Initialize GitHub App service
@@ -54,7 +54,8 @@ async function handler(req: VercelRequest, res: VercelResponse) {
   }
 
   if (req.method !== 'GET') {
-    return res.status(405).json({ error: 'Method not allowed' });
+    res.status(405).json({ error: 'Method not allowed' });
+    return;
   }
 
   try {
@@ -68,21 +69,21 @@ async function handler(req: VercelRequest, res: VercelResponse) {
 
     if (installation_id && typeof installation_id === 'string') {
       // Get repositories for a specific installation
-      return await getInstallationRepos(
+      await getInstallationRepos(
         res,
-        parseInt(installation_id),
-        parseInt(per_page as string),
-        parseInt(page as string),
+        Number.parseInt(installation_id),
+        Number.parseInt(per_page as string),
+        Number.parseInt(page as string),
         sort as string,
         direction as string
       );
-    } else {
-      // Get all installations
-      return await getInstallations(res);
+      return;
     }
+    // Get all installations
+    await getInstallations(res);
   } catch (error) {
     console.error('Error in github-repos endpoint:', error);
-    return res.status(500).json({
+    res.status(500).json({
       error: 'Internal server error',
       message: error instanceof Error ? error.message : String(error),
     });
@@ -108,14 +109,14 @@ async function getInstallations(res: VercelResponse) {
       })
     );
 
-    return res.status(200).json({
+    res.status(200).json({
       installations: formattedInstallations,
       totalCount: formattedInstallations.length,
       timestamp: Date.now(),
     });
   } catch (error) {
     console.error('Error fetching GitHub installations:', error);
-    return res.status(500).json({
+    res.status(500).json({
       error: 'Failed to fetch GitHub installations',
       message: error instanceof Error ? error.message : String(error),
     });
@@ -177,7 +178,8 @@ async function getInstallationRepos(
       )
     ) {
       formattedRepos.sort((a, b) => {
-        let aValue: any, bValue: any;
+        let aValue: any;
+        let bValue: any;
 
         switch (sort) {
           case 'name':
@@ -210,13 +212,12 @@ async function getInstallationRepos(
 
         if (direction === 'desc') {
           return aValue > bValue ? -1 : aValue < bValue ? 1 : 0;
-        } else {
-          return aValue < bValue ? -1 : aValue > bValue ? 1 : 0;
         }
+        return aValue < bValue ? -1 : aValue > bValue ? 1 : 0;
       });
     }
 
-    return res.status(200).json({
+    res.status(200).json({
       repositories: formattedRepos,
       totalCount: data.total_count,
       page: page,
@@ -230,7 +231,7 @@ async function getInstallationRepos(
       `Error fetching repositories for installation ${installationId}:`,
       error
     );
-    return res.status(500).json({
+    res.status(500).json({
       error: 'Failed to fetch repositories',
       message: error instanceof Error ? error.message : String(error),
     });

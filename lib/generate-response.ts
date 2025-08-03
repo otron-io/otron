@@ -10,7 +10,7 @@
  */
 
 // Re-export everything from the new modular response generation system
-export * from './response-generation/index.js';
+export * from "./response-generation/index.js";
 
 // For backward compatibility, also provide the old generateResponse export
-export { generateResponse as generateResponseLegacy } from './response-generation/index.js';
+export { generateResponse as generateResponseLegacy } from "./response-generation/index.js";

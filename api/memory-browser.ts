@@ -1,6 +1,6 @@
-import type { VercelRequest, VercelResponse } from '@vercel/node';
-import { Redis } from '@upstash/redis';
-import { env } from '../lib/core/env.js';
+import { Redis } from "@upstash/redis";
+import type { VercelRequest, VercelResponse } from "@vercel/node";
+import { env } from "../lib/core/env.js";
 
 // Initialize Redis client
 const redis = new Redis({
@@ -11,7 +11,7 @@ const redis = new Redis({
 interface MemoryEntry {
   id: string;
   issueId: string;
-  memoryType: 'conversation' | 'action' | 'context';
+  memoryType: "conversation" | "action" | "context";
   timestamp: number;
   type: string;
   data: any;
@@ -20,7 +20,7 @@ interface MemoryEntry {
 
 interface MemoryFilters {
   issueId?: string;
-  memoryType?: 'conversation' | 'action' | 'context';
+  memoryType?: "conversation" | "action" | "context";
   dateFrom?: number;
   dateTo?: number;
   slackChannel?: string;
@@ -29,47 +29,47 @@ interface MemoryFilters {
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   // CORS headers
-  res.setHeader('Access-Control-Allow-Origin', '*');
-  res.setHeader('Access-Control-Allow-Methods', 'GET, POST, DELETE, OPTIONS');
+  res.setHeader("Access-Control-Allow-Origin", "*");
+  res.setHeader("Access-Control-Allow-Methods", "GET, POST, DELETE, OPTIONS");
   res.setHeader(
-    'Access-Control-Allow-Headers',
-    'Content-Type, X-Internal-Token'
+    "Access-Control-Allow-Headers",
+    "Content-Type, X-Internal-Token",
   );
 
-  if (req.method === 'OPTIONS') {
+  if (req.method === "OPTIONS") {
     return res.status(200).end();
   }
 
   // Verify internal token
-  const internalToken = req.headers['x-internal-token'];
+  const internalToken = req.headers["x-internal-token"];
   if (!internalToken || internalToken !== env.INTERNAL_API_TOKEN) {
-    return res.status(401).json({ error: 'Unauthorized' });
+    return res.status(401).json({ error: "Unauthorized" });
   }
 
   try {
     switch (req.method) {
-      case 'GET':
+      case "GET":
         return await getMemories(req, res);
-      case 'DELETE':
+      case "DELETE":
         return await deleteMemories(req, res);
-      case 'POST':
+      case "POST":
         return await bulkMemoryOperations(req, res);
       default:
-        return res.status(405).json({ error: 'Method not allowed' });
+        return res.status(405).json({ error: "Method not allowed" });
     }
   } catch (error) {
-    console.error('Memory browser API error:', error);
+    console.error("Memory browser API error:", error);
     return res.status(500).json({
-      error: 'Internal server error',
-      details: error instanceof Error ? error.message : 'Unknown error',
+      error: "Internal server error",
+      details: error instanceof Error ? error.message : "Unknown error",
     });
   }
 }
 
 async function getMemories(req: VercelRequest, res: VercelResponse) {
   const {
-    page = '1',
-    limit = '20',
+    page = "1",
+    limit = "20",
     issueId,
     memoryType,
     dateFrom,
@@ -78,15 +78,15 @@ async function getMemories(req: VercelRequest, res: VercelResponse) {
     searchQuery,
   } = req.query;
 
-  const pageNum = parseInt(page as string, 10);
-  const limitNum = parseInt(limit as string, 10);
+  const pageNum = Number.parseInt(page as string, 10);
+  const limitNum = Number.parseInt(limit as string, 10);
   const offset = (pageNum - 1) * limitNum;
 
   const filters: MemoryFilters = {
     issueId: issueId as string,
-    memoryType: memoryType as 'conversation' | 'action' | 'context',
-    dateFrom: dateFrom ? parseInt(dateFrom as string, 10) : undefined,
-    dateTo: dateTo ? parseInt(dateTo as string, 10) : undefined,
+    memoryType: memoryType as "conversation" | "action" | "context",
+    dateFrom: dateFrom ? Number.parseInt(dateFrom as string, 10) : undefined,
+    dateTo: dateTo ? Number.parseInt(dateTo as string, 10) : undefined,
     slackChannel: slackChannel as string,
     searchQuery: searchQuery as string,
   };
@@ -116,13 +116,13 @@ async function getMemories(req: VercelRequest, res: VercelResponse) {
 }
 
 async function getAllFilteredMemories(
-  filters: MemoryFilters
+  filters: MemoryFilters,
 ): Promise<MemoryEntry[]> {
   try {
-    console.time('getAllFilteredMemories');
+    console.time("getAllFilteredMemories");
 
     // Get all relevant Redis keys
-    const pattern = 'memory:issue:*';
+    const pattern = "memory:issue:*";
     const allKeys = await redis.keys(pattern);
 
     console.log(`Found ${allKeys.length} total keys`);
@@ -131,14 +131,14 @@ async function getAllFilteredMemories(
     const validKeys = allKeys.filter((key) => {
       // Skip tool-specific memory keys (these are hashes, not lists)
       if (
-        key.includes(':tools:') ||
-        key.includes(':file:') ||
-        key.includes(':related:')
+        key.includes(":tools:") ||
+        key.includes(":file:") ||
+        key.includes(":related:")
       ) {
         return false;
       }
 
-      const keyParts = key.split(':');
+      const keyParts = key.split(":");
       if (keyParts.length < 4) {
         return false;
       }
@@ -149,18 +149,18 @@ async function getAllFilteredMemories(
       // Apply filters early
       if (filters.issueId && issueId !== filters.issueId) return false;
       if (filters.memoryType && memoryType !== filters.memoryType) return false;
-      if (!['conversation', 'action', 'context'].includes(memoryType))
+      if (!["conversation", "action", "context"].includes(memoryType))
         return false;
 
       return true;
     });
 
     console.log(
-      `Filtered ${allKeys.length} keys down to ${validKeys.length} valid keys`
+      `Filtered ${allKeys.length} keys down to ${validKeys.length} valid keys`,
     );
 
     if (validKeys.length === 0) {
-      console.timeEnd('getAllFilteredMemories');
+      console.timeEnd("getAllFilteredMemories");
       return [];
     }
 
@@ -174,7 +174,7 @@ async function getAllFilteredMemories(
       console.log(
         `Processing batch ${Math.floor(i / batchSize) + 1}: ${
           batch.length
-        } keys`
+        } keys`,
       );
 
       // Step 1: Check types first
@@ -185,7 +185,7 @@ async function getAllFilteredMemories(
 
       const typeResults = await typesPipeline.exec();
       if (!typeResults) {
-        console.error('No type results from pipeline');
+        console.error("No type results from pipeline");
         continue;
       }
 
@@ -205,7 +205,7 @@ async function getAllFilteredMemories(
             continue;
           }
           keyType = result;
-        } else if (typeof typeResult === 'string') {
+        } else if (typeof typeResult === "string") {
           // Upstash direct format: just the result
           keyType = typeResult;
         } else {
@@ -213,7 +213,7 @@ async function getAllFilteredMemories(
           continue;
         }
 
-        if (keyType === 'list') {
+        if (keyType === "list") {
           validBatchKeys.push(key);
         } else {
           console.log(`Skipping key ${key} - wrong type: ${keyType}`);
@@ -221,7 +221,7 @@ async function getAllFilteredMemories(
       }
 
       if (validBatchKeys.length === 0) {
-        console.log('No valid list keys in this batch');
+        console.log("No valid list keys in this batch");
         continue;
       }
 
@@ -233,7 +233,7 @@ async function getAllFilteredMemories(
 
       const dataResults = await dataPipeline.exec();
       if (!dataResults) {
-        console.error('No data results from pipeline');
+        console.error("No data results from pipeline");
         continue;
       }
 
@@ -268,9 +268,9 @@ async function getAllFilteredMemories(
           continue;
         }
 
-        const keyParts = key.split(':');
+        const keyParts = key.split(":");
         const issueId = keyParts[2];
-        const memoryType = keyParts[3] as 'conversation' | 'action' | 'context';
+        const memoryType = keyParts[3] as "conversation" | "action" | "context";
 
         // Process entries
         for (let k = 0; k < entries.length; k++) {
@@ -279,10 +279,10 @@ async function getAllFilteredMemories(
 
             // Handle both string (JSON) and object formats
             let memoryEntry: any;
-            if (typeof entry === 'string') {
+            if (typeof entry === "string") {
               // Entry is a JSON string that needs parsing
               memoryEntry = JSON.parse(entry);
-            } else if (typeof entry === 'object' && entry !== null) {
+            } else if (typeof entry === "object" && entry !== null) {
               // Entry is already an object (Upstash direct format)
               memoryEntry = entry;
             } else {
@@ -314,7 +314,7 @@ async function getAllFilteredMemories(
 
             if (filters.searchQuery) {
               const searchContent = JSON.stringify(
-                standardEntry.data
+                standardEntry.data,
               ).toLowerCase();
               if (!searchContent.includes(filters.searchQuery.toLowerCase()))
                 continue;
@@ -323,7 +323,6 @@ async function getAllFilteredMemories(
             allMemories.push(standardEntry);
           } catch (parseError) {
             console.error(`Error parsing memory entry ${k}:`, parseError);
-            continue;
           }
         }
       }
@@ -333,29 +332,29 @@ async function getAllFilteredMemories(
     allMemories.sort((a, b) => b.timestamp - a.timestamp);
 
     console.log(`Processed ${allMemories.length} filtered memories`);
-    console.timeEnd('getAllFilteredMemories');
+    console.timeEnd("getAllFilteredMemories");
     return allMemories;
   } catch (error) {
-    console.error('Error getting filtered memories:', error);
+    console.error("Error getting filtered memories:", error);
     throw error;
   }
 }
 
 async function getMemoryStatistics() {
   try {
-    console.log('Starting memory statistics calculation...');
+    console.log("Starting memory statistics calculation...");
 
     // Get all memory keys
-    const allKeys = await redis.keys('memory:issue:*');
+    const allKeys = await redis.keys("memory:issue:*");
     console.log(`Found ${allKeys.length} total memory keys`);
 
     // Filter out non-memory keys (tools, file, related, etc.)
     const memoryKeys = allKeys.filter((key) => {
-      const parts = key.split(':');
+      const parts = key.split(":");
       if (parts.length < 4) return false;
 
       const memoryType = parts[3];
-      return ['conversation', 'action', 'context'].includes(memoryType);
+      return ["conversation", "action", "context"].includes(memoryType);
     });
 
     console.log(`Found ${memoryKeys.length} memory keys after filtering`);
@@ -387,8 +386,8 @@ async function getMemoryStatistics() {
       const batch = memoryKeys.slice(i, i + batchSize);
       console.log(
         `Processing batch ${Math.floor(i / batchSize) + 1}/${Math.ceil(
-          memoryKeys.length / batchSize
-        )}`
+          memoryKeys.length / batchSize,
+        )}`,
       );
 
       const pipeline = redis.pipeline();
@@ -403,7 +402,7 @@ async function getMemoryStatistics() {
 
         for (let j = 0; j < batch.length; j++) {
           const key = batch[j];
-          const parts = key.split(':');
+          const parts = key.split(":");
 
           if (parts.length >= 4) {
             const issueId = parts[2];
@@ -438,21 +437,21 @@ async function getMemoryStatistics() {
             stats.totalMemories += memoryCount;
             memoryTypeMap.set(
               memoryType,
-              (memoryTypeMap.get(memoryType) || 0) + memoryCount
+              (memoryTypeMap.get(memoryType) || 0) + memoryCount,
             );
 
             // Check timestamps in this memory list
             for (const memoryStr of memories) {
               try {
                 const memory =
-                  typeof memoryStr === 'string'
+                  typeof memoryStr === "string"
                     ? JSON.parse(memoryStr)
                     : memoryStr;
 
-                if (memory && memory.timestamp) {
+                if (memory?.timestamp) {
                   const timestamp = Number(memory.timestamp);
 
-                  if (!isNaN(timestamp)) {
+                  if (!Number.isNaN(timestamp)) {
                     if (timestamp < oldestTimestamp) {
                       oldestTimestamp = timestamp;
                     }
@@ -463,15 +462,15 @@ async function getMemoryStatistics() {
                 }
               } catch (parseError) {
                 console.error(
-                  'Error parsing memory entry for timestamp:',
-                  parseError
+                  "Error parsing memory entry for timestamp:",
+                  parseError,
                 );
               }
             }
           }
         }
       } catch (error) {
-        console.error('Error processing batch:', error);
+        console.error("Error processing batch:", error);
       }
     }
 
@@ -484,12 +483,12 @@ async function getMemoryStatistics() {
     }
 
     // Set memory type counts
-    stats.conversationMemories = memoryTypeMap.get('conversation') || 0;
-    stats.actionMemories = memoryTypeMap.get('action') || 0;
-    stats.contextMemories = memoryTypeMap.get('context') || 0;
+    stats.conversationMemories = memoryTypeMap.get("conversation") || 0;
+    stats.actionMemories = memoryTypeMap.get("action") || 0;
+    stats.contextMemories = memoryTypeMap.get("context") || 0;
     stats.totalIssues = issueIds.size;
 
-    console.log('Memory statistics calculated:', {
+    console.log("Memory statistics calculated:", {
       totalMemories: stats.totalMemories,
       totalIssues: stats.totalIssues,
       oldestMemory: stats.oldestMemory
@@ -502,7 +501,7 @@ async function getMemoryStatistics() {
 
     return stats;
   } catch (error) {
-    console.error('Error calculating memory statistics:', error);
+    console.error("Error calculating memory statistics:", error);
     return {
       totalMemories: 0,
       conversationMemories: 0,
@@ -522,44 +521,48 @@ async function deleteMemories(req: VercelRequest, res: VercelResponse) {
     // Delete specific memory by ID
     // Memory ID format: memory:issue:ISSUE_ID:TYPE:TIMESTAMP:INDEX
     const memoryIdStr = memoryId as string;
-    const parts = memoryIdStr.split(':');
+    const parts = memoryIdStr.split(":");
 
     if (parts.length < 6) {
-      return res.status(400).json({ error: 'Invalid memory ID format' });
+      return res.status(400).json({ error: "Invalid memory ID format" });
     }
 
     // Extract the index (last part) and reconstruct the Redis key (all parts except last 2)
     const index = parts[parts.length - 1];
     const timestamp = parts[parts.length - 2];
-    const redisKey = parts.slice(0, -2).join(':'); // memory:issue:ISSUE_ID:TYPE
+    const redisKey = parts.slice(0, -2).join(":"); // memory:issue:ISSUE_ID:TYPE
 
     console.log(
-      `Deleting memory: ID=${memoryIdStr}, RedisKey=${redisKey}, Index=${index}`
+      `Deleting memory: ID=${memoryIdStr}, RedisKey=${redisKey}, Index=${index}`,
     );
 
     try {
       // Get the memory list
       const memories = await redis.lrange(redisKey, 0, -1);
-      const indexNum = parseInt(index, 10);
+      const indexNum = Number.parseInt(index, 10);
 
-      if (isNaN(indexNum) || indexNum < 0 || indexNum >= memories.length) {
+      if (
+        Number.isNaN(indexNum) ||
+        indexNum < 0 ||
+        indexNum >= memories.length
+      ) {
         return res
           .status(404)
-          .json({ error: 'Memory not found or invalid index' });
+          .json({ error: "Memory not found or invalid index" });
       }
 
       // Remove the specific memory (Redis doesn't have direct index deletion)
       // So we'll use a placeholder and then remove it
-      await redis.lset(redisKey, indexNum, '__DELETED__');
-      await redis.lrem(redisKey, 1, '__DELETED__');
+      await redis.lset(redisKey, indexNum, "__DELETED__");
+      await redis.lrem(redisKey, 1, "__DELETED__");
 
       return res.json({
         success: true,
-        message: 'Memory deleted successfully',
+        message: "Memory deleted successfully",
       });
     } catch (error) {
-      console.error('Error deleting specific memory:', error);
-      return res.status(500).json({ error: 'Failed to delete memory' });
+      console.error("Error deleting specific memory:", error);
+      return res.status(500).json({ error: "Failed to delete memory" });
     }
   } else if (issueId && memoryType) {
     // Delete all memories of a specific type for an issue
@@ -572,8 +575,8 @@ async function deleteMemories(req: VercelRequest, res: VercelResponse) {
         message: `All ${memoryType} memories deleted for issue ${issueId}`,
       });
     } catch (error) {
-      console.error('Error deleting memories by type:', error);
-      return res.status(500).json({ error: 'Failed to delete memories' });
+      console.error("Error deleting memories by type:", error);
+      return res.status(500).json({ error: "Failed to delete memories" });
     }
   } else if (issueId) {
     // Delete all memories for an issue
@@ -590,12 +593,12 @@ async function deleteMemories(req: VercelRequest, res: VercelResponse) {
         message: `All memories deleted for issue ${issueId}`,
       });
     } catch (error) {
-      console.error('Error deleting all memories for issue:', error);
-      return res.status(500).json({ error: 'Failed to delete memories' });
+      console.error("Error deleting all memories for issue:", error);
+      return res.status(500).json({ error: "Failed to delete memories" });
     }
   } else {
     return res.status(400).json({
-      error: 'Must specify memoryId, or issueId with optional memoryType',
+      error: "Must specify memoryId, or issueId with optional memoryType",
     });
   }
 }
@@ -604,29 +607,29 @@ async function bulkMemoryOperations(req: VercelRequest, res: VercelResponse) {
   const { operation, filters, memoryIds } = req.body;
 
   if (!operation) {
-    return res.status(400).json({ error: 'Operation is required' });
+    return res.status(400).json({ error: "Operation is required" });
   }
 
   try {
     switch (operation) {
-      case 'delete_by_filters':
+      case "delete_by_filters":
         return await bulkDeleteByFilters(filters, res);
-      case 'delete_by_ids':
+      case "delete_by_ids":
         return await bulkDeleteByIds(memoryIds, res);
-      case 'cleanup_old':
+      case "cleanup_old":
         return await cleanupOldMemories(filters, res);
       default:
-        return res.status(400).json({ error: 'Unknown operation' });
+        return res.status(400).json({ error: "Unknown operation" });
     }
   } catch (error) {
-    console.error('Bulk operation error:', error);
-    return res.status(500).json({ error: 'Bulk operation failed' });
+    console.error("Bulk operation error:", error);
+    return res.status(500).json({ error: "Bulk operation failed" });
   }
 }
 
 async function bulkDeleteByFilters(
   filters: MemoryFilters,
-  res: VercelResponse
+  res: VercelResponse,
 ) {
   const memories = await getAllFilteredMemories(filters);
   let deletedCount = 0;
@@ -636,16 +639,16 @@ async function bulkDeleteByFilters(
 
   for (const memory of memories) {
     // Memory ID format: memory:issue:ISSUE_ID:TYPE:TIMESTAMP:INDEX
-    const parts = memory.id.split(':');
+    const parts = memory.id.split(":");
     if (parts.length < 6) continue;
 
-    const index = parseInt(parts[parts.length - 1], 10);
-    const redisKey = parts.slice(0, -2).join(':'); // memory:issue:ISSUE_ID:TYPE
+    const index = Number.parseInt(parts[parts.length - 1], 10);
+    const redisKey = parts.slice(0, -2).join(":"); // memory:issue:ISSUE_ID:TYPE
 
     if (!keyGroups.has(redisKey)) {
       keyGroups.set(redisKey, []);
     }
-    keyGroups.get(redisKey)!.push(index);
+    keyGroups.get(redisKey)?.push(index);
   }
 
   // Delete memories from each key
@@ -655,12 +658,12 @@ async function bulkDeleteByFilters(
       indices.sort((a, b) => b - a);
 
       for (const index of indices) {
-        await redis.lset(key, index, '__DELETED__');
+        await redis.lset(key, index, "__DELETED__");
         deletedCount++;
       }
 
       // Remove all deleted placeholders
-      await redis.lrem(key, 0, '__DELETED__');
+      await redis.lrem(key, 0, "__DELETED__");
     } catch (error) {
       console.error(`Error deleting from key ${key}:`, error);
     }
@@ -675,7 +678,7 @@ async function bulkDeleteByFilters(
 
 async function bulkDeleteByIds(memoryIds: string[], res: VercelResponse) {
   if (!Array.isArray(memoryIds)) {
-    return res.status(400).json({ error: 'memoryIds must be an array' });
+    return res.status(400).json({ error: "memoryIds must be an array" });
   }
 
   let deletedCount = 0;
@@ -683,21 +686,21 @@ async function bulkDeleteByIds(memoryIds: string[], res: VercelResponse) {
   for (const memoryId of memoryIds) {
     try {
       // Memory ID format: memory:issue:ISSUE_ID:TYPE:TIMESTAMP:INDEX
-      const parts = memoryId.split(':');
+      const parts = memoryId.split(":");
       if (parts.length < 6) {
         console.error(`Invalid memory ID format: ${memoryId}`);
         continue;
       }
 
-      const index = parseInt(parts[parts.length - 1], 10);
-      const redisKey = parts.slice(0, -2).join(':'); // memory:issue:ISSUE_ID:TYPE
+      const index = Number.parseInt(parts[parts.length - 1], 10);
+      const redisKey = parts.slice(0, -2).join(":"); // memory:issue:ISSUE_ID:TYPE
 
-      if (isNaN(index)) {
+      if (Number.isNaN(index)) {
         console.error(`Invalid index in memory ID: ${memoryId}`);
         continue;
       }
 
-      await redis.lset(redisKey, index, '__DELETED__');
+      await redis.lset(redisKey, index, "__DELETED__");
       deletedCount++;
     } catch (error) {
       console.error(`Error deleting memory ${memoryId}:`, error);
@@ -705,14 +708,14 @@ async function bulkDeleteByIds(memoryIds: string[], res: VercelResponse) {
   }
 
   // Clean up all deleted placeholders (this is inefficient for large operations but works)
-  const keys = await redis.keys('memory:issue:*');
+  const keys = await redis.keys("memory:issue:*");
   for (const key of keys) {
     try {
-      await redis.lrem(key, 0, '__DELETED__');
+      await redis.lrem(key, 0, "__DELETED__");
     } catch (error) {
       console.error(
         `Error cleaning up deleted placeholders for ${key}:`,
-        error
+        error,
       );
     }
   }
@@ -726,7 +729,7 @@ async function bulkDeleteByIds(memoryIds: string[], res: VercelResponse) {
 
 async function cleanupOldMemories(
   filters: { olderThanDays: number },
-  res: VercelResponse
+  res: VercelResponse,
 ) {
   const { olderThanDays = 90 } = filters;
   const cutoffTimestamp = Date.now() - olderThanDays * 24 * 60 * 60 * 1000;

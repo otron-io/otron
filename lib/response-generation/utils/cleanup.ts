@@ -1,12 +1,12 @@
-import { LinearClient } from '@linear/sdk';
+import type { LinearClient } from "@linear/sdk";
+import {
+  agentActivity,
+  linearAgentSessionManager,
+} from "../../linear/linear-agent-session-manager.js";
 import {
   removeActiveSession,
   updateActiveSession,
-} from '../session/session-manager.js';
-import {
-  linearAgentSessionManager,
-  agentActivity,
-} from '../../linear/linear-agent-session-manager.js';
+} from "../session/session-manager.js";
 
 /**
  * Create a cleanup function for a response generation session
@@ -23,8 +23,8 @@ export function createCleanupFunction({
   linearClient?: LinearClient;
 }) {
   return async (
-    status: 'completed' | 'cancelled' | 'error' = 'completed',
-    error?: string
+    status: "completed" | "cancelled" | "error" = "completed",
+    error?: string,
   ) => {
     console.log(`Cleaning up session ${sessionId} with status: ${status}`);
 
@@ -37,24 +37,21 @@ export function createCleanupFunction({
         try {
           await linearAgentSessionManager.completeSession(contextId);
         } catch (linearError) {
-          console.error('Error completing Linear agent session:', linearError);
+          console.error("Error completing Linear agent session:", linearError);
         }
 
         // Log final session status
-        if (status === 'completed') {
+        if (status === "completed") {
           await agentActivity.thought(
             contextId,
-            '✅ Session completed successfully'
+            "✅ Session completed successfully",
           );
-        } else if (status === 'cancelled') {
+        } else if (status === "cancelled") {
+          await agentActivity.thought(contextId, "⏹️ Session cancelled by user");
+        } else if (status === "error") {
           await agentActivity.thought(
             contextId,
-            '⏹️ Session cancelled by user'
-          );
-        } else if (status === 'error') {
-          await agentActivity.thought(
-            contextId,
-            `❌ Session ended with error: ${error || 'Unknown error'}`
+            `❌ Session ended with error: ${error || "Unknown error"}`,
           );
         }
       }
@@ -63,7 +60,7 @@ export function createCleanupFunction({
     } catch (cleanupError) {
       console.error(
         `Error during session cleanup for ${sessionId}:`,
-        cleanupError
+        cleanupError,
       );
     }
   };

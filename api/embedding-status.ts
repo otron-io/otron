@@ -1,7 +1,7 @@
-import type { VercelRequest, VercelResponse } from '@vercel/node';
 import { Redis } from '@upstash/redis';
-import { env } from '../lib/core/env.js';
+import type { VercelRequest, VercelResponse } from '@vercel/node';
 import { withInternalAccess } from '../lib/core/auth.js';
+import { env } from '../lib/core/env.js';
 
 // Initialize Redis client
 const redis = new Redis({
@@ -42,7 +42,7 @@ async function handler(req: VercelRequest, res: VercelResponse) {
 
         if (!repoStatus) continue;
 
-        let parsedStatus: any;
+        let parsedStatus: Record<string, unknown>;
 
         // Handle different types of status data
         if (typeof repoStatus === 'object' && repoStatus !== null) {

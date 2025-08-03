@@ -1,23 +1,23 @@
-import { Redis } from '@upstash/redis';
-import { LinearClient } from '@linear/sdk';
-import { env } from '../../core/env.js';
+import type { LinearClient } from "@linear/sdk";
+import { Redis } from "@upstash/redis";
+import type { CoreMessage } from "ai";
+import { env } from "../../core/env.js";
 import {
-  linearAgentSessionManager,
   agentActivity,
-} from '../../linear/linear-agent-session-manager.js';
-import {
-  updateActiveSession,
-  storeCompletedSession,
-} from '../session/session-manager.js';
-import { getQueuedMessages } from '../session/message-queue.js';
-import { memoryManager } from '../../memory/memory-manager.js';
-import {
-  ExecutionTracker,
+  linearAgentSessionManager,
+} from "../../linear/linear-agent-session-manager.js";
+import { memoryManager } from "../../memory/memory-manager.js";
+import { client as slackClient } from "../../slack/slack-utils.js";
+import type {
   ExecutionStrategy,
+  ExecutionTracker,
   SlackContext,
-} from '../core/types.js';
-import { client as slackClient } from '../../slack/slack-utils.js';
-import { CoreMessage } from 'ai';
+} from "../core/types.js";
+import { getQueuedMessages } from "../session/message-queue.js";
+import {
+  storeCompletedSession,
+  updateActiveSession,
+} from "../session/session-manager.js";
 
 // Initialize Redis client
 const redis = new Redis({
@@ -34,37 +34,37 @@ const getDetailedToolContext = (toolName: string, params: any): string => {
 
   // Parameters with better structure
   if (params && Object.keys(params).length > 0) {
-    contextLines.push('**Parameters:**');
+    contextLines.push("**Parameters:**");
     Object.entries(params).forEach(([key, value]) => {
       const formattedValue =
-        typeof value === 'string' && value.length > 100
+        typeof value === "string" && value.length > 100
           ? `${value.substring(0, 100)}...`
           : JSON.stringify(value);
       contextLines.push(`  • ${key}: ${formattedValue}`);
     });
   }
 
-  return contextLines.join('\n');
+  return contextLines.join("\n");
 };
 
 // Success details generator
 const getSuccessDetails = (
   toolName: string,
   result: any,
-  input: any
+  input: any,
 ): string => {
   // Return concise success message with key details
-  if (!result) return 'Completed successfully';
+  if (!result) return "Completed successfully";
 
   // Extract meaningful info based on tool type
-  if (toolName.includes('search') || toolName.includes('Search')) {
+  if (toolName.includes("search") || toolName.includes("Search")) {
     const resultCount = Array.isArray(result)
       ? result.length
-      : result.results?.length || 'unknown';
+      : result.results?.length || "unknown";
     return `Found ${resultCount} results`;
   }
 
-  if (toolName.includes('File') || toolName.includes('file')) {
+  if (toolName.includes("File") || toolName.includes("file")) {
     if (result.totalLines) {
       return `Read ${result.totalLines} lines from ${
         input.file_path || input.path
@@ -76,23 +76,23 @@ const getSuccessDetails = (
     }
   }
 
-  if (toolName.includes('create') || toolName.includes('Create')) {
+  if (toolName.includes("create") || toolName.includes("Create")) {
     return result.id || result.url || result.number
       ? `Created successfully (${result.id || result.url || result.number})`
-      : 'Created successfully';
+      : "Created successfully";
   }
 
-  if (toolName.includes('update') || toolName.includes('Update')) {
-    return 'Updated successfully';
+  if (toolName.includes("update") || toolName.includes("Update")) {
+    return "Updated successfully";
   }
 
   // Fallback
   const preview =
-    typeof result === 'string'
+    typeof result === "string"
       ? result.substring(0, 50)
       : result.text?.substring(0, 50) ||
         result.message?.substring(0, 50) ||
-        'Success';
+        "Success";
 
   return preview.length > 50 ? `${preview}...` : preview;
 };
@@ -101,18 +101,18 @@ const getSuccessDetails = (
 const getFailureContext = (
   toolName: string,
   error: string,
-  input: any
+  input: any,
 ): string => {
-  if (error.includes('File not found') || error.includes('404')) {
+  if (error.includes("File not found") || error.includes("404")) {
     return `File/resource not found: ${
-      input?.file_path || input?.path || 'unknown'
+      input?.file_path || input?.path || "unknown"
     }`;
   }
-  if (error.includes('permission') || error.includes('403')) {
-    return 'Permission denied - check access rights';
+  if (error.includes("permission") || error.includes("403")) {
+    return "Permission denied - check access rights";
   }
-  if (error.includes('rate limit') || error.includes('429')) {
-    return 'Rate limit exceeded - wait before retrying';
+  if (error.includes("rate limit") || error.includes("429")) {
+    return "Rate limit exceeded - wait before retrying";
   }
   return error.length > 200 ? `${error.substring(0, 200)}...` : error;
 };
@@ -121,24 +121,24 @@ const getFailureContext = (
 const getErrorGuidance = (
   toolName: string,
   error: string,
-  input: any
+  input: any,
 ): string => {
-  if (error.includes('File not found') || error.includes('404')) {
-    return 'Try checking if the file path is correct or use a different file.';
+  if (error.includes("File not found") || error.includes("404")) {
+    return "Try checking if the file path is correct or use a different file.";
   }
-  if (error.includes('permission') || error.includes('403')) {
-    return 'Verify you have the necessary permissions for this operation.';
+  if (error.includes("permission") || error.includes("403")) {
+    return "Verify you have the necessary permissions for this operation.";
   }
-  if (error.includes('Old code not found') || error.includes('not match')) {
-    return 'Read the current file content first and use exact code for editing.';
+  if (error.includes("Old code not found") || error.includes("not match")) {
+    return "Read the current file content first and use exact code for editing.";
   }
-  if (error.includes('rate limit') || error.includes('429')) {
-    return 'Wait a moment before trying again, or use a different approach.';
+  if (error.includes("rate limit") || error.includes("429")) {
+    return "Wait a moment before trying again, or use a different approach.";
   }
-  if (error.includes('network') || error.includes('timeout')) {
-    return 'Check your connection or try the operation again.';
+  if (error.includes("network") || error.includes("timeout")) {
+    return "Check your connection or try the operation again.";
   }
-  return 'Consider trying a different approach or checking the input parameters.';
+  return "Consider trying a different approach or checking the input parameters.";
 };
 
 /**
@@ -167,11 +167,11 @@ export function createMemoryAwareToolExecutor(
     slackContext?: SlackContext;
     messages: CoreMessage[];
     abortSignal?: AbortSignal;
-  }
+  },
 ) {
   return async (...args: any[]) => {
     let success = false;
-    let response = '';
+    let response = "";
     let detailedOutput: any = null;
 
     // Update current tool in session
@@ -184,7 +184,7 @@ export function createMemoryAwareToolExecutor(
 
     // Check for abort signal before executing tool
     if (abortSignal?.aborted) {
-      throw new Error('Request was aborted during tool execution');
+      throw new Error("Request was aborted during tool execution");
     }
 
     // Check for cancellation from external source (Redis)
@@ -195,16 +195,16 @@ export function createMemoryAwareToolExecutor(
           // Store as cancelled session before throwing
           await storeCompletedSession(
             sessionId,
-            'cancelled',
-            'Request was cancelled by user'
+            "cancelled",
+            "Request was cancelled by user",
           );
           await redis.del(`active_session:${sessionId}`);
-          await redis.srem('active_sessions_list', sessionId);
-          throw new Error('Request was cancelled by user');
+          await redis.srem("active_sessions_list", sessionId);
+          throw new Error("Request was cancelled by user");
         }
       } catch (redisError) {
         // Don't fail on Redis errors, but log them
-        console.warn('Error checking cancellation status:', redisError);
+        console.warn("Error checking cancellation status:", redisError);
       }
     }
 
@@ -212,7 +212,7 @@ export function createMemoryAwareToolExecutor(
     const callSignature = `${toolName}:${JSON.stringify(args[0] || {})}`;
     const recentCalls = executionTracker.recentToolCalls || [];
     const identicalCallCount = recentCalls.filter(
-      (call: string) => call === callSignature
+      (call: string) => call === callSignature,
     ).length;
 
     if (identicalCallCount >= 3) {
@@ -247,27 +247,27 @@ export function createMemoryAwareToolExecutor(
         const queuedMessages = await getQueuedMessages(sessionId);
         if (queuedMessages.length > 0) {
           console.log(
-            `Found ${queuedMessages.length} queued messages for session ${sessionId}`
+            `Found ${queuedMessages.length} queued messages for session ${sessionId}`,
           );
 
           // Log that we're processing interjections
           await agentActivity.thought(
             contextId,
-            `Processing ${queuedMessages.length} new message(s) received during analysis`
+            `Processing ${queuedMessages.length} new message(s) received during analysis`,
           );
 
           // Check for stop commands first
-          const stopMessage = queuedMessages.find((msg) => msg.type === 'stop');
+          const stopMessage = queuedMessages.find((msg) => msg.type === "stop");
           if (stopMessage) {
             console.log(
-              `🛑 Stop command found in queued messages for session ${sessionId}`
+              `🛑 Stop command found in queued messages for session ${sessionId}`,
             );
 
             // Log the stop command
             if (isLinearIssue && linearClient) {
               await agentActivity.response(
                 contextId,
-                '🛑 **Otron is immediately stopping all operations** as requested. Processing has been terminated.'
+                "🛑 **Otron is immediately stopping all operations** as requested. Processing has been terminated.",
               );
             }
 
@@ -276,21 +276,21 @@ export function createMemoryAwareToolExecutor(
               await slackClient.chat.postMessage({
                 channel: slackContext.channelId,
                 thread_ts: slackContext.threadTs,
-                text: '🛑 **Otron is immediately stopping all operations** as requested. Processing has been terminated.',
+                text: "🛑 **Otron is immediately stopping all operations** as requested. Processing has been terminated.",
               });
             }
 
             // Abort the current processing
-            throw new Error('STOP_COMMAND_RECEIVED');
+            throw new Error("STOP_COMMAND_RECEIVED");
           }
 
           // Add non-stop queued messages to the conversation context
           for (const queuedMsg of queuedMessages) {
-            if (queuedMsg.type !== 'stop') {
+            if (queuedMsg.type !== "stop") {
               messages.push({
-                role: 'user',
+                role: "user",
                 content: `[INTERJECTION ${new Date(
-                  queuedMsg.timestamp
+                  queuedMsg.timestamp,
                 ).toISOString()}] ${queuedMsg.content}`,
               });
             }
@@ -300,12 +300,12 @@ export function createMemoryAwareToolExecutor(
           await updateActiveSession(sessionId, { messages });
 
           console.log(
-            `Added ${queuedMessages.length} interjection messages to conversation context`
+            `Added ${queuedMessages.length} interjection messages to conversation context`,
           );
         }
       } catch (messageError) {
         // Don't fail on message polling errors, but log them
-        console.warn('Error checking for queued messages:', messageError);
+        console.warn("Error checking for queued messages:", messageError);
       }
     }
 
@@ -315,37 +315,37 @@ export function createMemoryAwareToolExecutor(
 
     // Categorize tool types and enforce limits
     const searchTools = [
-      'searchEmbeddedCode',
-      'searchLinearIssues',
-      'searchSlackMessages',
+      "searchEmbeddedCode",
+      "searchLinearIssues",
+      "searchSlackMessages",
     ];
     const readTools = [
-      'getFileContent',
-      'getRawFileContent',
-      'readRelatedFiles',
-      'getIssueContext',
+      "getFileContent",
+      "getRawFileContent",
+      "readRelatedFiles",
+      "getIssueContext",
     ];
     const actionTools = [
-      'createFile',
-      'editCode',
-      'addCode',
-      'removeCode',
-      'editUrl',
-      'createBranch',
-      'createPullRequest',
-      'updateIssueStatus',
-      'createLinearComment',
-      'setIssueParent',
-      'addIssueToProject',
-      'createAgentActivity',
-      'sendSlackMessage',
-      'sendChannelMessage',
-      'sendDirectMessage',
+      "createFile",
+      "editCode",
+      "addCode",
+      "removeCode",
+      "editUrl",
+      "createBranch",
+      "createPullRequest",
+      "updateIssueStatus",
+      "createLinearComment",
+      "setIssueParent",
+      "addIssueToProject",
+      "createAgentActivity",
+      "sendSlackMessage",
+      "sendChannelMessage",
+      "sendDirectMessage",
     ];
     const analysisTools = [
-      'analyzeFileStructure',
-      'getRepositoryStructure',
-      'getDirectoryStructure',
+      "analyzeFileStructure",
+      "getRepositoryStructure",
+      "getDirectoryStructure",
     ];
 
     // Track operations without limits
@@ -368,12 +368,12 @@ export function createMemoryAwareToolExecutor(
         if (isLinearIssue && linearClient) {
           await agentActivity.thought(
             contextId,
-            `Starting to take some action with ${toolName}`
+            `Starting to take some action with ${toolName}`,
           );
         }
       }
       executionStrategy.hasStartedActions = true;
-      executionStrategy.phase = 'acting';
+      executionStrategy.phase = "acting";
     }
 
     // Update execution phase based on tool usage (without limits)
@@ -382,9 +382,9 @@ export function createMemoryAwareToolExecutor(
         executionStrategy.readOperations +
         executionStrategy.analysisOperations >=
         3 &&
-      executionStrategy.phase === 'planning'
+      executionStrategy.phase === "planning"
     ) {
-      executionStrategy.phase = 'gathering';
+      executionStrategy.phase = "gathering";
       // Log phase transition thinking
       if (isLinearIssue && linearClient) {
         await agentActivity.thought(
@@ -393,7 +393,7 @@ export function createMemoryAwareToolExecutor(
             executionStrategy.searchOperations +
             executionStrategy.readOperations +
             executionStrategy.analysisOperations
-          } operations.`
+          } operations.`,
         );
       }
     }
@@ -407,7 +407,7 @@ export function createMemoryAwareToolExecutor(
       try {
         await agentActivity.thought(contextId, `🔧 ${detailedContext}`);
       } catch (error) {
-        console.error('Error logging tool start to Linear:', error);
+        console.error("Error logging tool start to Linear:", error);
       }
     }
 
@@ -426,7 +426,7 @@ export function createMemoryAwareToolExecutor(
         try {
           await agentActivity.thought(contextId, response);
         } catch (error) {
-          console.error('Error logging tool success to Linear:', error);
+          console.error("Error logging tool success to Linear:", error);
         }
       }
 
@@ -443,9 +443,9 @@ export function createMemoryAwareToolExecutor(
           timestamp: Date.now(),
         };
 
-        await memoryManager.storeMemory(contextId, 'action', memoryContent);
+        await memoryManager.storeMemory(contextId, "action", memoryContent);
       } catch (memoryError) {
-        console.error('Error storing tool execution in memory:', memoryError);
+        console.error("Error storing tool execution in memory:", memoryError);
       }
 
       return result;
@@ -458,12 +458,12 @@ export function createMemoryAwareToolExecutor(
       const failureContext = getFailureContext(
         toolName,
         errorMessage,
-        inputParams
+        inputParams,
       );
       const errorGuidance = getErrorGuidance(
         toolName,
         errorMessage,
-        inputParams
+        inputParams,
       );
 
       response = `❌ ${toolName}: ${failureContext}`;
@@ -473,10 +473,10 @@ export function createMemoryAwareToolExecutor(
         try {
           await agentActivity.thought(
             contextId,
-            `${response}\n💡 **Suggestion**: ${errorGuidance}`
+            `${response}\n💡 **Suggestion**: ${errorGuidance}`,
           );
         } catch (logError) {
-          console.error('Error logging tool failure to Linear:', logError);
+          console.error("Error logging tool failure to Linear:", logError);
         }
       }
 
@@ -490,9 +490,9 @@ export function createMemoryAwareToolExecutor(
           timestamp: Date.now(),
         };
 
-        await memoryManager.storeMemory(contextId, 'action', memoryContent);
+        await memoryManager.storeMemory(contextId, "action", memoryContent);
       } catch (memoryError) {
-        console.error('Error storing tool failure in memory:', memoryError);
+        console.error("Error storing tool failure in memory:", memoryError);
       }
 
       // Re-throw the error to maintain normal error handling flow

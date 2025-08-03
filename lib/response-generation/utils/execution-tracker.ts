@@ -1,4 +1,4 @@
-import { ExecutionTracker, ExecutionStrategy } from '../core/types.js';
+import type { ExecutionStrategy, ExecutionTracker } from "../core/types.js";
 
 /**
  * Create a new execution tracker instance
@@ -17,7 +17,7 @@ export function createExecutionTracker(): ExecutionTracker {
  */
 export function createExecutionStrategy(): ExecutionStrategy {
   return {
-    phase: 'planning',
+    phase: "planning",
     toolUsageCounts: new Map<string, number>(),
     searchOperations: 0,
     readOperations: 0,
@@ -33,7 +33,7 @@ export function createExecutionStrategy(): ExecutionStrategy {
  */
 export function getExecutionSummary(
   tracker: ExecutionTracker,
-  strategy: ExecutionStrategy
+  strategy: ExecutionStrategy,
 ): string {
   const totalOperations =
     strategy.searchOperations +
@@ -50,5 +50,5 @@ export function getExecutionSummary(
     `Read: ${strategy.readOperations}`,
     `Analysis: ${strategy.analysisOperations}`,
     `Action: ${strategy.actionOperations}`,
-  ].join(' | ');
+  ].join(" | ");
 }

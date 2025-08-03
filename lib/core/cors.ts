@@ -98,7 +98,9 @@ export function addCorsHeaders(req: VercelRequest, res: VercelResponse) {
 /**
  * Middleware wrapper to add CORS headers to any handler
  */
-export function withCORS(handler: Function) {
+export function withCORS(
+  handler: (req: VercelRequest, res: VercelResponse) => Promise<void>
+) {
   return async (req: VercelRequest, res: VercelResponse) => {
     // Add CORS headers
     const isPreflight = addCorsHeaders(req, res);

@@ -1,6 +1,6 @@
-import { Redis } from '@upstash/redis';
-import { env } from '../../core/env.js';
-import { RepoDefinition } from '../core/types.js';
+import { Redis } from "@upstash/redis";
+import { env } from "../../core/env.js";
+import type { RepoDefinition } from "../core/types.js";
 
 // Initialize Redis client for repository context
 const redis = new Redis({
@@ -14,9 +14,9 @@ const redis = new Redis({
 export async function getRepositoryContext(): Promise<string> {
   try {
     // Get all repository definition IDs
-    const repoIds = await redis.smembers('repo_definitions');
+    const repoIds = await redis.smembers("repo_definitions");
     if (!repoIds || repoIds.length === 0) {
-      return '';
+      return "";
     }
 
     const activeRepos: RepoDefinition[] = [];
@@ -27,7 +27,7 @@ export async function getRepositoryContext(): Promise<string> {
         const repoData = await redis.get(`repo_definition:${repoId}`);
         if (repoData) {
           const parsedRepo =
-            typeof repoData === 'string'
+            typeof repoData === "string"
               ? JSON.parse(repoData)
               : (repoData as RepoDefinition);
 
@@ -43,14 +43,15 @@ export async function getRepositoryContext(): Promise<string> {
     }
 
     if (activeRepos.length === 0) {
-      return '';
+      return "";
     }
 
     // Sort by name for consistent ordering
     activeRepos.sort((a, b) => a.name.localeCompare(b.name));
 
     // Build context string
-    let context = `## Repository Context\n\nThe following repositories are available in this environment:\n\n`;
+    let context =
+      "## Repository Context\n\nThe following repositories are available in this environment:\n\n";
 
     activeRepos.forEach((repo, index) => {
       context += `### ${index + 1}. ${repo.name} (${repo.owner}/${
@@ -67,21 +68,25 @@ export async function getRepositoryContext(): Promise<string> {
       }
 
       if (repo.tags && repo.tags.length > 0) {
-        context += `- **Tags**: ${repo.tags.join(', ')}\n`;
+        context += `- **Tags**: ${repo.tags.join(", ")}\n`;
       }
 
       context += `- **GitHub**: ${repo.githubUrl}\n\n`;
     });
 
-    context += `**Repository Guidelines:**\n`;
-    context += `- When working with code, consider the repository context above\n`;
-    context += `- Use the appropriate repository for each task based on the descriptions\n`;
-    context += `- Reference repository purposes when making architectural decisions\n`;
-    context += `- Consider cross-repository dependencies when making changes\n\n`;
+    context += "**Repository Guidelines:**\n";
+    context +=
+      "- When working with code, consider the repository context above\n";
+    context +=
+      "- Use the appropriate repository for each task based on the descriptions\n";
+    context +=
+      "- Reference repository purposes when making architectural decisions\n";
+    context +=
+      "- Consider cross-repository dependencies when making changes\n\n";
 
     return context;
   } catch (error) {
-    console.error('Error fetching repository context:', error);
-    return '';
+    console.error("Error fetching repository context:", error);
+    return "";
   }
 }

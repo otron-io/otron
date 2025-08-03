@@ -1,20 +1,20 @@
-import { CoreMessage, generateText } from 'ai';
-import { LinearClient } from '@linear/sdk';
-import { openai } from '@ai-sdk/openai';
-import { memoryManager } from '../../memory/memory-manager.js';
+import { openai } from "@ai-sdk/openai";
+import type { LinearClient } from "@linear/sdk";
+import { type CoreMessage, generateText } from "ai";
 import {
-  linearAgentSessionManager,
   agentActivity,
-} from '../../linear/linear-agent-session-manager.js';
-import { GenerationResult, SlackContext } from './types.js';
-import { extractIssueIdFromContext } from '../context/context-extractor.js';
-import { getRepositoryContext } from '../context/repository-context.js';
-import { createToolRegistry } from '../tools/tool-registry.js';
-import { createMemoryAwareToolExecutor } from '../tools/tool-executor.js';
+  linearAgentSessionManager,
+} from "../../linear/linear-agent-session-manager.js";
+import { memoryManager } from "../../memory/memory-manager.js";
+import { extractIssueIdFromContext } from "../context/context-extractor.js";
+import { getRepositoryContext } from "../context/repository-context.js";
+import { createMemoryAwareToolExecutor } from "../tools/tool-executor.js";
+import { createToolRegistry } from "../tools/tool-registry.js";
 import {
-  createExecutionTracker,
   createExecutionStrategy,
-} from '../utils/execution-tracker.js';
+  createExecutionTracker,
+} from "../utils/execution-tracker.js";
+import type { GenerationResult, SlackContext } from "./types.js";
 
 /**
  * Internal response generation function
@@ -24,9 +24,9 @@ export async function generateResponseInternal(
   updateStatus?: (status: string) => void,
   linearClient?: LinearClient,
   slackContext?: SlackContext,
-  attemptNumber: number = 1,
+  attemptNumber = 1,
   sessionId?: string,
-  abortSignal?: AbortSignal
+  abortSignal?: AbortSignal,
 ): Promise<GenerationResult> {
   // Track execution details for goal evaluation
   const executionTracker = createExecutionTracker();
@@ -34,7 +34,7 @@ export async function generateResponseInternal(
 
   // Extract context ID for memory operations
   const contextId = extractIssueIdFromContext(messages, slackContext);
-  const isLinearIssue = !!(contextId && !contextId.startsWith('slack:'));
+  const isLinearIssue = !!(contextId && !contextId.startsWith("slack:"));
 
   // Initialize Linear agent session manager if client is available
   if (linearClient) {
@@ -45,47 +45,49 @@ export async function generateResponseInternal(
   try {
     const lastMessage = messages[messages.length - 1];
     const messageContent =
-      typeof lastMessage?.content === 'string'
+      typeof lastMessage?.content === "string"
         ? lastMessage.content
         : Array.isArray(lastMessage?.content)
-        ? lastMessage.content
-            .map((part) => ('text' in part ? part.text : JSON.stringify(part)))
-            .join(' ')
-        : 'No content';
+          ? lastMessage.content
+              .map((part) =>
+                "text" in part ? part.text : JSON.stringify(part),
+              )
+              .join(" ")
+          : "No content";
 
-    await memoryManager.storeMemory(contextId, 'conversation', {
-      role: 'user',
+    await memoryManager.storeMemory(contextId, "conversation", {
+      role: "user",
       content: messageContent,
       timestamp: Date.now(),
-      platform: slackContext ? 'slack' : 'linear',
+      platform: slackContext ? "slack" : "linear",
       metadata: slackContext || {},
     });
   } catch (error) {
-    console.error('Error storing user message in memory:', error);
+    console.error("Error storing user message in memory:", error);
   }
 
   // Retrieve memory context with smart relevance filtering
-  let memoryContext = '';
+  let memoryContext = "";
   try {
     const lastMessage = messages[messages.length - 1];
     const currentMessageContent =
-      typeof lastMessage?.content === 'string'
+      typeof lastMessage?.content === "string"
         ? lastMessage.content
         : Array.isArray(lastMessage?.content)
-        ? lastMessage.content
-            .map((part) => ('text' in part ? part.text : ''))
-            .join(' ')
-        : '';
+          ? lastMessage.content
+              .map((part) => ("text" in part ? part.text : ""))
+              .join(" ")
+          : "";
 
     const previousConversations = await memoryManager.getPreviousConversations(
       contextId,
-      currentMessageContent
+      currentMessageContent,
     );
     const issueHistory = await memoryManager.getIssueHistory(contextId);
 
     memoryContext = previousConversations + issueHistory;
   } catch (error) {
-    console.error('Error retrieving memory context:', error);
+    console.error("Error retrieving memory context:", error);
   }
 
   // Fetch repository context for system prompt
@@ -192,13 +194,13 @@ ${
   repositoryContext
     ? `## Available Repositories
 ${repositoryContext}`
-    : ''
+    : ""
 }${
-    memoryContext
-      ? `## Context & History
+  memoryContext
+    ? `## Context & History
 ${memoryContext}`
-      : ''
-  }## Remember
+    : ""
+}## Remember
 **Execute decisively, adapt intelligently**. Users expect immediate action on clear requests and smart problem-solving when tools fail.`;
 
   // Create tool executor factory with context
@@ -220,7 +222,7 @@ ${memoryContext}`
 
   // Generate response using AI
   const { text, reasoning } = await generateText({
-    model: openai('gpt-4o'),
+    model: openai("gpt-4o"),
     system: systemPrompt,
     temperature: 0.8,
     messages,
@@ -234,28 +236,28 @@ ${memoryContext}`
     try {
       // The reasoning field contains the model's thought process
       const reasoningText =
-        typeof reasoning === 'string'
+        typeof reasoning === "string"
           ? reasoning
           : Array.isArray(reasoning)
-          ? (reasoning as any[]).join('\n')
-          : JSON.stringify(reasoning);
+            ? (reasoning as any[]).join("\n")
+            : JSON.stringify(reasoning);
 
-      if (reasoningText && reasoningText.trim()) {
+      if (reasoningText?.trim()) {
         await agentActivity.thought(contextId, `Thought: ${reasoningText}`);
       }
     } catch (error) {
-      console.error('Error logging LLM reasoning to Linear:', error);
+      console.error("Error logging LLM reasoning to Linear:", error);
     }
   }
 
   // Store the assistant's response in memory
   try {
-    await memoryManager.storeMemory(contextId, 'conversation', {
-      role: 'assistant',
-      content: [{ type: 'text', text }],
+    await memoryManager.storeMemory(contextId, "conversation", {
+      role: "assistant",
+      content: [{ type: "text", text }],
     });
   } catch (error) {
-    console.error('Error storing assistant response in memory:', error);
+    console.error("Error storing assistant response in memory:", error);
   }
 
   return {

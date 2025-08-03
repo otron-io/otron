@@ -1,8 +1,8 @@
-import type { VercelRequest, VercelResponse } from '@vercel/node';
-import { Redis } from '@upstash/redis';
-import { env } from '../lib/core/env.js';
-import { withInternalAccess } from '../lib/core/auth.js';
-import { addCorsHeaders } from '../lib/core/cors.js';
+import { Redis } from "@upstash/redis";
+import type { VercelRequest, VercelResponse } from "@vercel/node";
+import { withInternalAccess } from "../lib/core/auth.js";
+import { addCorsHeaders } from "../lib/core/cors.js";
+import { env } from "../lib/core/env.js";
 
 // Initialize Redis client
 const redis = new Redis({
@@ -26,7 +26,7 @@ export interface RepoDefinition {
 }
 
 // Redis key structure for repository definitions
-const getRepoDefinitionsKey = () => 'repo_definitions';
+const getRepoDefinitionsKey = () => "repo_definitions";
 const getRepoDefinitionKey = (id: string) => `repo_definition:${id}`;
 
 async function handler(req: VercelRequest, res: VercelResponse) {
@@ -38,21 +38,21 @@ async function handler(req: VercelRequest, res: VercelResponse) {
 
   try {
     switch (req.method) {
-      case 'GET':
+      case "GET":
         return await handleGet(req, res);
-      case 'POST':
+      case "POST":
         return await handlePost(req, res);
-      case 'PUT':
+      case "PUT":
         return await handlePut(req, res);
-      case 'DELETE':
+      case "DELETE":
         return await handleDelete(req, res);
       default:
-        return res.status(405).json({ error: 'Method not allowed' });
+        return res.status(405).json({ error: "Method not allowed" });
     }
   } catch (error) {
-    console.error('Error in repo-manager endpoint:', error);
+    console.error("Error in repo-manager endpoint:", error);
     return res.status(500).json({
-      error: 'Internal server error',
+      error: "Internal server error",
       message: error instanceof Error ? error.message : String(error),
     });
   }
@@ -61,58 +61,57 @@ async function handler(req: VercelRequest, res: VercelResponse) {
 async function handleGet(req: VercelRequest, res: VercelResponse) {
   const { id } = req.query;
 
-  if (id && typeof id === 'string') {
+  if (id && typeof id === "string") {
     // Get single repository definition
     const repoDefinition = await redis.get(getRepoDefinitionKey(id));
 
     if (!repoDefinition) {
-      return res.status(404).json({ error: 'Repository definition not found' });
+      return res.status(404).json({ error: "Repository definition not found" });
     }
 
     let parsedDefinition: RepoDefinition;
     try {
       parsedDefinition =
-        typeof repoDefinition === 'string'
+        typeof repoDefinition === "string"
           ? JSON.parse(repoDefinition)
           : (repoDefinition as RepoDefinition);
     } catch (error) {
-      console.error('Error parsing repository definition:', error);
+      console.error("Error parsing repository definition:", error);
       return res
         .status(500)
-        .json({ error: 'Invalid repository definition data' });
+        .json({ error: "Invalid repository definition data" });
     }
 
     return res.status(200).json(parsedDefinition);
-  } else {
-    // Get all repository definitions
-    const repoIds = await redis.smembers(getRepoDefinitionsKey());
-    const definitions: RepoDefinition[] = [];
-
-    for (const repoId of repoIds) {
-      try {
-        const repoDefinition = await redis.get(getRepoDefinitionKey(repoId));
-        if (repoDefinition) {
-          const parsedDefinition =
-            typeof repoDefinition === 'string'
-              ? JSON.parse(repoDefinition)
-              : (repoDefinition as RepoDefinition);
-          definitions.push(parsedDefinition);
-        }
-      } catch (error) {
-        console.error(`Error parsing repository definition ${repoId}:`, error);
-        // Continue with other definitions
-      }
-    }
-
-    // Sort by updatedAt descending
-    definitions.sort((a, b) => b.updatedAt - a.updatedAt);
-
-    return res.status(200).json({
-      definitions,
-      totalCount: definitions.length,
-      timestamp: Date.now(),
-    });
   }
+  // Get all repository definitions
+  const repoIds = await redis.smembers(getRepoDefinitionsKey());
+  const definitions: RepoDefinition[] = [];
+
+  for (const repoId of repoIds) {
+    try {
+      const repoDefinition = await redis.get(getRepoDefinitionKey(repoId));
+      if (repoDefinition) {
+        const parsedDefinition =
+          typeof repoDefinition === "string"
+            ? JSON.parse(repoDefinition)
+            : (repoDefinition as RepoDefinition);
+        definitions.push(parsedDefinition);
+      }
+    } catch (error) {
+      console.error(`Error parsing repository definition ${repoId}:`, error);
+      // Continue with other definitions
+    }
+  }
+
+  // Sort by updatedAt descending
+  definitions.sort((a, b) => b.updatedAt - a.updatedAt);
+
+  return res.status(200).json({
+    definitions,
+    totalCount: definitions.length,
+    timestamp: Date.now(),
+  });
 }
 
 async function handlePost(req: VercelRequest, res: VercelResponse) {
@@ -129,25 +128,26 @@ async function handlePost(req: VercelRequest, res: VercelResponse) {
   // Validate required fields
   if (!name || !description || !githubUrl) {
     return res.status(400).json({
-      error: 'Missing required fields: name, description, githubUrl',
+      error: "Missing required fields: name, description, githubUrl",
     });
   }
 
   // Parse GitHub URL to extract owner and repo
-  let owner: string, repo: string;
+  let owner: string;
+  let repo: string;
   try {
     const urlMatch = githubUrl.match(/github\.com\/([^\/]+)\/([^\/]+)/);
     if (!urlMatch) {
-      throw new Error('Invalid GitHub URL format');
+      throw new Error("Invalid GitHub URL format");
     }
     [, owner, repo] = urlMatch;
 
     // Remove .git suffix if present
-    repo = repo.replace(/\.git$/, '');
+    repo = repo.replace(/\.git$/, "");
   } catch (error) {
     return res.status(400).json({
       error:
-        'Invalid GitHub URL format. Expected: https://github.com/owner/repo',
+        "Invalid GitHub URL format. Expected: https://github.com/owner/repo",
     });
   }
 
@@ -158,13 +158,13 @@ async function handlePost(req: VercelRequest, res: VercelResponse) {
     id,
     name,
     description,
-    purpose: purpose || '',
+    purpose: purpose || "",
     githubUrl,
     owner,
     repo,
     isActive,
     tags: Array.isArray(tags) ? tags : [],
-    contextDescription: contextDescription || '',
+    contextDescription: contextDescription || "",
     createdAt: now,
     updatedAt: now,
   };
@@ -178,9 +178,9 @@ async function handlePost(req: VercelRequest, res: VercelResponse) {
 
     return res.status(201).json(repoDefinition);
   } catch (error) {
-    console.error('Error storing repository definition:', error);
+    console.error("Error storing repository definition:", error);
     return res.status(500).json({
-      error: 'Failed to create repository definition',
+      error: "Failed to create repository definition",
     });
   }
 }
@@ -188,24 +188,24 @@ async function handlePost(req: VercelRequest, res: VercelResponse) {
 async function handlePut(req: VercelRequest, res: VercelResponse) {
   const { id } = req.query;
 
-  if (!id || typeof id !== 'string') {
-    return res.status(400).json({ error: 'Repository ID is required' });
+  if (!id || typeof id !== "string") {
+    return res.status(400).json({ error: "Repository ID is required" });
   }
 
   // Get existing definition
   const existingDefinition = await redis.get(getRepoDefinitionKey(id));
   if (!existingDefinition) {
-    return res.status(404).json({ error: 'Repository definition not found' });
+    return res.status(404).json({ error: "Repository definition not found" });
   }
 
   let parsed: RepoDefinition;
   try {
     parsed =
-      typeof existingDefinition === 'string'
+      typeof existingDefinition === "string"
         ? JSON.parse(existingDefinition)
         : (existingDefinition as RepoDefinition);
   } catch (error) {
-    return res.status(500).json({ error: 'Invalid existing repository data' });
+    return res.status(500).json({ error: "Invalid existing repository data" });
   }
 
   const {
@@ -236,15 +236,15 @@ async function handlePut(req: VercelRequest, res: VercelResponse) {
     try {
       const urlMatch = githubUrl.match(/github\.com\/([^\/]+)\/([^\/]+)/);
       if (!urlMatch) {
-        throw new Error('Invalid GitHub URL format');
+        throw new Error("Invalid GitHub URL format");
       }
       const [, newOwner, newRepo] = urlMatch;
       updatedDefinition.owner = newOwner;
-      updatedDefinition.repo = newRepo.replace(/\.git$/, '');
+      updatedDefinition.repo = newRepo.replace(/\.git$/, "");
     } catch (error) {
       return res.status(400).json({
         error:
-          'Invalid GitHub URL format. Expected: https://github.com/owner/repo',
+          "Invalid GitHub URL format. Expected: https://github.com/owner/repo",
       });
     }
   }
@@ -252,13 +252,13 @@ async function handlePut(req: VercelRequest, res: VercelResponse) {
   try {
     await redis.set(
       getRepoDefinitionKey(id),
-      JSON.stringify(updatedDefinition)
+      JSON.stringify(updatedDefinition),
     );
     return res.status(200).json(updatedDefinition);
   } catch (error) {
-    console.error('Error updating repository definition:', error);
+    console.error("Error updating repository definition:", error);
     return res.status(500).json({
-      error: 'Failed to update repository definition',
+      error: "Failed to update repository definition",
     });
   }
 }
@@ -266,15 +266,15 @@ async function handlePut(req: VercelRequest, res: VercelResponse) {
 async function handleDelete(req: VercelRequest, res: VercelResponse) {
   const { id } = req.query;
 
-  if (!id || typeof id !== 'string') {
-    return res.status(400).json({ error: 'Repository ID is required' });
+  if (!id || typeof id !== "string") {
+    return res.status(400).json({ error: "Repository ID is required" });
   }
 
   try {
     // Check if definition exists
     const exists = await redis.get(getRepoDefinitionKey(id));
     if (!exists) {
-      return res.status(404).json({ error: 'Repository definition not found' });
+      return res.status(404).json({ error: "Repository definition not found" });
     }
 
     // Remove from Redis
@@ -286,9 +286,9 @@ async function handleDelete(req: VercelRequest, res: VercelResponse) {
       message: `Repository definition ${id} deleted successfully`,
     });
   } catch (error) {
-    console.error('Error deleting repository definition:', error);
+    console.error("Error deleting repository definition:", error);
     return res.status(500).json({
-      error: 'Failed to delete repository definition',
+      error: "Failed to delete repository definition",
     });
   }
 }

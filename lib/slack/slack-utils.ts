@@ -1,9 +1,9 @@
-import { WebClient } from '@slack/web-api';
-import { CoreMessage } from 'ai';
-import { createHmac, timingSafeEqual } from 'crypto';
-import { LinearClient } from '@linear/sdk';
-import { Redis } from '@upstash/redis';
-import { env } from '../core/env.js';
+import { createHmac, timingSafeEqual } from "node:crypto";
+import { LinearClient } from "@linear/sdk";
+import { WebClient } from "@slack/web-api";
+import { Redis } from "@upstash/redis";
+import type { CoreMessage } from "ai";
+import { env } from "../core/env.js";
 
 const signingSecret = process.env.SLACK_SIGNING_SECRET!;
 
@@ -23,14 +23,14 @@ export const getLinearClientForSlack = async (): Promise<
 > => {
   try {
     // First try to get the global Linear access token
-    const globalToken = (await redis.get('linearAccessToken')) as string;
+    const globalToken = (await redis.get("linearAccessToken")) as string;
     if (globalToken) {
       return new LinearClient({ accessToken: globalToken });
     }
 
     // If no global token, try to find any organization-specific token
     // Get all keys that match the pattern linear:*:accessToken
-    const keys = await redis.keys('linear:*:accessToken');
+    const keys = await redis.keys("linear:*:accessToken");
     if (keys && keys.length > 0) {
       // Use the first available organization token
       const firstOrgToken = (await redis.get(keys[0])) as string;
@@ -39,10 +39,10 @@ export const getLinearClientForSlack = async (): Promise<
       }
     }
 
-    console.warn('No Linear access tokens found in Redis for Slack context');
+    console.warn("No Linear access tokens found in Redis for Slack context");
     return undefined;
   } catch (error) {
-    console.error('Error getting Linear client for Slack:', error);
+    console.error("Error getting Linear client for Slack:", error);
     return undefined;
   }
 };
@@ -56,29 +56,29 @@ export async function isValidSlackRequest({
   rawBody: string;
 }) {
   // console.log('Validating Slack request')
-  const timestamp = request.headers.get('X-Slack-Request-Timestamp');
-  const slackSignature = request.headers.get('X-Slack-Signature');
+  const timestamp = request.headers.get("X-Slack-Request-Timestamp");
+  const slackSignature = request.headers.get("X-Slack-Signature");
   // console.log(timestamp, slackSignature)
 
   if (!timestamp || !slackSignature) {
-    console.log('Missing timestamp or signature');
+    console.log("Missing timestamp or signature");
     return false;
   }
 
   // Prevent replay attacks on the order of 5 minutes
-  if (Math.abs(Date.now() / 1000 - parseInt(timestamp)) > 60 * 5) {
-    console.log('Timestamp out of range');
+  if (Math.abs(Date.now() / 1000 - Number.parseInt(timestamp)) > 60 * 5) {
+    console.log("Timestamp out of range");
     return false;
   }
 
   const base = `v0:${timestamp}:${rawBody}`;
-  const hmac = createHmac('sha256', signingSecret).update(base).digest('hex');
+  const hmac = createHmac("sha256", signingSecret).update(base).digest("hex");
   const computedSignature = `v0=${hmac}`;
 
   // Prevent timing attacks
   return timingSafeEqual(
     Buffer.from(computedSignature),
-    Buffer.from(slackSignature)
+    Buffer.from(slackSignature),
   );
 }
 
@@ -95,15 +95,15 @@ export const verifyRequest = async ({
   const validRequest = await isValidSlackRequest({ request, rawBody });
 
   if (!validRequest) {
-    throw new Error('Invalid Slack request signature');
+    throw new Error("Invalid Slack request signature");
   }
 
   // All request types should pass signature verification
   // url_verification, event_callback, and interactive payloads are all valid
   const validRequestTypes = [
-    'url_verification',
-    'event_callback',
-    'interactive',
+    "url_verification",
+    "event_callback",
+    "interactive",
   ];
 
   if (!validRequestTypes.includes(requestType)) {
@@ -127,7 +127,7 @@ export const updateStatusUtil = (channel: string, thread_ts: string) => {
 export async function getThread(
   channel_id: string,
   thread_ts: string,
-  botUserId: string
+  botUserId: string,
 ): Promise<CoreMessage[]> {
   const { messages } = await client.conversations.replies({
     channel: channel_id,
@@ -136,7 +136,7 @@ export async function getThread(
   });
 
   // Ensure we have messages
-  if (!messages) throw new Error('No messages found in thread');
+  if (!messages) throw new Error("No messages found in thread");
 
   const result = messages
     .map((message) => {
@@ -147,7 +147,7 @@ export async function getThread(
       // For IM messages, keep the full text
       let content = message.text;
       if (!isBot && content.includes(`<@${botUserId}>`)) {
-        content = content.replace(`<@${botUserId}> `, '');
+        content = content.replace(`<@${botUserId}> `, "");
       }
 
       // Include metadata about the message for better context
@@ -164,7 +164,7 @@ export async function getThread(
         : `[Message from user ${message.user} at ${message.ts}]: ${content}`;
 
       return {
-        role: isBot ? 'assistant' : 'user',
+        role: isBot ? "assistant" : "user",
         content: contextualContent,
       } as CoreMessage;
     })
@@ -177,7 +177,7 @@ export const getBotId = async () => {
   const { user_id: botUserId } = await client.auth.test();
 
   if (!botUserId) {
-    throw new Error('botUserId is undefined');
+    throw new Error("botUserId is undefined");
   }
   return botUserId;
 };
@@ -186,10 +186,10 @@ export const sendMessage = async (
   channel: string,
   text: string,
   thread_ts?: string,
-  blocks?: any[]
+  blocks?: any[],
 ) => {
   // Convert markdown to Slack mrkdwn format
-  text = text.replace(/\[(.*?)\]\((.*?)\)/g, '<$2|$1>').replace(/\*\*/g, '*');
+  text = text.replace(/\[(.*?)\]\((.*?)\)/g, "<$2|$1>").replace(/\*\*/g, "*");
 
   await client.chat.postMessage({
     channel: channel,
@@ -198,9 +198,9 @@ export const sendMessage = async (
     unfurl_links: false,
     blocks: [
       {
-        type: 'section',
+        type: "section",
         text: {
-          type: 'mrkdwn',
+          type: "mrkdwn",
           text: text,
         },
       },
@@ -217,12 +217,12 @@ export const sendMessage = async (
 export const sendDirectMessage = async (
   userIdOrEmail: string,
   text: string,
-  blocks?: any[]
+  blocks?: any[],
 ) => {
   try {
     // If it looks like an email, find the user first
     let userId = userIdOrEmail;
-    if (userIdOrEmail.includes('@')) {
+    if (userIdOrEmail.includes("@")) {
       const userInfo = await getUserByEmail(userIdOrEmail);
       if (!userInfo?.id) {
         throw new Error(`User with email ${userIdOrEmail} not found`);
@@ -236,13 +236,13 @@ export const sendDirectMessage = async (
     });
 
     if (!channel?.id) {
-      throw new Error('Failed to open DM channel');
+      throw new Error("Failed to open DM channel");
     }
 
     // Send the message
     return await sendMessage(channel.id, text, undefined, blocks);
   } catch (error) {
-    console.error('Error sending direct message:', error);
+    console.error("Error sending direct message:", error);
     throw error;
   }
 };
@@ -254,12 +254,12 @@ export const sendChannelMessage = async (
   channelNameOrId: string,
   text: string,
   thread_ts?: string,
-  blocks?: any[]
+  blocks?: any[],
 ) => {
   try {
     // If it starts with #, remove it and find the channel
     let channelId = channelNameOrId;
-    if (channelNameOrId.startsWith('#')) {
+    if (channelNameOrId.startsWith("#")) {
       const channelName = channelNameOrId.slice(1);
       const channelInfo = await getChannelByName(channelName);
       if (!channelInfo?.id) {
@@ -270,7 +270,7 @@ export const sendChannelMessage = async (
 
     return await sendMessage(channelId, text, thread_ts, blocks);
   } catch (error) {
-    console.error('Error sending channel message:', error);
+    console.error("Error sending channel message:", error);
     throw error;
   }
 };
@@ -282,11 +282,11 @@ export const updateMessage = async (
   channel: string,
   ts: string,
   text: string,
-  blocks?: any[]
+  blocks?: any[],
 ) => {
   try {
     // Convert markdown to Slack mrkdwn format
-    text = text.replace(/\[(.*?)\]\((.*?)\)/g, '<$2|$1>').replace(/\*\*/g, '*');
+    text = text.replace(/\[(.*?)\]\((.*?)\)/g, "<$2|$1>").replace(/\*\*/g, "*");
 
     await client.chat.update({
       channel: channel,
@@ -294,16 +294,16 @@ export const updateMessage = async (
       text: text,
       blocks: blocks || [
         {
-          type: 'section',
+          type: "section",
           text: {
-            type: 'mrkdwn',
+            type: "mrkdwn",
             text: text,
           },
         },
       ],
     });
   } catch (error) {
-    console.error('Error updating message:', error);
+    console.error("Error updating message:", error);
     throw error;
   }
 };
@@ -318,7 +318,7 @@ export const deleteMessage = async (channel: string, ts: string) => {
       ts: ts,
     });
   } catch (error) {
-    console.error('Error deleting message:', error);
+    console.error("Error deleting message:", error);
     throw error;
   }
 };
@@ -331,11 +331,11 @@ export const deleteMessage = async (channel: string, ts: string) => {
 export const addReaction = async (
   channel: string,
   timestamp: string,
-  emoji: string
+  emoji: string,
 ) => {
   try {
     // Remove colons from emoji if present
-    const cleanEmoji = emoji.replace(/:/g, '');
+    const cleanEmoji = emoji.replace(/:/g, "");
 
     await client.reactions.add({
       channel: channel,
@@ -343,7 +343,7 @@ export const addReaction = async (
       name: cleanEmoji,
     });
   } catch (error) {
-    console.error('Error adding reaction:', error);
+    console.error("Error adding reaction:", error);
     throw error;
   }
 };
@@ -354,11 +354,11 @@ export const addReaction = async (
 export const removeReaction = async (
   channel: string,
   timestamp: string,
-  emoji: string
+  emoji: string,
 ) => {
   try {
     // Remove colons from emoji if present
-    const cleanEmoji = emoji.replace(/:/g, '');
+    const cleanEmoji = emoji.replace(/:/g, "");
 
     await client.reactions.remove({
       channel: channel,
@@ -366,7 +366,7 @@ export const removeReaction = async (
       name: cleanEmoji,
     });
   } catch (error) {
-    console.error('Error removing reaction:', error);
+    console.error("Error removing reaction:", error);
     throw error;
   }
 };
@@ -383,7 +383,7 @@ export const getReactions = async (channel: string, timestamp: string) => {
 
     return message?.reactions || [];
   } catch (error) {
-    console.error('Error getting reactions:', error);
+    console.error("Error getting reactions:", error);
     throw error;
   }
 };
@@ -400,7 +400,7 @@ export const getChannelHistory = async (
     oldest?: string;
     latest?: string;
     inclusive?: boolean;
-  } = {}
+  } = {},
 ) => {
   try {
     const { messages } = await client.conversations.history({
@@ -413,7 +413,7 @@ export const getChannelHistory = async (
 
     return messages || [];
   } catch (error) {
-    console.error('Error getting channel history:', error);
+    console.error("Error getting channel history:", error);
     throw error;
   }
 };
@@ -423,7 +423,7 @@ export const getChannelHistory = async (
  */
 export const getBriefChannelHistory = async (
   channel: string,
-  limit: number = 10
+  limit = 10,
 ): Promise<CoreMessage[]> => {
   try {
     const messages = await getChannelHistory(channel, { limit });
@@ -438,7 +438,7 @@ export const getBriefChannelHistory = async (
         let content = message.text;
         // Clean up mentions and formatting
         if (!isBot && content.includes(`<@${botUserId}>`)) {
-          content = content.replace(`<@${botUserId}> `, '');
+          content = content.replace(`<@${botUserId}> `, "");
         }
 
         // Format content with metadata for AI context
@@ -447,13 +447,13 @@ export const getBriefChannelHistory = async (
           : `[Message from user ${message.user} at ${message.ts}]: ${content}`;
 
         return {
-          role: isBot ? 'assistant' : 'user',
+          role: isBot ? "assistant" : "user",
           content: contextualContent,
         } as CoreMessage;
       })
       .filter((msg): msg is CoreMessage => msg !== null);
   } catch (error) {
-    console.error('Error getting brief channel history:', error);
+    console.error("Error getting brief channel history:", error);
     return [];
   }
 };
@@ -464,13 +464,13 @@ export const getBriefChannelHistory = async (
 export const getChannelByName = async (channelName: string) => {
   try {
     const { channels } = await client.conversations.list({
-      types: 'public_channel,private_channel',
+      types: "public_channel,private_channel",
       limit: 1000,
     });
 
     const channel = channels?.find(
       (ch) =>
-        ch.name === channelName || ch.name === channelName.replace('#', '')
+        ch.name === channelName || ch.name === channelName.replace("#", ""),
     );
 
     if (!channel) {
@@ -479,7 +479,7 @@ export const getChannelByName = async (channelName: string) => {
 
     return channel;
   } catch (error) {
-    console.error('Error finding channel by name:', error);
+    console.error("Error finding channel by name:", error);
     throw error;
   }
 };
@@ -495,7 +495,7 @@ export const getChannelInfo = async (channelId: string) => {
 
     return channel;
   } catch (error) {
-    console.error('Error getting channel info:', error);
+    console.error("Error getting channel info:", error);
     throw error;
   }
 };
@@ -509,7 +509,7 @@ export const joinChannel = async (channelId: string) => {
       channel: channelId,
     });
   } catch (error) {
-    console.error('Error joining channel:', error);
+    console.error("Error joining channel:", error);
     throw error;
   }
 };
@@ -523,7 +523,7 @@ export const leaveChannel = async (channelId: string) => {
       channel: channelId,
     });
   } catch (error) {
-    console.error('Error leaving channel:', error);
+    console.error("Error leaving channel:", error);
     throw error;
   }
 };
@@ -541,7 +541,7 @@ export const getUserInfo = async (userId: string) => {
 
     return user;
   } catch (error) {
-    console.error('Error getting user info:', error);
+    console.error("Error getting user info:", error);
     throw error;
   }
 };
@@ -561,7 +561,7 @@ export const getUserByEmail = async (email: string) => {
 
     return user;
   } catch (error) {
-    console.error('Error getting user by email:', error);
+    console.error("Error getting user by email:", error);
     throw error;
   }
 };
@@ -569,7 +569,7 @@ export const getUserByEmail = async (email: string) => {
 /**
  * Get workspace users
  */
-export const getWorkspaceUsers = async (limit: number = 100) => {
+export const getWorkspaceUsers = async (limit = 100) => {
   try {
     const { members } = await client.users.list({
       limit: limit,
@@ -577,7 +577,7 @@ export const getWorkspaceUsers = async (limit: number = 100) => {
 
     return members || [];
   } catch (error) {
-    console.error('Error getting workspace users:', error);
+    console.error("Error getting workspace users:", error);
     throw error;
   }
 };
@@ -588,18 +588,18 @@ export const getWorkspaceUsers = async (limit: number = 100) => {
 export const setStatus = async (
   statusText: string,
   statusEmoji?: string,
-  statusExpiration?: number
+  statusExpiration?: number,
 ) => {
   try {
     await client.users.profile.set({
       profile: {
         status_text: statusText,
-        status_emoji: statusEmoji || '',
+        status_emoji: statusEmoji || "",
         status_expiration: statusExpiration || 0,
       },
     });
   } catch (error) {
-    console.error('Error setting status:', error);
+    console.error("Error setting status:", error);
     throw error;
   }
 };
@@ -607,13 +607,13 @@ export const setStatus = async (
 /**
  * Set user presence (auto/away)
  */
-export const setPresence = async (presence: 'auto' | 'away') => {
+export const setPresence = async (presence: "auto" | "away") => {
   try {
     await client.users.setPresence({
       presence: presence,
     });
   } catch (error) {
-    console.error('Error setting presence:', error);
+    console.error("Error setting presence:", error);
     throw error;
   }
 };
@@ -628,20 +628,20 @@ export const uploadFile = async (
   filename: string,
   channels?: string[],
   title?: string,
-  initialComment?: string
+  initialComment?: string,
 ) => {
   try {
     const result = await client.files.upload({
       file: file,
       filename: filename,
-      channels: channels?.join(','),
+      channels: channels?.join(","),
       title: title,
       initial_comment: initialComment,
     });
 
     return result.file;
   } catch (error) {
-    console.error('Error uploading file:', error);
+    console.error("Error uploading file:", error);
     throw error;
   }
 };
@@ -663,7 +663,7 @@ export const shareFile = async (fileId: string, channels: string[]) => {
       });
     }
   } catch (error) {
-    console.error('Error sharing file:', error);
+    console.error("Error sharing file:", error);
     throw error;
   }
 };
@@ -676,22 +676,22 @@ export const shareFile = async (fileId: string, channels: string[]) => {
 export const searchMessages = async (
   query: string,
   options: {
-    sort?: 'score' | 'timestamp';
-    sortDir?: 'asc' | 'desc';
+    sort?: "score" | "timestamp";
+    sortDir?: "asc" | "desc";
     count?: number;
-  } = {}
+  } = {},
 ) => {
   try {
     const { messages } = await client.search.messages({
       query: query,
-      sort: options.sort || 'score',
-      sort_dir: options.sortDir || 'desc',
+      sort: options.sort || "score",
+      sort_dir: options.sortDir || "desc",
       count: options.count || 20,
     });
 
     return messages;
   } catch (error) {
-    console.error('Error searching messages:', error);
+    console.error("Error searching messages:", error);
     throw error;
   }
 };
@@ -708,7 +708,7 @@ export const getPermalink = async (channel: string, messageTs: string) => {
 
     return permalink;
   } catch (error) {
-    console.error('Error getting permalink:', error);
+    console.error("Error getting permalink:", error);
     throw error;
   }
 };
@@ -720,7 +720,7 @@ export const scheduleMessage = async (
   channel: string,
   text: string,
   postAt: number,
-  thread_ts?: string
+  thread_ts?: string,
 ) => {
   try {
     const result = await client.chat.scheduleMessage({
@@ -732,7 +732,7 @@ export const scheduleMessage = async (
 
     return result;
   } catch (error) {
-    console.error('Error scheduling message:', error);
+    console.error("Error scheduling message:", error);
     throw error;
   }
 };
@@ -747,7 +747,7 @@ export const pinMessage = async (channel: string, timestamp: string) => {
       timestamp: timestamp,
     });
   } catch (error) {
-    console.error('Error pinning message:', error);
+    console.error("Error pinning message:", error);
     throw error;
   }
 };
@@ -762,7 +762,7 @@ export const unpinMessage = async (channel: string, timestamp: string) => {
       timestamp: timestamp,
     });
   } catch (error) {
-    console.error('Error unpinning message:', error);
+    console.error("Error unpinning message:", error);
     throw error;
   }
 };
@@ -775,18 +775,18 @@ export const sendRichMessage = async (
   channel: string,
   blocks: any[],
   text?: string,
-  thread_ts?: string
+  thread_ts?: string,
 ) => {
   try {
     await client.chat.postMessage({
       channel: channel,
       blocks: blocks,
-      text: text || 'Rich message', // Fallback text for notifications
+      text: text || "Rich message", // Fallback text for notifications
       thread_ts: thread_ts,
       unfurl_links: false,
     });
   } catch (error) {
-    console.error('Error sending rich message:', error);
+    console.error("Error sending rich message:", error);
     throw error;
   }
 };
@@ -796,47 +796,47 @@ export const sendRichMessage = async (
  */
 export const createBlocks = {
   section: (text: string, accessory?: any) => ({
-    type: 'section',
+    type: "section",
     text: {
-      type: 'mrkdwn',
+      type: "mrkdwn",
       text: text,
     },
     ...(accessory && { accessory }),
   }),
 
   header: (text: string) => ({
-    type: 'header',
+    type: "header",
     text: {
-      type: 'plain_text',
+      type: "plain_text",
       text: text,
     },
   }),
 
   divider: () => ({
-    type: 'divider',
+    type: "divider",
   }),
 
   context: (elements: any[]) => ({
-    type: 'context',
+    type: "context",
     elements: elements,
   }),
 
   image: (imageUrl: string, altText: string, title?: string) => ({
-    type: 'image',
+    type: "image",
     image_url: imageUrl,
     alt_text: altText,
-    ...(title && { title: { type: 'plain_text', text: title } }),
+    ...(title && { title: { type: "plain_text", text: title } }),
   }),
 
   button: (
     text: string,
     actionId: string,
     value?: string,
-    style?: 'primary' | 'danger'
+    style?: "primary" | "danger",
   ) => ({
-    type: 'button',
+    type: "button",
     text: {
-      type: 'plain_text',
+      type: "plain_text",
       text: text,
     },
     action_id: actionId,
@@ -845,14 +845,14 @@ export const createBlocks = {
   }),
 
   actions: (elements: any[]) => ({
-    type: 'actions',
+    type: "actions",
     elements: elements,
   }),
 
   fields: (fields: { title: string; value: string; short?: boolean }[]) => ({
-    type: 'section',
+    type: "section",
     fields: fields.map((field) => ({
-      type: 'mrkdwn',
+      type: "mrkdwn",
       text: `*${field.title}*\n${field.value}`,
     })),
   }),

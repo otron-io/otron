@@ -1,9 +1,9 @@
-import { CoreMessage } from 'ai';
+import type { CoreMessage } from "ai";
 
 // Interface for queued messages during agent processing
 export interface QueuedMessage {
   timestamp: number;
-  type: 'created' | 'prompted' | 'stop';
+  type: "created" | "prompted" | "stop";
   content: string;
   sessionId: string;
   issueId: string;
@@ -16,8 +16,8 @@ export interface ActiveSession {
   sessionId: string;
   contextId: string;
   startTime: number;
-  platform: 'slack' | 'linear' | 'github' | 'general';
-  status: 'initializing' | 'planning' | 'gathering' | 'acting' | 'completing';
+  platform: "slack" | "linear" | "github" | "general";
+  status: "initializing" | "planning" | "gathering" | "acting" | "completing";
   currentTool?: string;
   toolsUsed: string[];
   actionsPerformed: string[];
@@ -64,7 +64,7 @@ export interface ExecutionTracker {
 
 // Execution strategy tracking interface
 export interface ExecutionStrategy {
-  phase: 'planning' | 'gathering' | 'acting' | 'completing';
+  phase: "planning" | "gathering" | "acting" | "completing";
   toolUsageCounts: Map<string, number>;
   searchOperations: number;
   readOperations: number;

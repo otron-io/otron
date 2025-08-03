@@ -1,31 +1,31 @@
+import { resolve } from "node:path";
 /// <reference types="vitest" />
-import { defineConfig } from 'vitest/config';
-import { resolve } from 'path';
+import { defineConfig } from "vitest/config";
 
 export default defineConfig({
   test: {
     globals: true,
-    environment: 'node',
-    include: ['**/*.{test,spec}.{js,mjs,cjs,ts,mts,cts,jsx,tsx}'],
+    environment: "node",
+    include: ["**/*.{test,spec}.{js,mjs,cjs,ts,mts,cts,jsx,tsx}"],
     exclude: [
-      '**/node_modules/**',
-      '**/dist/**',
-      '**/cypress/**',
-      '**/.{idea,git,cache,output,temp}/**',
-      '**/integration/**',
+      "**/node_modules/**",
+      "**/dist/**",
+      "**/cypress/**",
+      "**/.{idea,git,cache,output,temp}/**",
+      "**/integration/**",
     ],
-    setupFiles: ['./test/setup.ts'],
+    setupFiles: ["./test/setup.ts"],
     coverage: {
-      reporter: ['text', 'json', 'html', 'lcov'],
-      include: ['lib/**/*.ts', 'api/**/*.ts'],
+      reporter: ["text", "json", "html", "lcov"],
+      include: ["lib/**/*.ts", "api/**/*.ts"],
       exclude: [
-        'lib/**/*.d.ts',
-        'lib/**/*.test.ts',
-        'lib/**/*.spec.ts',
-        'test/**/*',
-        'dist/**/*',
-        '**/*.config.*',
-        '**/node_modules/**',
+        "lib/**/*.d.ts",
+        "lib/**/*.test.ts",
+        "lib/**/*.spec.ts",
+        "test/**/*",
+        "dist/**/*",
+        "**/*.config.*",
+        "**/node_modules/**",
       ],
       thresholds: {
         global: {
@@ -36,7 +36,7 @@ export default defineConfig({
         },
       },
     },
-    pool: 'threads',
+    pool: "threads",
     poolOptions: {
       threads: {
         singleThread: false,
@@ -47,8 +47,8 @@ export default defineConfig({
   },
   resolve: {
     alias: {
-      '@': resolve(__dirname, './lib'),
-      '@test': resolve(__dirname, './test'),
+      "@": resolve(__dirname, "./lib"),
+      "@test": resolve(__dirname, "./test"),
     },
   },
 });

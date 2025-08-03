@@ -1,7 +1,7 @@
-import type { VercelRequest, VercelResponse } from '@vercel/node';
-import { Redis } from '@upstash/redis';
-import { env } from '../lib/core/env.js';
-import { withInternalAccess } from '../lib/core/auth.js';
+import { Redis } from "@upstash/redis";
+import type { VercelRequest, VercelResponse } from "@vercel/node";
+import { withInternalAccess } from "../lib/core/auth.js";
+import { env } from "../lib/core/env.js";
 
 // Initialize Redis client
 const redis = new Redis({
@@ -11,31 +11,31 @@ const redis = new Redis({
 
 async function handler(req: VercelRequest, res: VercelResponse) {
   // Only accept GET requests
-  if (req.method !== 'GET') {
-    return res.status(405).json({ error: 'Method not allowed' });
+  if (req.method !== "GET") {
+    return res.status(405).json({ error: "Method not allowed" });
   }
 
-  const { issueId, skip = '0', limit = '20' } = req.query;
+  const { issueId, skip = "0", limit = "20" } = req.query;
 
-  if (!issueId || typeof issueId !== 'string') {
-    return res.status(400).json({ error: 'Issue ID is required' });
+  if (!issueId || typeof issueId !== "string") {
+    return res.status(400).json({ error: "Issue ID is required" });
   }
 
   try {
-    const skipNum = parseInt(skip as string) || 0;
-    const limitNum = parseInt(limit as string) || 20;
+    const skipNum = Number.parseInt(skip as string) || 0;
+    const limitNum = Number.parseInt(limit as string) || 20;
 
     // Fetch actions for the issue
     const actions = await redis.lrange(
       `memory:issue:${issueId}:action`,
       skipNum,
-      skipNum + limitNum - 1
+      skipNum + limitNum - 1,
     );
 
     const parsedActions = actions
       .map((action) => {
         try {
-          return typeof action === 'object' ? action : JSON.parse(action);
+          return typeof action === "object" ? action : JSON.parse(action);
         } catch (e) {
           console.error(`Error parsing action for issue ${issueId}:`, e);
           return null;
@@ -57,7 +57,7 @@ async function handler(req: VercelRequest, res: VercelResponse) {
     });
   } catch (error) {
     console.error(`Error retrieving actions for issue ${issueId}:`, error);
-    return res.status(500).json({ error: 'Failed to retrieve issue actions' });
+    return res.status(500).json({ error: "Failed to retrieve issue actions" });
   }
 }
 

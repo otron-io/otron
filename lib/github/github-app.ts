@@ -1,6 +1,6 @@
-import { createAppAuth } from '@octokit/auth-app';
-import { Octokit } from '@octokit/rest';
-import { env } from '../core/env.js';
+import { createAppAuth } from "@octokit/auth-app";
+import { Octokit } from "@octokit/rest";
+import { env } from "../core/env.js";
 
 export class GitHubAppService {
   private static instance: GitHubAppService;
@@ -14,7 +14,7 @@ export class GitHubAppService {
     // Make sure we have all required environment variables
     if (!env.GITHUB_APP_ID || !env.GITHUB_APP_PRIVATE_KEY) {
       throw new Error(
-        'GitHub App credentials missing. Please set GITHUB_APP_ID and GITHUB_APP_PRIVATE_KEY.'
+        "GitHub App credentials missing. Please set GITHUB_APP_ID and GITHUB_APP_PRIVATE_KEY.",
       );
     }
 
@@ -23,7 +23,7 @@ export class GitHubAppService {
       authStrategy: createAppAuth,
       auth: {
         appId: env.GITHUB_APP_ID,
-        privateKey: env.GITHUB_APP_PRIVATE_KEY.replace(/\\n/g, '\n'),
+        privateKey: env.GITHUB_APP_PRIVATE_KEY.replace(/\\n/g, "\n"),
         clientId: env.GITHUB_APP_CLIENT_ID,
         clientSecret: env.GITHUB_APP_CLIENT_SECRET,
       },
@@ -45,7 +45,7 @@ export class GitHubAppService {
    * @param repoFullName Repository name in owner/repo format
    */
   public async getOctokitForRepo(repoFullName: string): Promise<Octokit> {
-    const [owner, repo] = repoFullName.split('/');
+    const [owner, repo] = repoFullName.split("/");
 
     // Get the installation ID for this repository
     const { data: installation } =
@@ -68,7 +68,7 @@ export class GitHubAppService {
    * @param installationId GitHub App installation ID
    */
   public async getOctokitForInstallation(
-    installationId: number
+    installationId: number,
   ): Promise<Octokit> {
     const installationToken = await this.getInstallationToken(installationId);
 
@@ -106,7 +106,7 @@ export class GitHubAppService {
    * Get repositories accessible by the app for a specific installation
    */
   public async getInstallationRepositories(
-    installationId: number
+    installationId: number,
   ): Promise<string[]> {
     const octokit = await this.getOctokitForInstallation(installationId);
     const { data } = await octokit.apps.listReposAccessibleToInstallation();

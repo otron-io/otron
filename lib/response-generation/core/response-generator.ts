@@ -1,21 +1,21 @@
-import { LinearClient } from '@linear/sdk';
-import { goalEvaluator } from '../../ai/goal-evaluator.js';
+import { LinearClient } from "@linear/sdk";
+import { goalEvaluator } from "../../ai/goal-evaluator.js";
 import {
-  linearAgentSessionManager,
   agentActivity,
-} from '../../linear/linear-agent-session-manager.js';
-import { GenerateResponseParams, ActiveSession } from './types.js';
-import { generateResponseInternal } from './response-internal.js';
+  linearAgentSessionManager,
+} from "../../linear/linear-agent-session-manager.js";
 import {
-  extractIssueIdFromContext,
   determinePlatform,
-} from '../context/context-extractor.js';
+  extractIssueIdFromContext,
+} from "../context/context-extractor.js";
 import {
   generateSessionId,
   storeActiveSession,
   updateActiveSession,
-} from '../session/session-manager.js';
-import { createCleanupFunction } from '../utils/cleanup.js';
+} from "../session/session-manager.js";
+import { createCleanupFunction } from "../utils/cleanup.js";
+import { generateResponseInternal } from "./response-internal.js";
+import type { ActiveSession, GenerateResponseParams } from "./types.js";
 
 const MAX_RETRY_ATTEMPTS = 2;
 
@@ -33,7 +33,7 @@ export async function generateResponse({
   let attemptNumber = 1;
   let toolsUsed: string[] = [];
   let actionsPerformed: string[] = [];
-  let finalResponse = '';
+  let finalResponse = "";
   let endedExplicitly = false;
 
   // Use provided agent session ID or generate unique session ID for tracking
@@ -47,7 +47,7 @@ export async function generateResponse({
     contextId,
     startTime: Date.now(),
     platform,
-    status: 'initializing',
+    status: "initializing",
     toolsUsed: [],
     actionsPerformed: [],
     messages: [...messages],
@@ -62,11 +62,11 @@ export async function generateResponse({
   await storeActiveSession(activeSession);
 
   // Log session initialization
-  const isLinearIssue = !!(contextId && !contextId.startsWith('slack:'));
+  const isLinearIssue = !!(contextId && !contextId.startsWith("slack:"));
   if (isLinearIssue && linearClient) {
     await agentActivity.thought(
       contextId,
-      `Session initialized for ${contextId}`
+      `Session initialized for ${contextId}`,
     );
   }
 
@@ -80,8 +80,8 @@ export async function generateResponse({
 
   // Set up abort handling
   if (abortSignal) {
-    abortSignal.addEventListener('abort', async () => {
-      await cleanup('cancelled', 'Request was aborted by user');
+    abortSignal.addEventListener("abort", async () => {
+      await cleanup("cancelled", "Request was aborted by user");
     });
   }
 
@@ -92,16 +92,16 @@ export async function generateResponse({
     while (attemptNumber <= MAX_RETRY_ATTEMPTS) {
       // Check for abort before each attempt
       if (abortSignal?.aborted) {
-        await cleanup('cancelled', 'Request was aborted during processing');
-        throw new Error('Request was aborted during processing');
+        await cleanup("cancelled", "Request was aborted during processing");
+        throw new Error("Request was aborted during processing");
       }
 
       try {
         await updateActiveSession(sessionId, {
-          status: 'planning',
+          status: "planning",
         });
 
-        updateStatus?.(`is thinking...`);
+        updateStatus?.("is thinking...");
 
         // Generate response using the internal function with abort signal
         const result = await generateResponseInternal(
@@ -111,7 +111,7 @@ export async function generateResponse({
           slackContext,
           attemptNumber,
           sessionId,
-          abortSignal
+          abortSignal,
         );
 
         finalResponse = result.text;
@@ -123,7 +123,7 @@ export async function generateResponse({
         if (isLinearIssue && linearClient) {
           await agentActivity.thought(
             contextId,
-            `Completed analysis using ${result.toolsUsed.length} tools`
+            `Completed analysis using ${result.toolsUsed.length} tools`,
           );
 
           await agentActivity.response(contextId, finalResponse);
@@ -136,17 +136,17 @@ export async function generateResponse({
 
         // Check for abort before evaluation
         if (abortSignal?.aborted) {
-          await cleanup('cancelled', 'Request was aborted during evaluation');
-          throw new Error('Request was aborted during processing');
+          await cleanup("cancelled", "Request was aborted during evaluation");
+          throw new Error("Request was aborted during processing");
         }
 
         // Evaluate goal completion
         await updateActiveSession(sessionId, {
-          status: 'completing',
+          status: "completing",
         });
 
         updateStatus?.(
-          `Evaluating goal completion for attempt ${attemptNumber}...`
+          `Evaluating goal completion for attempt ${attemptNumber}...`,
         );
 
         const evaluation = await goalEvaluator.evaluateGoalCompletion(
@@ -156,18 +156,18 @@ export async function generateResponse({
             actionsPerformed,
             finalResponse,
             endedExplicitly,
-          }
+          },
         );
 
         console.log(
           `Goal evaluation for attempt ${attemptNumber}:`,
-          evaluation
+          evaluation,
         );
 
         // If goal is achieved, break the loop
         if (evaluation.isComplete) {
           console.log(
-            `Breaking retry loop: isComplete=${evaluation.isComplete}`
+            `Breaking retry loop: isComplete=${evaluation.isComplete}`,
           );
           break;
         }
@@ -175,13 +175,13 @@ export async function generateResponse({
         // If we should retry based on low confidence, prepare for next attempt
         if (evaluation.confidence < 0.7 && attemptNumber < MAX_RETRY_ATTEMPTS) {
           console.log(
-            `Retrying attempt ${attemptNumber + 1}: ${evaluation.reasoning}`
+            `Retrying attempt ${attemptNumber + 1}: ${evaluation.reasoning}`,
           );
           attemptNumber++;
 
           // Add evaluation feedback to the conversation context
           messages.push({
-            role: 'user',
+            role: "user",
             content: `[SYSTEM FEEDBACK] ${evaluation.reasoning}. Please try a different approach or provide additional analysis.`,
           });
 
@@ -193,20 +193,20 @@ export async function generateResponse({
       } catch (error) {
         console.error(
           `Error in response generation attempt ${attemptNumber}:`,
-          error
+          error,
         );
 
         const errorMessage =
           error instanceof Error ? error.message : String(error);
 
         // Handle specific error cases
-        if (errorMessage.includes('STOP_COMMAND_RECEIVED')) {
-          await cleanup('cancelled', 'Stop command received');
-          return '🛑 **Processing stopped as requested**';
+        if (errorMessage.includes("STOP_COMMAND_RECEIVED")) {
+          await cleanup("cancelled", "Stop command received");
+          return "🛑 **Processing stopped as requested**";
         }
 
-        if (errorMessage.includes('Request was aborted')) {
-          await cleanup('cancelled', 'Request was aborted');
+        if (errorMessage.includes("Request was aborted")) {
+          await cleanup("cancelled", "Request was aborted");
           throw error;
         }
 
@@ -217,7 +217,7 @@ export async function generateResponse({
 
           // Add error context for retry
           messages.push({
-            role: 'user',
+            role: "user",
             content: `[ERROR RECOVERY] Previous attempt failed: ${errorMessage}. Please try a different approach.`,
           });
 
@@ -225,25 +225,25 @@ export async function generateResponse({
         }
 
         // If this was the last attempt, clean up and re-throw
-        await cleanup('error', errorMessage);
+        await cleanup("error", errorMessage);
         throw error;
       }
     }
 
     // Successful completion
-    await cleanup('completed');
+    await cleanup("completed");
     return finalResponse;
   } catch (error) {
-    console.error('Fatal error in generateResponse:', error);
+    console.error("Fatal error in generateResponse:", error);
 
     const errorMessage = error instanceof Error ? error.message : String(error);
 
     // Don't double-cleanup if already cleaned up
     if (
-      !errorMessage.includes('Request was aborted') &&
-      !errorMessage.includes('Stop command received')
+      !errorMessage.includes("Request was aborted") &&
+      !errorMessage.includes("Stop command received")
     ) {
-      await cleanup('error', errorMessage);
+      await cleanup("error", errorMessage);
     }
 
     throw error;

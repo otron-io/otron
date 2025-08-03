@@ -1,6 +1,6 @@
-import { Redis } from '@upstash/redis';
-import { env } from '../../core/env.js';
-import { ActiveSession } from '../core/types.js';
+import { Redis } from "@upstash/redis";
+import { env } from "../../core/env.js";
+import type { ActiveSession } from "../core/types.js";
 
 // Initialize Redis client for session tracking
 const redis = new Redis({
@@ -19,19 +19,19 @@ export function generateSessionId(): string {
  * Store active session in Redis
  */
 export async function storeActiveSession(
-  session: ActiveSession
+  session: ActiveSession,
 ): Promise<void> {
   try {
     await redis.setex(
       `active_session:${session.sessionId}`,
       3600, // 1 hour TTL
-      JSON.stringify(session)
+      JSON.stringify(session),
     );
 
     // Also add to a set for easy listing
-    await redis.sadd('active_sessions_list', session.sessionId);
+    await redis.sadd("active_sessions_list", session.sessionId);
   } catch (error) {
-    console.error('Error storing active session:', error);
+    console.error("Error storing active session:", error);
   }
 }
 
@@ -40,14 +40,14 @@ export async function storeActiveSession(
  */
 export async function updateActiveSession(
   sessionId: string,
-  updates: Partial<ActiveSession>
+  updates: Partial<ActiveSession>,
 ): Promise<void> {
   try {
     const sessionData = await redis.get(`active_session:${sessionId}`);
     if (sessionData) {
       // Handle both string and object responses from Redis
       let session: ActiveSession;
-      if (typeof sessionData === 'string') {
+      if (typeof sessionData === "string") {
         session = JSON.parse(sessionData) as ActiveSession;
       } else {
         session = sessionData as ActiveSession;
@@ -57,11 +57,11 @@ export async function updateActiveSession(
       await redis.setex(
         `active_session:${sessionId}`,
         3600,
-        JSON.stringify(updatedSession)
+        JSON.stringify(updatedSession),
       );
     }
   } catch (error) {
-    console.error('Error updating active session:', error);
+    console.error("Error updating active session:", error);
   }
 }
 
@@ -70,8 +70,8 @@ export async function updateActiveSession(
  */
 export async function storeCompletedSession(
   sessionId: string,
-  finalStatus: 'completed' | 'cancelled' | 'error',
-  error?: string
+  finalStatus: "completed" | "cancelled" | "error",
+  error?: string,
 ): Promise<void> {
   try {
     // Get the current session data
@@ -79,7 +79,7 @@ export async function storeCompletedSession(
     if (sessionData) {
       // Handle both string and object responses from Redis
       let session: ActiveSession;
-      if (typeof sessionData === 'string') {
+      if (typeof sessionData === "string") {
         session = JSON.parse(sessionData) as ActiveSession;
       } else {
         session = sessionData as ActiveSession;
@@ -97,14 +97,14 @@ export async function storeCompletedSession(
       // Store in completed sessions without expiration
       await redis.set(
         `completed_session:${sessionId}`,
-        JSON.stringify(completedSession)
+        JSON.stringify(completedSession),
       );
 
       // Add to completed sessions list (keep all, but we'll paginate on fetch)
-      await redis.lpush('completed_sessions_list', sessionId);
+      await redis.lpush("completed_sessions_list", sessionId);
     }
   } catch (error) {
-    console.error('Error storing completed session:', error);
+    console.error("Error storing completed session:", error);
   }
 }
 
@@ -113,8 +113,8 @@ export async function storeCompletedSession(
  */
 export async function removeActiveSession(
   sessionId: string,
-  finalStatus: 'completed' | 'cancelled' | 'error' = 'completed',
-  error?: string
+  finalStatus: "completed" | "cancelled" | "error" = "completed",
+  error?: string,
 ): Promise<void> {
   try {
     // Store as completed session before removing
@@ -122,9 +122,9 @@ export async function removeActiveSession(
 
     // Remove from active sessions
     await redis.del(`active_session:${sessionId}`);
-    await redis.srem('active_sessions_list', sessionId);
+    await redis.srem("active_sessions_list", sessionId);
   } catch (error) {
-    console.error('Error removing active session:', error);
+    console.error("Error removing active session:", error);
   }
 }
 
@@ -132,16 +132,16 @@ export async function removeActiveSession(
  * Check if there's already an active agent session for this issue
  */
 export async function getActiveSessionForIssue(
-  issueId: string
+  issueId: string,
 ): Promise<string | null> {
   try {
-    const activeSessionsKeys = await redis.smembers('active_sessions_list');
+    const activeSessionsKeys = await redis.smembers("active_sessions_list");
 
     for (const sessionId of activeSessionsKeys) {
       const sessionData = await redis.get(`active_session:${sessionId}`);
       if (sessionData) {
         let session: ActiveSession;
-        if (typeof sessionData === 'string') {
+        if (typeof sessionData === "string") {
           session = JSON.parse(sessionData) as ActiveSession;
         } else {
           session = sessionData as ActiveSession;
@@ -150,8 +150,8 @@ export async function getActiveSessionForIssue(
         // Check if this session is for the same issue and still active
         if (
           session.metadata?.issueId === issueId &&
-          ['initializing', 'planning', 'gathering', 'acting'].includes(
-            session.status
+          ["initializing", "planning", "gathering", "acting"].includes(
+            session.status,
           )
         ) {
           return sessionId;
@@ -161,7 +161,7 @@ export async function getActiveSessionForIssue(
 
     return null;
   } catch (error) {
-    console.error('Error checking for active session:', error);
+    console.error("Error checking for active session:", error);
     return null;
   }
 }

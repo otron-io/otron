@@ -1,6 +1,6 @@
-import { Redis } from '@upstash/redis';
-import { env } from '../../core/env.js';
-import { QueuedMessage } from '../core/types.js';
+import { Redis } from "@upstash/redis";
+import { env } from "../../core/env.js";
+import type { QueuedMessage } from "../core/types.js";
 
 // Initialize Redis client for message queuing
 const redis = new Redis({
@@ -13,7 +13,7 @@ const redis = new Redis({
  */
 export async function queueMessageForSession(
   sessionId: string,
-  message: QueuedMessage
+  message: QueuedMessage,
 ): Promise<void> {
   try {
     const queueKey = `message_queue:${sessionId}`;
@@ -22,7 +22,7 @@ export async function queueMessageForSession(
 
     console.log(`Queued message for session ${sessionId}`);
   } catch (error) {
-    console.error('Error queuing message:', error);
+    console.error("Error queuing message:", error);
   }
 }
 
@@ -30,7 +30,7 @@ export async function queueMessageForSession(
  * Get queued messages for a session and clear the queue
  */
 export async function getQueuedMessages(
-  sessionId: string
+  sessionId: string,
 ): Promise<QueuedMessage[]> {
   try {
     const queueKey = `message_queue:${sessionId}`;
@@ -42,7 +42,7 @@ export async function getQueuedMessages(
 
       // Parse and return messages (newest first)
       return messages.reverse().map((msg) => {
-        if (typeof msg === 'string') {
+        if (typeof msg === "string") {
           return JSON.parse(msg) as QueuedMessage;
         }
         return msg as QueuedMessage;
@@ -51,7 +51,7 @@ export async function getQueuedMessages(
 
     return [];
   } catch (error) {
-    console.error('Error getting queued messages:', error);
+    console.error("Error getting queued messages:", error);
     return [];
   }
 }

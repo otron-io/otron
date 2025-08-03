@@ -1,5 +1,5 @@
-import { Redis } from '@upstash/redis';
-import { env } from '../core/env.js';
+import { Redis } from "@upstash/redis";
+import { env } from "../core/env.js";
 
 // Memory system constants
 export const MEMORY_EXPIRY = 60 * 60 * 24 * 90; // 90 days in seconds
@@ -20,8 +20,8 @@ export class MemoryManager {
    */
   async storeMemory(
     issueId: string,
-    memoryType: 'conversation' | 'action' | 'context',
-    data: any
+    memoryType: "conversation" | "action" | "context",
+    data: any,
   ): Promise<void> {
     try {
       // Create a memory entry with timestamp and data
@@ -36,20 +36,20 @@ export class MemoryManager {
       // Store in Redis list, newest first
       await redis.lpush(
         `memory:issue:${issueId}:${memoryType}`,
-        JSON.stringify(memoryEntry)
+        JSON.stringify(memoryEntry),
       );
 
       // Trim the list to prevent unlimited growth
       await redis.ltrim(
         `memory:issue:${issueId}:${memoryType}`,
         0,
-        MAX_MEMORIES_PER_ISSUE - 1
+        MAX_MEMORIES_PER_ISSUE - 1,
       );
 
       // Set expiration for the key
       await redis.expire(
         `memory:issue:${issueId}:${memoryType}`,
-        MEMORY_EXPIRY
+        MEMORY_EXPIRY,
       );
 
       console.log(`Stored ${memoryType} memory for issue ${issueId}`);
@@ -65,36 +65,36 @@ export class MemoryManager {
     let score = 1.0;
 
     // Higher score for certain types of content
-    if (memoryType === 'action') {
+    if (memoryType === "action") {
       score += 0.5; // Actions are generally more important
     }
 
-    if (typeof data.content === 'string') {
+    if (typeof data.content === "string") {
       const content = data.content.toLowerCase();
 
       // Higher score for messages with important keywords
       const importantKeywords = [
-        'error',
-        'bug',
-        'issue',
-        'problem',
-        'fix',
-        'urgent',
-        'critical',
-        'deploy',
-        'release',
-        'merge',
-        'review',
-        'approve',
-        'block',
-        'decision',
-        'meeting',
-        'deadline',
-        'priority',
+        "error",
+        "bug",
+        "issue",
+        "problem",
+        "fix",
+        "urgent",
+        "critical",
+        "deploy",
+        "release",
+        "merge",
+        "review",
+        "approve",
+        "block",
+        "decision",
+        "meeting",
+        "deadline",
+        "priority",
       ];
 
       const keywordMatches = importantKeywords.filter((keyword) =>
-        content.includes(keyword)
+        content.includes(keyword),
       ).length;
 
       score += keywordMatches * 0.2;
@@ -112,22 +112,22 @@ export class MemoryManager {
    */
   async retrieveRelevantMemories(
     issueId: string,
-    memoryType: 'conversation' | 'action' | 'context',
+    memoryType: "conversation" | "action" | "context",
     currentContext?: string,
-    limit: number = MAX_MEMORY_ENTRIES_TO_INCLUDE
+    limit: number = MAX_MEMORY_ENTRIES_TO_INCLUDE,
   ): Promise<any[]> {
     try {
       // Get more memories than we need for filtering
       const allMemories = await redis.lrange(
         `memory:issue:${issueId}:${memoryType}`,
         0,
-        MAX_MEMORIES_PER_ISSUE - 1
+        MAX_MEMORIES_PER_ISSUE - 1,
       );
 
       const parsedMemories = allMemories
         .map((item) => {
           try {
-            return typeof item === 'object' ? item : JSON.parse(item);
+            return typeof item === "object" ? item : JSON.parse(item);
           } catch (error) {
             console.error(`Error parsing memory item: ${error}`);
             return null;
@@ -142,7 +142,7 @@ export class MemoryManager {
         ...memory,
         contextRelevance: this.calculateContextRelevance(
           memory,
-          currentContext
+          currentContext,
         ),
       }));
 
@@ -172,12 +172,12 @@ export class MemoryManager {
    */
   private calculateContextRelevance(
     memory: any,
-    currentContext?: string
+    currentContext?: string,
   ): number {
     if (!currentContext || !memory.data?.content) return 0;
 
     const memoryContent =
-      typeof memory.data.content === 'string'
+      typeof memory.data.content === "string"
         ? memory.data.content.toLowerCase()
         : JSON.stringify(memory.data.content).toLowerCase();
 
@@ -186,7 +186,7 @@ export class MemoryManager {
 
     // Simple word overlap scoring
     const commonWords = contextWords.filter(
-      (word) => word.length > 3 && memoryWords.includes(word)
+      (word) => word.length > 3 && memoryWords.includes(word),
     );
 
     return Math.min(commonWords.length * 0.1, 1.0);
@@ -197,8 +197,8 @@ export class MemoryManager {
    */
   async retrieveMemories(
     issueId: string,
-    memoryType: 'conversation' | 'action' | 'context',
-    limit: number = MAX_MEMORY_ENTRIES_TO_INCLUDE
+    memoryType: "conversation" | "action" | "context",
+    limit: number = MAX_MEMORY_ENTRIES_TO_INCLUDE,
   ): Promise<any[]> {
     // Use the new smart retrieval method
     return this.retrieveRelevantMemories(issueId, memoryType, undefined, limit);
@@ -215,13 +215,13 @@ export class MemoryManager {
       input: any;
       response: string;
       detailedOutput?: any; // New: structured output data
-    }
+    },
   ): Promise<void> {
     try {
       // Increment tool usage counters
-      await redis.hincrby(`memory:tools:${toolName}:stats`, 'attempts', 1);
+      await redis.hincrby(`memory:tools:${toolName}:stats`, "attempts", 1);
       if (success) {
-        await redis.hincrby(`memory:tools:${toolName}:stats`, 'successes', 1);
+        await redis.hincrby(`memory:tools:${toolName}:stats`, "successes", 1);
       }
 
       // Extract key information based on tool type
@@ -229,11 +229,11 @@ export class MemoryManager {
         toolName,
         context.input,
         context.response,
-        context.detailedOutput
+        context.detailedOutput,
       );
 
       // Store detailed action memory
-      await this.storeMemory(context.issueId, 'action', {
+      await this.storeMemory(context.issueId, "action", {
         tool: toolName,
         input: context.input,
         response: context.response.substring(0, 500), // Keep truncated response for compatibility
@@ -248,7 +248,7 @@ export class MemoryManager {
         await this.storeToolSpecificMemory(
           context.issueId,
           toolName,
-          actionSummary
+          actionSummary,
         );
       }
     } catch (error) {
@@ -263,7 +263,7 @@ export class MemoryManager {
     toolName: string,
     input: any,
     response: string,
-    detailedOutput?: any
+    detailedOutput?: any,
   ): any {
     const summary: any = {
       tool: toolName,
@@ -272,131 +272,133 @@ export class MemoryManager {
 
     // Extract key information based on tool type
     switch (toolName) {
-      case 'createBranch':
+      case "createBranch":
         summary.branchCreated = input.branch;
         summary.repository = input.repository;
         summary.baseBranch = input.baseBranch;
-        summary.actionType = 'branch_creation';
+        summary.actionType = "branch_creation";
         break;
 
-      case 'createPullRequest':
+      case "createPullRequest": {
         // Try to extract PR number from response
         const prMatch =
           response.match(/PR #(\d+)/i) ||
           response.match(/pull request #(\d+)/i);
         const urlMatch = response.match(
-          /https:\/\/github\.com\/[^\/]+\/[^\/]+\/pull\/(\d+)/
+          /https:\/\/github\.com\/[^\/]+\/[^\/]+\/pull\/(\d+)/,
         );
         summary.pullRequestNumber = prMatch?.[1] || urlMatch?.[1];
         summary.title = input.title;
         summary.headBranch = input.head;
         summary.baseBranch = input.base;
         summary.repository = input.repository;
-        summary.actionType = 'pull_request_creation';
+        summary.actionType = "pull_request_creation";
         if (detailedOutput?.url) summary.pullRequestUrl = detailedOutput.url;
         break;
+      }
 
-      case 'createFile':
-      case 'insertAtLine':
-      case 'replaceLines':
-      case 'deleteLines':
-      case 'appendToFile':
-      case 'prependToFile':
-      case 'findAndReplace':
-      case 'insertAfterPattern':
-      case 'insertBeforePattern':
-      case 'applyMultipleEdits':
+      case "createFile":
+      case "insertAtLine":
+      case "replaceLines":
+      case "deleteLines":
+      case "appendToFile":
+      case "prependToFile":
+      case "findAndReplace":
+      case "insertAfterPattern":
+      case "insertBeforePattern":
+      case "applyMultipleEdits":
         summary.filePath = input.path;
         summary.repository = input.repository;
         summary.branch = input.branch;
-        summary.actionType = 'file_modification';
+        summary.actionType = "file_modification";
         summary.modificationType = toolName;
         if (input.content) summary.contentLength = input.content.length;
         if (input.operations) summary.operationsCount = input.operations.length;
         break;
 
-      case 'deleteFile':
+      case "deleteFile":
         summary.filePath = input.path;
         summary.repository = input.repository;
         summary.branch = input.branch;
-        summary.actionType = 'file_deletion';
+        summary.actionType = "file_deletion";
         break;
 
-      case 'searchEmbeddedCode':
+      case "searchEmbeddedCode": {
         const searchResults = this.extractSearchResults(response);
         summary.query = input.query;
         summary.repository = input.repository;
         summary.resultsCount = searchResults.length;
         summary.topResults = searchResults.slice(0, 3); // Store top 3 results
-        summary.actionType = 'code_search';
+        summary.actionType = "code_search";
         break;
+      }
 
-      case 'getFileContent':
-      case 'getRawFileContent':
+      case "getFileContent":
+      case "getRawFileContent":
         summary.filePath = input.path;
         summary.repository = input.repository;
         summary.branch = input.branch;
-        summary.actionType = 'file_reading';
+        summary.actionType = "file_reading";
         break;
 
-      case 'updateIssueStatus':
+      case "updateIssueStatus":
         summary.issueId = input.issueId;
         summary.newStatus = input.statusName;
-        summary.actionType = 'issue_status_update';
+        summary.actionType = "issue_status_update";
         break;
 
-      case 'createLinearComment':
+      case "createLinearComment":
         summary.issueId = input.issueId;
         summary.commentPreview = input.body.substring(0, 100);
-        summary.actionType = 'linear_comment';
+        summary.actionType = "linear_comment";
         break;
 
-      case 'setIssueParent':
+      case "setIssueParent":
         summary.issueId = input.issueId;
         summary.parentIssueId = input.parentIssueId;
-        summary.actionType = 'issue_parent_assignment';
+        summary.actionType = "issue_parent_assignment";
         break;
 
-      case 'addIssueToProject':
+      case "addIssueToProject":
         summary.issueId = input.issueId;
         summary.projectId = input.projectId;
-        summary.actionType = 'issue_project_assignment';
+        summary.actionType = "issue_project_assignment";
         break;
 
-      case 'createAgentActivity':
+      case "createAgentActivity":
         summary.sessionId = input.sessionId;
         summary.activityType = input.activityType;
         summary.activityPreview =
-          input.body?.substring(0, 100) || input.action || 'Activity created';
-        summary.actionType = 'agent_activity_creation';
+          input.body?.substring(0, 100) || input.action || "Activity created";
+        summary.actionType = "agent_activity_creation";
         break;
 
-      case 'sendSlackMessage':
-      case 'sendChannelMessage':
-      case 'sendDirectMessage':
+      case "sendSlackMessage":
+      case "sendChannelMessage":
+      case "sendDirectMessage":
         summary.channel = input.channel || input.channelNameOrId;
         summary.recipient = input.userIdOrEmail;
         summary.messagePreview = input.text.substring(0, 100);
-        summary.actionType = 'slack_message';
+        summary.actionType = "slack_message";
         break;
 
-      case 'assignIssue':
+      case "assignIssue":
         summary.issueId = input.issueId;
         summary.assignee = input.assigneeEmail;
-        summary.actionType = 'issue_assignment';
+        summary.actionType = "issue_assignment";
         break;
 
-      case 'createIssue':
+      case "createIssue":
         summary.teamId = input.teamId;
         summary.title = input.title;
-        summary.actionType = 'issue_creation';
+        summary.actionType = "issue_creation";
         if (detailedOutput?.issueId)
           summary.createdIssueId = detailedOutput.issueId;
         break;
 
       default:
         // Generic extraction for unknown tools
-        summary.actionType = 'generic_tool_usage';
+        summary.actionType = "generic_tool_usage";
         summary.inputKeys = Object.keys(input || {});
         break;
     }
@@ -408,19 +410,19 @@ export class MemoryManager {
    * Extract search results from response text
    */
   private extractSearchResults(
-    response: string
+    response: string,
   ): Array<{ path: string; line?: number; snippet?: string }> {
     const results: Array<{ path: string; line?: number; snippet?: string }> =
       [];
 
     // Try to parse search results from response
-    const lines = response.split('\n');
+    const lines = response.split("\n");
     let currentResult: any = null;
 
     for (const line of lines) {
       // Look for file paths
       const pathMatch = line.match(
-        /^([a-zA-Z0-9\/\._-]+\.(ts|js|tsx|jsx|py|go|java|cpp|c|h|css|html|md|json|yaml|yml|txt)):/
+        /^([a-zA-Z0-9\/\._-]+\.(ts|js|tsx|jsx|py|go|java|cpp|c|h|css|html|md|json|yaml|yml|txt)):/,
       );
       if (pathMatch) {
         if (currentResult) results.push(currentResult);
@@ -430,13 +432,13 @@ export class MemoryManager {
       // Look for line numbers
       const lineMatch = line.match(/line (\d+)/i);
       if (lineMatch && currentResult) {
-        currentResult.line = parseInt(lineMatch[1]);
+        currentResult.line = Number.parseInt(lineMatch[1]);
       }
 
       // Store snippet if we have a current result
       if (currentResult && line.trim() && !pathMatch && !lineMatch) {
         currentResult.snippet =
-          (currentResult.snippet || '') + line.substring(0, 100);
+          (currentResult.snippet || "") + line.substring(0, 100);
       }
     }
 
@@ -450,7 +452,7 @@ export class MemoryManager {
   private async storeToolSpecificMemory(
     issueId: string,
     toolName: string,
-    actionSummary: any
+    actionSummary: any,
   ): Promise<void> {
     try {
       const key = `memory:issue:${issueId}:tools:${toolName}`;
@@ -469,7 +471,7 @@ export class MemoryManager {
         JSON.stringify({
           issueId,
           ...actionSummary,
-        })
+        }),
       );
 
       await redis.ltrim(`memory:tools:${toolName}:recent`, 0, 49); // Keep last 50
@@ -477,7 +479,7 @@ export class MemoryManager {
     } catch (error) {
       console.error(
         `Error storing tool-specific memory for ${toolName}:`,
-        error
+        error,
       );
     }
   }
@@ -488,13 +490,13 @@ export class MemoryManager {
   async getRecentActionsByTool(
     issueId: string,
     toolName: string,
-    limit: number = 5
+    limit = 5,
   ): Promise<any[]> {
     try {
       const key = `memory:issue:${issueId}:tools:${toolName}`;
-      const latest = await redis.hget(key, 'latest');
+      const latest = await redis.hget(key, "latest");
 
-      if (latest && typeof latest === 'string') {
+      if (latest && typeof latest === "string") {
         return [JSON.parse(latest)];
       }
 
@@ -512,26 +514,26 @@ export class MemoryManager {
     try {
       const actions = await this.retrieveRelevantMemories(
         issueId,
-        'action',
+        "action",
         undefined,
-        10
+        10,
       );
 
       if (actions.length === 0) {
-        return '';
+        return "";
       }
 
-      let summary = '\n\nRECENT ACTIONS SUMMARY:\n';
+      let summary = "\n\nRECENT ACTIONS SUMMARY:\n";
 
       const groupedActions = new Map<string, any[]>();
 
       // Group actions by type
       for (const action of actions) {
-        const actionType = action.data?.actionSummary?.actionType || 'unknown';
+        const actionType = action.data?.actionSummary?.actionType || "unknown";
         if (!groupedActions.has(actionType)) {
           groupedActions.set(actionType, []);
         }
-        groupedActions.get(actionType)!.push(action);
+        groupedActions.get(actionType)?.push(action);
       }
 
       // Format grouped actions
@@ -544,28 +546,28 @@ export class MemoryManager {
           const actionData = action.data?.actionSummary;
 
           switch (actionType) {
-            case 'branch_creation':
+            case "branch_creation":
               summary += `  • Created branch "${actionData?.branchCreated}" in ${actionData?.repository}\n`;
               break;
-            case 'pull_request_creation':
+            case "pull_request_creation":
               summary += `  • Created PR #${actionData?.pullRequestNumber}: "${actionData?.title}" (${actionData?.headBranch} → ${actionData?.baseBranch})\n`;
               break;
-            case 'file_modification':
+            case "file_modification":
               summary += `  • Modified ${actionData?.filePath} using ${actionData?.modificationType}\n`;
               break;
-            case 'file_deletion':
+            case "file_deletion":
               summary += `  • Deleted ${actionData?.filePath}\n`;
               break;
-            case 'code_search':
+            case "code_search":
               summary += `  • Searched for "${actionData?.query}" - found ${actionData?.resultsCount} results\n`;
               if (actionData?.topResults?.length > 0) {
                 summary += `    Top result: ${actionData.topResults[0].path}\n`;
               }
               break;
-            case 'issue_status_update':
+            case "issue_status_update":
               summary += `  • Updated issue ${actionData?.issueId} status to "${actionData?.newStatus}"\n`;
               break;
-            case 'slack_message':
+            case "slack_message":
               summary += `  • Sent message to ${
                 actionData?.channel || actionData?.recipient
               }: "${actionData?.messagePreview}..."\n`;
@@ -578,8 +580,8 @@ export class MemoryManager {
 
       return summary;
     } catch (error) {
-      console.error('Error generating action summary:', error);
-      return '';
+      console.error("Error generating action summary:", error);
+      return "";
     }
   }
 
@@ -588,13 +590,13 @@ export class MemoryManager {
    */
   async getIssueHistory(issueId: string): Promise<string> {
     const actionSummary = await this.getActionSummary(issueId);
-    const actions = await this.retrieveRelevantMemories(issueId, 'action');
+    const actions = await this.retrieveRelevantMemories(issueId, "action");
 
     if (actions.length === 0 && !actionSummary) {
-      return '';
+      return "";
     }
 
-    let historyString = actionSummary || '\n\nPREVIOUS ACTIONS:\n';
+    let historyString = actionSummary || "\n\nPREVIOUS ACTIONS:\n";
 
     // Add detailed action entries if summary is empty
     if (!actionSummary && actions.length > 0) {
@@ -616,7 +618,7 @@ export class MemoryManager {
       const relatedFiles = await redis.smembers(`memory:issue:file:${issueId}`);
 
       // Find other issues that touched the same files
-      let relatedIssues = new Set<string>();
+      const relatedIssues = new Set<string>();
 
       for (const file of relatedFiles) {
         const issues = await redis.smembers(`memory:file:issue:${file}`);
@@ -629,12 +631,12 @@ export class MemoryManager {
       }
 
       if (relatedIssues.size === 0) {
-        return '';
+        return "";
       }
 
       // Get issue details for related issues (just the most recent 3)
       const relatedIssueArray = Array.from(relatedIssues).slice(0, 3);
-      let relatedIssueDetails = '\n\nRELATED ISSUES:\n';
+      let relatedIssueDetails = "\n\nRELATED ISSUES:\n";
 
       for (const relatedIssueId of relatedIssueArray) {
         try {
@@ -650,7 +652,7 @@ export class MemoryManager {
       return relatedIssueDetails;
     } catch (error) {
       console.error(`Error retrieving related issues for ${issueId}:`, error);
-      return '';
+      return "";
     }
   }
 
@@ -660,19 +662,19 @@ export class MemoryManager {
   async storeCodeKnowledge(
     repository: string,
     path: string,
-    topic: string
+    topic: string,
   ): Promise<void> {
     try {
       // Extract component from path (e.g., src/components/users -> components/users)
-      const parts = path.split('/');
-      let component = '';
+      const parts = path.split("/");
+      let component = "";
 
       if (parts.length >= 2) {
         // Try to identify meaningful component (skip very generic paths like 'src')
-        const skipParts = ['src', 'lib', 'app', 'main'];
+        const skipParts = ["src", "lib", "app", "main"];
         for (let i = 0; i < parts.length - 1; i++) {
           if (!skipParts.includes(parts[i])) {
-            component = parts.slice(i, i + 2).join('/');
+            component = parts.slice(i, i + 2).join("/");
             break;
           }
         }
@@ -688,18 +690,18 @@ export class MemoryManager {
         await redis.zincrby(
           `memory:component:${repository}:${component}:topics`,
           1,
-          topic
+          topic,
         );
         // Set expiry
         await redis.expire(
           `memory:component:${repository}:${component}:topics`,
-          MEMORY_EXPIRY
+          MEMORY_EXPIRY,
         );
       }
     } catch (error) {
       console.error(
         `Error storing code knowledge for ${repository}:${path}:`,
-        error
+        error,
       );
     }
   }
@@ -717,33 +719,29 @@ export class MemoryManager {
         {
           rev: true,
           withScores: true,
-        }
+        },
       );
 
       if (!fileScores || fileScores.length === 0) {
-        return '';
+        return "";
       }
 
       // Convert to array of files (handling new structure)
       const files: string[] = [];
       for (const entry of fileScores) {
-        if (typeof entry === 'string') {
+        if (typeof entry === "string") {
           files.push(entry);
         }
       }
 
       // We'll include this knowledge directly
-      return (
-        `\n\nREPOSITORY KNOWLEDGE (${repository}):\n` +
-        `Key files: ${files.join(', ')}\n` +
-        `Remember to consider repository structure and patterns when making changes.`
-      );
+      return `\n\nREPOSITORY KNOWLEDGE (${repository}):\nKey files: ${files.join(", ")}\nRemember to consider repository structure and patterns when making changes.`;
     } catch (error) {
       console.error(
         `Error getting repository knowledge for ${repository}:`,
-        error
+        error,
       );
-      return '';
+      return "";
     }
   }
 
@@ -753,14 +751,14 @@ export class MemoryManager {
   async storeRelationship(
     relationshipType: string,
     entity1: string,
-    entity2: string
+    entity2: string,
   ): Promise<void> {
     try {
       // Store bidirectional relationships
       await redis.sadd(`memory:${relationshipType}:${entity1}`, entity2);
       await redis.expire(
         `memory:${relationshipType}:${entity1}`,
-        MEMORY_EXPIRY
+        MEMORY_EXPIRY,
       );
     } catch (error) {
       console.error(`Error storing relationship ${relationshipType}:`, error);
@@ -772,31 +770,31 @@ export class MemoryManager {
    */
   async getPreviousConversations(
     issueId: string,
-    currentContext?: string
+    currentContext?: string,
   ): Promise<string> {
     const memories = await this.retrieveRelevantMemories(
       issueId,
-      'conversation',
-      currentContext
+      "conversation",
+      currentContext,
     );
 
     if (memories.length === 0) {
-      return '';
+      return "";
     }
 
     // Check if we need to summarize due to length
     const totalMemories = await redis.llen(
-      `memory:issue:${issueId}:conversation`
+      `memory:issue:${issueId}:conversation`,
     );
 
-    let contextString = '';
+    let contextString = "";
 
     if (totalMemories > CONVERSATION_SUMMARY_THRESHOLD) {
-      contextString += '\n\nCONVERSATION SUMMARY:\n';
+      contextString += "\n\nCONVERSATION SUMMARY:\n";
       contextString += await this.generateConversationSummary(issueId);
-      contextString += '\n\nRECENT RELEVANT MESSAGES:\n';
+      contextString += "\n\nRECENT RELEVANT MESSAGES:\n";
     } else {
-      contextString += '\n\nPREVIOUS CONVERSATIONS:\n';
+      contextString += "\n\nPREVIOUS CONVERSATIONS:\n";
     }
 
     // Format relevant memory entries
@@ -806,20 +804,20 @@ export class MemoryManager {
       const timestamp = new Date(memory.timestamp).toISOString();
       let entryText = `[${timestamp}] `;
 
-      if (memory.data.role === 'assistant') {
-        entryText += `Assistant: `;
+      if (memory.data.role === "assistant") {
+        entryText += "Assistant: ";
         const textBlocks = memory.data.content
-          .filter((block: any) => block && block.type === 'text')
-          .map((block: any) => block.text || '')
-          .join('\n');
+          .filter((block: any) => block && block.type === "text")
+          .map((block: any) => block.text || "")
+          .join("\n");
         entryText += `${textBlocks}\n`;
-      } else if (memory.data.role === 'user') {
+      } else if (memory.data.role === "user") {
         entryText += `User: ${memory.data.content}\n`;
       }
 
       // Check if adding this entry would exceed our context limit
       if (currentLength + entryText.length > MAX_CONTEXT_LENGTH) {
-        contextString += '[... additional context truncated for brevity ...]\n';
+        contextString += "[... additional context truncated for brevity ...]\n";
         break;
       }
 
@@ -839,10 +837,10 @@ export class MemoryManager {
       const olderMemories = await redis.lrange(
         `memory:issue:${issueId}:conversation`,
         MAX_MEMORY_ENTRIES_TO_INCLUDE,
-        CONVERSATION_SUMMARY_THRESHOLD + 5
+        CONVERSATION_SUMMARY_THRESHOLD + 5,
       );
 
-      if (olderMemories.length === 0) return '';
+      if (olderMemories.length === 0) return "";
 
       // Simple summarization - count topics and key themes
       const topics = new Map<string, number>();
@@ -852,7 +850,7 @@ export class MemoryManager {
       for (const memoryStr of olderMemories) {
         try {
           const memoryString =
-            typeof memoryStr === 'string'
+            typeof memoryStr === "string"
               ? memoryStr
               : JSON.stringify(memoryStr);
           const memory = JSON.parse(memoryString);
@@ -860,7 +858,7 @@ export class MemoryManager {
 
           if (memory.data?.content) {
             const content =
-              typeof memory.data.content === 'string'
+              typeof memory.data.content === "string"
                 ? memory.data.content
                 : JSON.stringify(memory.data.content);
 
@@ -869,14 +867,14 @@ export class MemoryManager {
             words.forEach((word: string) => {
               if (
                 ![
-                  'this',
-                  'that',
-                  'with',
-                  'from',
-                  'they',
-                  'were',
-                  'been',
-                  'have',
+                  "this",
+                  "that",
+                  "with",
+                  "from",
+                  "they",
+                  "were",
+                  "been",
+                  "have",
                 ].includes(word)
               ) {
                 topics.set(word, (topics.get(word) || 0) + 1);
@@ -884,7 +882,7 @@ export class MemoryManager {
             });
 
             // Track users
-            if (memory.data.role === 'user') {
+            if (memory.data.role === "user") {
               const userMatch = content.match(/Message from user (\w+)/);
               if (userMatch) users.add(userMatch[1]);
             }
@@ -902,10 +900,10 @@ export class MemoryManager {
 
       return `Earlier conversation (${totalMessages} messages) involved ${
         users.size
-      } participants discussing: ${topTopics.join(', ')}`;
+      } participants discussing: ${topTopics.join(", ")}`;
     } catch (error) {
-      console.error('Error generating conversation summary:', error);
-      return 'Earlier conversation history available but could not be summarized.';
+      console.error("Error generating conversation summary:", error);
+      return "Earlier conversation history available but could not be summarized.";
     }
   }
 }

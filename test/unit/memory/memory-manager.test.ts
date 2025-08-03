@@ -1,8 +1,8 @@
-import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { Redis } from '@upstash/redis';
+import { Redis } from "@upstash/redis";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 // Mock Redis
-vi.mock('@upstash/redis', () => ({
+vi.mock("@upstash/redis", () => ({
   Redis: vi.fn().mockImplementation(() => ({
     get: vi.fn(),
     set: vi.fn(),
@@ -16,7 +16,7 @@ vi.mock('@upstash/redis', () => ({
   })),
 }));
 
-describe('Memory Manager', () => {
+describe("Memory Manager", () => {
   let mockRedis: any;
   let memoryManager: any;
 
@@ -25,7 +25,7 @@ describe('Memory Manager', () => {
     mockRedis = new Redis();
 
     // Mock the memory manager module
-    vi.doMock('../../../lib/memory/memory-manager.js', () => ({
+    vi.doMock("../../../lib/memory/memory-manager.js", () => ({
       memoryManager: {
         storeMemory: vi.fn(),
         getPreviousConversations: vi.fn(),
@@ -34,21 +34,21 @@ describe('Memory Manager', () => {
       },
     }));
 
-    const module = await import('../../../lib/memory/memory-manager.js');
+    const module = await import("../../../lib/memory/memory-manager.js");
     memoryManager = module.memoryManager;
   });
 
   afterEach(() => {
-    vi.doUnmock('../../../lib/memory/memory-manager.js');
+    vi.doUnmock("../../../lib/memory/memory-manager.js");
   });
 
-  describe('storeMemory', () => {
-    it('should store conversation memory', async () => {
-      const contextId = 'TEST-123';
-      const memoryType = 'conversation';
+  describe("storeMemory", () => {
+    it("should store conversation memory", async () => {
+      const contextId = "TEST-123";
+      const memoryType = "conversation";
       const data = {
-        role: 'user',
-        content: 'Test message',
+        role: "user",
+        content: "Test message",
         timestamp: Date.now(),
       };
 
@@ -59,16 +59,16 @@ describe('Memory Manager', () => {
       expect(memoryManager.storeMemory).toHaveBeenCalledWith(
         contextId,
         memoryType,
-        data
+        data,
       );
     });
 
-    it('should store action memory', async () => {
-      const contextId = 'TEST-123';
-      const memoryType = 'action';
+    it("should store action memory", async () => {
+      const contextId = "TEST-123";
+      const memoryType = "action";
       const data = {
-        tool: 'updateIssueStatus',
-        input: { issueId: 'TEST-123', status: 'In Progress' },
+        tool: "updateIssueStatus",
+        input: { issueId: "TEST-123", status: "In Progress" },
         success: true,
         timestamp: Date.now(),
       };
@@ -80,67 +80,67 @@ describe('Memory Manager', () => {
       expect(memoryManager.storeMemory).toHaveBeenCalledWith(
         contextId,
         memoryType,
-        data
+        data,
       );
     });
 
-    it('should handle storage errors gracefully', async () => {
-      const contextId = 'TEST-123';
-      const memoryType = 'conversation';
-      const data = { content: 'test' };
+    it("should handle storage errors gracefully", async () => {
+      const contextId = "TEST-123";
+      const memoryType = "conversation";
+      const data = { content: "test" };
 
       memoryManager.storeMemory.mockRejectedValue(
-        new Error('Redis connection failed')
+        new Error("Redis connection failed"),
       );
 
       // Should not throw but handle gracefully
       await expect(
-        memoryManager.storeMemory(contextId, memoryType, data)
-      ).rejects.toThrow('Redis connection failed');
+        memoryManager.storeMemory(contextId, memoryType, data),
+      ).rejects.toThrow("Redis connection failed");
     });
   });
 
-  describe('getPreviousConversations', () => {
-    it('should retrieve previous conversations', async () => {
-      const contextId = 'TEST-123';
-      const currentMessage = 'Current message';
-      const mockConversations = 'Previous conversation context';
+  describe("getPreviousConversations", () => {
+    it("should retrieve previous conversations", async () => {
+      const contextId = "TEST-123";
+      const currentMessage = "Current message";
+      const mockConversations = "Previous conversation context";
 
       memoryManager.getPreviousConversations.mockResolvedValue(
-        mockConversations
+        mockConversations,
       );
 
       const result = await memoryManager.getPreviousConversations(
         contextId,
-        currentMessage
+        currentMessage,
       );
 
       expect(result).toBe(mockConversations);
       expect(memoryManager.getPreviousConversations).toHaveBeenCalledWith(
         contextId,
-        currentMessage
+        currentMessage,
       );
     });
 
-    it('should return empty string when no conversations found', async () => {
-      const contextId = 'TEST-123';
-      const currentMessage = 'Current message';
+    it("should return empty string when no conversations found", async () => {
+      const contextId = "TEST-123";
+      const currentMessage = "Current message";
 
-      memoryManager.getPreviousConversations.mockResolvedValue('');
+      memoryManager.getPreviousConversations.mockResolvedValue("");
 
       const result = await memoryManager.getPreviousConversations(
         contextId,
-        currentMessage
+        currentMessage,
       );
 
-      expect(result).toBe('');
+      expect(result).toBe("");
     });
   });
 
-  describe('getIssueHistory', () => {
-    it('should retrieve issue history', async () => {
-      const contextId = 'TEST-123';
-      const mockHistory = 'Issue history context';
+  describe("getIssueHistory", () => {
+    it("should retrieve issue history", async () => {
+      const contextId = "TEST-123";
+      const mockHistory = "Issue history context";
 
       memoryManager.getIssueHistory.mockResolvedValue(mockHistory);
 
@@ -151,9 +151,9 @@ describe('Memory Manager', () => {
     });
   });
 
-  describe('clearMemoryForIssue', () => {
-    it('should clear memory for an issue', async () => {
-      const contextId = 'TEST-123';
+  describe("clearMemoryForIssue", () => {
+    it("should clear memory for an issue", async () => {
+      const contextId = "TEST-123";
 
       memoryManager.clearMemoryForIssue.mockResolvedValue(true);
 

@@ -1,13 +1,13 @@
-import { Redis } from '@upstash/redis';
-import type { VercelRequest, VercelResponse } from '@vercel/node';
-import { env } from '../lib/core/env.js';
-import { LinearService } from '../lib/linear/linear-service.js';
+import { Redis } from "@upstash/redis";
+import type { VercelRequest, VercelResponse } from "@vercel/node";
+import { env } from "../lib/core/env.js";
+import { LinearService } from "../lib/linear/linear-service.js";
 
 // Initialize Linear service
 const linearService = new LinearService(
   env.LINEAR_CLIENT_ID,
   env.LINEAR_CLIENT_SECRET,
-  env.REDIRECT_URI
+  env.REDIRECT_URI,
 );
 
 // Initialize Upstash Redis
@@ -17,13 +17,13 @@ const redis = new Redis({
 });
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
-  if (req.method !== 'GET') {
-    return res.status(405).json({ error: 'Method not allowed' });
+  if (req.method !== "GET") {
+    return res.status(405).json({ error: "Method not allowed" });
   }
 
   const code = req.query.code as string;
   if (!code) {
-    return res.status(400).json({ error: 'Missing code parameter' });
+    return res.status(400).json({ error: "Missing code parameter" });
   }
 
   try {
@@ -36,8 +36,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       await redis.set(`linear:${organizationId}:appUserId`, appUserId);
     }
 
-    await redis.set('linearAccessToken', accessToken);
-    await redis.set('linearAppUserId', appUserId);
+    await redis.set("linearAccessToken", accessToken);
+    await redis.set("linearAppUserId", appUserId);
 
     // Success page with Tailwind
     return res.status(200).send(`
@@ -64,7 +64,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       </html>
     `);
   } catch (error) {
-    console.error('OAuth error:', error);
+    console.error("OAuth error:", error);
 
     // Error page with Tailwind
     return res.status(500).send(`

@@ -1,19 +1,19 @@
-import * as linearUtils from './linear/linear-utils.js';
-import { LinearClient } from '@linear/sdk';
-import { agentActivity } from './linear/linear-agent-session-manager.js';
+import type { LinearClient } from "@linear/sdk";
+import { agentActivity } from "./linear/linear-agent-session-manager.js";
+import * as linearUtils from "./linear/linear-utils.js";
 
 // Linear tool execution functions
 
 export const executeGetIssueContext = async (
   { issueId, commentId }: { issueId: string; commentId: string },
   updateStatus?: (status: string) => void,
-  linearClient?: LinearClient
+  linearClient?: LinearClient,
 ) => {
   if (!linearClient) {
     return {
       context:
-        'ERROR: LinearClient is required for Linear operations. Please ensure Linear integration is properly configured.',
-      error: 'LinearClient not available',
+        "ERROR: LinearClient is required for Linear operations. Please ensure Linear integration is properly configured.",
+      error: "LinearClient not available",
     };
   }
 
@@ -22,7 +22,7 @@ export const executeGetIssueContext = async (
   const context = await linearUtils.getIssueContext(
     linearClient,
     issueId,
-    commentId || undefined
+    commentId || undefined,
   );
   return { context };
 };
@@ -30,13 +30,13 @@ export const executeGetIssueContext = async (
 export const executeUpdateIssueStatus = async (
   { issueId, statusName }: { issueId: string; statusName: string },
   updateStatus?: (status: string) => void,
-  linearClient?: LinearClient
+  linearClient?: LinearClient,
 ) => {
   if (!linearClient) {
     return {
       success: false,
-      error: 'LinearClient is required for Linear operations',
-      message: 'Failed to update issue status: Linear client not available',
+      error: "LinearClient is required for Linear operations",
+      message: "Failed to update issue status: Linear client not available",
     };
   }
 
@@ -52,13 +52,13 @@ export const executeUpdateIssueStatus = async (
 export const executeAddLabel = async (
   { issueId, labelName }: { issueId: string; labelName: string },
   updateStatus?: (status: string) => void,
-  linearClient?: LinearClient
+  linearClient?: LinearClient,
 ) => {
   if (!linearClient) {
     return {
       success: false,
-      error: 'LinearClient is required for Linear operations',
-      message: 'Failed to add label: Linear client not available',
+      error: "LinearClient is required for Linear operations",
+      message: "Failed to add label: Linear client not available",
     };
   }
 
@@ -74,13 +74,13 @@ export const executeAddLabel = async (
 export const executeRemoveLabel = async (
   { issueId, labelName }: { issueId: string; labelName: string },
   updateStatus?: (status: string) => void,
-  linearClient?: LinearClient
+  linearClient?: LinearClient,
 ) => {
   if (!linearClient) {
     return {
       success: false,
-      error: 'LinearClient is required for Linear operations',
-      message: 'Failed to remove label: Linear client not available',
+      error: "LinearClient is required for Linear operations",
+      message: "Failed to remove label: Linear client not available",
     };
   }
 
@@ -96,13 +96,13 @@ export const executeRemoveLabel = async (
 export const executeAssignIssue = async (
   { issueId, assigneeEmail }: { issueId: string; assigneeEmail: string },
   updateStatus?: (status: string) => void,
-  linearClient?: LinearClient
+  linearClient?: LinearClient,
 ) => {
   if (!linearClient) {
     return {
       success: false,
-      error: 'LinearClient is required for Linear operations',
-      message: 'Failed to assign issue: Linear client not available',
+      error: "LinearClient is required for Linear operations",
+      message: "Failed to assign issue: Linear client not available",
     };
   }
 
@@ -134,13 +134,13 @@ export const executeCreateIssue = async (
     projectId: string;
   },
   updateStatus?: (status: string) => void,
-  linearClient?: LinearClient
+  linearClient?: LinearClient,
 ) => {
   if (!linearClient) {
     return {
       success: false,
-      error: 'LinearClient is required for Linear operations',
-      message: 'Failed to create issue: Linear client not available',
+      error: "LinearClient is required for Linear operations",
+      message: "Failed to create issue: Linear client not available",
     };
   }
 
@@ -148,12 +148,12 @@ export const executeCreateIssue = async (
 
   // Add strategic thinking about issue creation
   await agentActivity.thought(
-    'system',
+    "system",
     `Issue creation strategy: Creating "${title}" in team ${teamId}${
-      parentIssueId ? ` as child of ${parentIssueId}` : ''
-    }. Priority: ${priority || 'default'}, Status: ${
-      status || 'default'
-    }. Description length: ${description.length} chars.`
+      parentIssueId ? ` as child of ${parentIssueId}` : ""
+    }. Priority: ${priority || "default"}, Status: ${
+      status || "default"
+    }. Description length: ${description.length} chars.`,
   );
 
   const result = await linearUtils.createIssue(
@@ -164,7 +164,7 @@ export const executeCreateIssue = async (
     status || undefined,
     priority === 0 ? undefined : priority,
     parentIssueId || undefined,
-    projectId || undefined
+    projectId || undefined,
   );
 
   return result;
@@ -173,13 +173,13 @@ export const executeCreateIssue = async (
 export const executeAddIssueAttachment = async (
   { issueId, url, title }: { issueId: string; url: string; title: string },
   updateStatus?: (status: string) => void,
-  linearClient?: LinearClient
+  linearClient?: LinearClient,
 ) => {
   if (!linearClient) {
     return {
       success: false,
-      error: 'LinearClient is required for Linear operations',
-      message: 'Failed to add attachment: Linear client not available',
+      error: "LinearClient is required for Linear operations",
+      message: "Failed to add attachment: Linear client not available",
     };
   }
 
@@ -195,13 +195,13 @@ export const executeAddIssueAttachment = async (
 export const executeUpdateIssuePriority = async (
   { issueId, priority }: { issueId: string; priority: number },
   updateStatus?: (status: string) => void,
-  linearClient?: LinearClient
+  linearClient?: LinearClient,
 ) => {
   if (!linearClient) {
     return {
       success: false,
-      error: 'LinearClient is required for Linear operations',
-      message: 'Failed to update priority: Linear client not available',
+      error: "LinearClient is required for Linear operations",
+      message: "Failed to update priority: Linear client not available",
     };
   }
 
@@ -217,18 +217,18 @@ export const executeUpdateIssuePriority = async (
 export const executeSetPointEstimate = async (
   { issueId, pointEstimate }: { issueId: string; pointEstimate: number },
   updateStatus?: (status: string) => void,
-  linearClient?: LinearClient
+  linearClient?: LinearClient,
 ) => {
   if (!linearClient) {
     return {
       success: false,
-      error: 'LinearClient is required for Linear operations',
-      message: 'Failed to set point estimate: Linear client not available',
+      error: "LinearClient is required for Linear operations",
+      message: "Failed to set point estimate: Linear client not available",
     };
   }
 
   updateStatus?.(
-    `is setting point estimate for issue ${issueId} to ${pointEstimate}...`
+    `is setting point estimate for issue ${issueId} to ${pointEstimate}...`,
   );
 
   await linearUtils.setPointEstimate(linearClient, issueId, pointEstimate);
@@ -241,12 +241,12 @@ export const executeSetPointEstimate = async (
 // Linear context gathering tool execution functions
 export const executeGetLinearTeams = async (
   updateStatus?: (status: string) => void,
-  linearClient?: LinearClient
+  linearClient?: LinearClient,
 ) => {
-  updateStatus?.('is getting Linear teams...');
+  updateStatus?.("is getting Linear teams...");
 
   if (!linearClient) {
-    return { error: 'Linear client not available' };
+    return { error: "Linear client not available" };
   }
 
   const teams = await linearUtils.getTeams(linearClient);
@@ -255,12 +255,12 @@ export const executeGetLinearTeams = async (
 
 export const executeGetLinearProjects = async (
   updateStatus?: (status: string) => void,
-  linearClient?: LinearClient
+  linearClient?: LinearClient,
 ) => {
-  updateStatus?.('is getting Linear projects...');
+  updateStatus?.("is getting Linear projects...");
 
   if (!linearClient) {
-    return { error: 'Linear client not available' };
+    return { error: "Linear client not available" };
   }
 
   const projects = await linearUtils.getProjects(linearClient);
@@ -269,12 +269,12 @@ export const executeGetLinearProjects = async (
 
 export const executeGetLinearInitiatives = async (
   updateStatus?: (status: string) => void,
-  linearClient?: LinearClient
+  linearClient?: LinearClient,
 ) => {
-  updateStatus?.('is getting Linear initiatives...');
+  updateStatus?.("is getting Linear initiatives...");
 
   if (!linearClient) {
-    return { error: 'Linear client not available' };
+    return { error: "Linear client not available" };
   }
 
   const initiatives = await linearUtils.getInitiatives(linearClient);
@@ -283,12 +283,12 @@ export const executeGetLinearInitiatives = async (
 
 export const executeGetLinearUsers = async (
   updateStatus?: (status: string) => void,
-  linearClient?: LinearClient
+  linearClient?: LinearClient,
 ) => {
-  updateStatus?.('is getting Linear users...');
+  updateStatus?.("is getting Linear users...");
 
   if (!linearClient) {
-    return { error: 'Linear client not available' };
+    return { error: "Linear client not available" };
   }
 
   const users = await linearUtils.getUsers(linearClient);
@@ -298,20 +298,20 @@ export const executeGetLinearUsers = async (
 export const executeGetLinearRecentIssues = async (
   { limit, teamId }: { limit: number; teamId: string },
   updateStatus?: (status: string) => void,
-  linearClient?: LinearClient
+  linearClient?: LinearClient,
 ) => {
   updateStatus?.(
-    `is getting recent Linear issues${teamId ? ` for team ${teamId}` : ''}...`
+    `is getting recent Linear issues${teamId ? ` for team ${teamId}` : ""}...`,
   );
 
   if (!linearClient) {
-    return { error: 'Linear client not available' };
+    return { error: "Linear client not available" };
   }
 
   const issues = await linearUtils.getRecentIssues(
     linearClient,
     limit || 20,
-    teamId || undefined
+    teamId || undefined,
   );
   return { issues };
 };
@@ -319,18 +319,18 @@ export const executeGetLinearRecentIssues = async (
 export const executeSearchLinearIssues = async (
   { query, limit }: { query: string; limit: number },
   updateStatus?: (status: string) => void,
-  linearClient?: LinearClient
+  linearClient?: LinearClient,
 ) => {
   updateStatus?.(`is searching Linear issues for "${query}"...`);
 
   if (!linearClient) {
-    return { error: 'Linear client not available' };
+    return { error: "Linear client not available" };
   }
 
   const issues = await linearUtils.searchIssues(
     linearClient,
     query,
-    limit || 10
+    limit || 10,
   );
   return { issues };
 };
@@ -338,19 +338,19 @@ export const executeSearchLinearIssues = async (
 export const executeGetLinearWorkflowStates = async (
   { teamId }: { teamId: string },
   updateStatus?: (status: string) => void,
-  linearClient?: LinearClient
+  linearClient?: LinearClient,
 ) => {
   updateStatus?.(
-    `is getting Linear workflow states${teamId ? ` for team ${teamId}` : ''}...`
+    `is getting Linear workflow states${teamId ? ` for team ${teamId}` : ""}...`,
   );
 
   if (!linearClient) {
-    return { error: 'Linear client not available' };
+    return { error: "Linear client not available" };
   }
 
   const workflowStates = await linearUtils.getWorkflowStates(
     linearClient,
-    teamId || undefined
+    teamId || undefined,
   );
   return { workflowStates };
 };
@@ -358,13 +358,13 @@ export const executeGetLinearWorkflowStates = async (
 export const executeCreateLinearComment = async (
   { issueId, body }: { issueId: string; body: string },
   updateStatus?: (status: string) => void,
-  linearClient?: LinearClient
+  linearClient?: LinearClient,
 ) => {
   if (!linearClient) {
     return {
       success: false,
-      error: 'LinearClient is required for Linear operations',
-      message: 'Failed to create comment: Linear client not available',
+      error: "LinearClient is required for Linear operations",
+      message: "Failed to create comment: Linear client not available",
     };
   }
 
@@ -387,20 +387,20 @@ export const executeCreateAgentActivity = async (
     result,
   }: {
     sessionId: string;
-    activityType: 'thought' | 'elicitation' | 'action' | 'response' | 'error';
+    activityType: "thought" | "elicitation" | "action" | "response" | "error";
     body: string;
     action: string;
     parameter: string;
     result: string;
   },
   updateStatus?: (status: string) => void,
-  linearClient?: LinearClient
+  linearClient?: LinearClient,
 ) => {
   if (!linearClient) {
     return {
       success: false,
-      error: 'LinearClient is required for Linear operations',
-      message: 'Failed to create agent activity: Linear client not available',
+      error: "LinearClient is required for Linear operations",
+      message: "Failed to create agent activity: Linear client not available",
     };
   }
 
@@ -408,14 +408,14 @@ export const executeCreateAgentActivity = async (
 
   try {
     // Build the content object based on activity type
-    let content: any = { type: activityType };
+    const content: any = { type: activityType };
 
     switch (activityType) {
-      case 'thought':
-      case 'elicitation':
-      case 'response':
-      case 'error':
-        if (!body || body.trim() === '') {
+      case "thought":
+      case "elicitation":
+      case "response":
+      case "error":
+        if (!body || body.trim() === "") {
           return {
             success: false,
             error: `Body is required for ${activityType} activities`,
@@ -425,23 +425,23 @@ export const executeCreateAgentActivity = async (
         content.body = body;
         break;
 
-      case 'action':
+      case "action":
         if (
           !action ||
-          action.trim() === '' ||
+          action.trim() === "" ||
           !parameter ||
-          parameter.trim() === ''
+          parameter.trim() === ""
         ) {
           return {
             success: false,
-            error: 'Action and parameter are required for action activities',
+            error: "Action and parameter are required for action activities",
             message:
-              'Failed to create action activity: Missing action or parameter',
+              "Failed to create action activity: Missing action or parameter",
           };
         }
         content.action = action;
         content.parameter = parameter;
-        if (result && result.trim() !== '') {
+        if (result && result.trim() !== "") {
           content.result = result;
         }
         break;
@@ -468,10 +468,10 @@ export const executeCreateAgentActivity = async (
     };
 
     // Use fetch to make direct GraphQL request to Linear API
-    const response = await fetch('https://api.linear.app/graphql', {
-      method: 'POST',
+    const response = await fetch("https://api.linear.app/graphql", {
+      method: "POST",
       headers: {
-        'Content-Type': 'application/json',
+        "Content-Type": "application/json",
         Authorization: `Bearer ${
           (linearClient as any).accessToken || (linearClient as any).token
         }`,
@@ -490,17 +490,16 @@ export const executeCreateAgentActivity = async (
         message: `Created ${activityType} activity for session ${sessionId}`,
         activityId: data.data.agentActivityCreate?.agentActivity?.id,
       };
-    } else {
-      return {
-        success: false,
-        error: data.errors?.[0]?.message || 'Failed to create agent activity',
-        message: `Linear API rejected the ${activityType} activity: ${
-          data.errors?.[0]?.message || 'Unknown error'
-        }`,
-      };
     }
+    return {
+      success: false,
+      error: data.errors?.[0]?.message || "Failed to create agent activity",
+      message: `Linear API rejected the ${activityType} activity: ${
+        data.errors?.[0]?.message || "Unknown error"
+      }`,
+    };
   } catch (error: unknown) {
-    console.error(`Error creating agent activity:`, error);
+    console.error("Error creating agent activity:", error);
     return {
       success: false,
       error: error instanceof Error ? error.message : String(error),
@@ -514,13 +513,13 @@ export const executeCreateAgentActivity = async (
 export const executeSetIssueParent = async (
   { issueId, parentIssueId }: { issueId: string; parentIssueId: string },
   updateStatus?: (status: string) => void,
-  linearClient?: LinearClient
+  linearClient?: LinearClient,
 ) => {
   if (!linearClient) {
     return {
       success: false,
-      error: 'LinearClient is required for Linear operations',
-      message: 'Failed to set parent: Linear client not available',
+      error: "LinearClient is required for Linear operations",
+      message: "Failed to set parent: Linear client not available",
     };
   }
 
@@ -529,7 +528,7 @@ export const executeSetIssueParent = async (
   const result = await linearUtils.setIssueParent(
     linearClient,
     issueId,
-    parentIssueId
+    parentIssueId,
   );
 
   return result;
@@ -538,13 +537,13 @@ export const executeSetIssueParent = async (
 export const executeAddIssueToProject = async (
   { issueId, projectId }: { issueId: string; projectId: string },
   updateStatus?: (status: string) => void,
-  linearClient?: LinearClient
+  linearClient?: LinearClient,
 ) => {
   if (!linearClient) {
     return {
       success: false,
-      error: 'LinearClient is required for Linear operations',
-      message: 'Failed to add to project: Linear client not available',
+      error: "LinearClient is required for Linear operations",
+      message: "Failed to add to project: Linear client not available",
     };
   }
 
@@ -553,7 +552,7 @@ export const executeAddIssueToProject = async (
   const result = await linearUtils.addIssueToProject(
     linearClient,
     issueId,
-    projectId
+    projectId,
   );
 
   return result;

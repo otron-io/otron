@@ -1,15 +1,15 @@
-import { LinearClient } from '@linear/sdk';
+import type { LinearClient } from "@linear/sdk";
 import {
+  type QueuedMessage,
   generateResponse,
   getActiveSessionForIssue,
   queueMessageForSession,
-  QueuedMessage,
-} from '../generate-response.js';
+} from "../generate-response.js";
 import {
-  linearAgentSessionManager,
   agentActivityDirect,
-} from './linear-agent-session-manager.js';
-import { getIssueContext } from './linear-utils.js';
+  linearAgentSessionManager,
+} from "./linear-agent-session-manager.js";
+import { getIssueContext } from "./linear-utils.js";
 
 // Map to store AbortControllers for active sessions
 const sessionAbortControllers = new Map<string, AbortController>();
@@ -21,25 +21,25 @@ const sessionAbortControllers = new Map<string, AbortController>();
 export async function handleLinearNotification(
   payload: any,
   linearClient: LinearClient,
-  appUserId: string
+  appUserId: string,
 ) {
   try {
-    console.log('Handling Linear notification:', payload.type, payload.action);
+    console.log("Handling Linear notification:", payload.type, payload.action);
 
     // Handle Agent Session Events (the new official way)
-    if (payload.type === 'AgentSessionEvent') {
+    if (payload.type === "AgentSessionEvent") {
       return await handleAgentSessionEvent(payload, linearClient, appUserId);
     }
 
     // Log and skip any other notification types
     console.log(
-      `Unsupported notification type: ${payload.type}/${payload.action}`
+      `Unsupported notification type: ${payload.type}/${payload.action}`,
     );
     console.log(
-      'This agent only responds to AgentSessionEvent webhooks (created/prompted)'
+      "This agent only responds to AgentSessionEvent webhooks (created/prompted)",
     );
   } catch (error) {
-    console.error('Error handling Linear notification:', error);
+    console.error("Error handling Linear notification:", error);
   }
 }
 
@@ -51,7 +51,7 @@ export async function handleLinearNotification(
 async function handleAgentSessionEvent(
   payload: any,
   linearClient: LinearClient,
-  appUserId: string
+  appUserId: string,
 ) {
   try {
     const { action, agentSession } = payload;
@@ -63,26 +63,26 @@ async function handleAgentSessionEvent(
 
     // Validate that this is for our agent
     if (agentSession?.appUserId !== appUserId) {
-      console.log('Agent session event is for a different app user, skipping');
+      console.log("Agent session event is for a different app user, skipping");
       return;
     }
 
     // Set up the Linear client for the agent session manager
     linearAgentSessionManager.setLinearClient(linearClient);
 
-    if (action === 'created') {
+    if (action === "created") {
       return await handleAgentSessionCreated(
         agentSession,
         linearClient,
-        payload.previousComments
+        payload.previousComments,
       );
-    } else if (action === 'prompted') {
-      return await handleAgentSessionPrompted(payload, linearClient);
-    } else {
-      console.log(`Unknown agent session action: ${action}`);
     }
+    if (action === "prompted") {
+      return await handleAgentSessionPrompted(payload, linearClient);
+    }
+    console.log(`Unknown agent session action: ${action}`);
   } catch (error) {
-    console.error('Error handling Agent Session Event:', error);
+    console.error("Error handling Agent Session Event:", error);
   }
 }
 
@@ -95,43 +95,43 @@ async function handleAgentSessionEvent(
 async function handleAgentSessionCreated(
   agentSession: any,
   linearClient: LinearClient,
-  previousComments?: any[]
+  previousComments?: any[],
 ) {
   const sessionId = agentSession.id;
   const issue = agentSession.issue;
 
   if (!issue) {
-    console.error('Agent session created without an issue');
+    console.error("Agent session created without an issue");
     return;
   }
 
   console.log(
-    `Agent session created for issue ${issue.identifier}: ${issue.title}`
+    `Agent session created for issue ${issue.identifier}: ${issue.title}`,
   );
 
   // Check for /stop command in the initial comment
-  const initialComment = agentSession.comment?.body || '';
-  if (initialComment.trim().toLowerCase() === '/stop') {
+  const initialComment = agentSession.comment?.body || "";
+  if (initialComment.trim().toLowerCase() === "/stop") {
     console.log(
-      `🛑 Stop command received in initial session creation for ${sessionId}`
+      `🛑 Stop command received in initial session creation for ${sessionId}`,
     );
 
     // Send immediate response about stopping
     await agentActivityDirect.response(
       sessionId,
-      '🛑 **Otron is immediately stopping all operations** as requested. No actions will be taken.'
+      "🛑 **Otron is immediately stopping all operations** as requested. No actions will be taken.",
     );
 
     // Complete the session
     try {
       await linearAgentSessionManager.completeSession(sessionId);
       console.log(
-        `Completed Linear agent session after initial stop command: ${sessionId}`
+        `Completed Linear agent session after initial stop command: ${sessionId}`,
       );
     } catch (error) {
       console.error(
-        'Error completing Linear agent session after initial stop:',
-        error
+        "Error completing Linear agent session after initial stop:",
+        error,
       );
     }
 
@@ -144,19 +144,19 @@ async function handleAgentSessionCreated(
   if (activeSessionId && activeSessionId !== sessionId) {
     console.log(
       `Found active session ${activeSessionId} for issue ${issue.id}, ${
-        initialComment.trim().toLowerCase() === '/stop'
-          ? 'stopping active session'
-          : 'queuing this request'
-      }`
+        initialComment.trim().toLowerCase() === "/stop"
+          ? "stopping active session"
+          : "queuing this request"
+      }`,
     );
 
     // If this is a stop command, abort the active session instead of queuing
-    if (initialComment.trim().toLowerCase() === '/stop') {
+    if (initialComment.trim().toLowerCase() === "/stop") {
       // Send stop command to the active session
       const stopMessage: QueuedMessage = {
         timestamp: Date.now(),
-        type: 'stop',
-        content: 'STOP_COMMAND',
+        type: "stop",
+        content: "STOP_COMMAND",
         sessionId: sessionId,
         issueId: issue.id,
         metadata: {
@@ -171,7 +171,7 @@ async function handleAgentSessionCreated(
       // Send immediate response about stopping
       await agentActivityDirect.response(
         sessionId,
-        '🛑 **Otron is immediately stopping all operations** as requested. The active session has been terminated.'
+        "🛑 **Otron is immediately stopping all operations** as requested. The active session has been terminated.",
       );
 
       return;
@@ -180,15 +180,15 @@ async function handleAgentSessionCreated(
     // IMMEDIATE ACKNOWLEDGMENT still required for non-stop commands
     await agentActivityDirect.thought(
       sessionId,
-      `Agent session acknowledged - joining active analysis for ${issue.identifier}`
+      `Agent session acknowledged - joining active analysis for ${issue.identifier}`,
     );
 
     // Queue this message for the active session
     const queuedMessage: QueuedMessage = {
       timestamp: Date.now(),
-      type: 'created',
+      type: "created",
       content: `New agent session created: ${
-        agentSession.comment?.body || 'No comment'
+        agentSession.comment?.body || "No comment"
       }`,
       sessionId: sessionId,
       issueId: issue.id,
@@ -200,7 +200,7 @@ async function handleAgentSessionCreated(
     // Complete this session since it's been merged with the active one
     await agentActivityDirect.response(
       sessionId,
-      `Merged with active session ${activeSessionId}`
+      `Merged with active session ${activeSessionId}`,
     );
 
     return;
@@ -212,11 +212,11 @@ async function handleAgentSessionCreated(
   // IMMEDIATE ACKNOWLEDGMENT (required within 10 seconds)
   await agentActivityDirect.thought(
     sessionId,
-    `Agent session started for issue ${issue.identifier}`
+    `Agent session started for issue ${issue.identifier}`,
   );
 
   console.log(
-    `✅ Acknowledgment sent for session ${sessionId}, starting processing`
+    `✅ Acknowledgment sent for session ${sessionId}, starting processing`,
   );
 
   // Return the async processing Promise for waitUntil to handle
@@ -224,11 +224,11 @@ async function handleAgentSessionCreated(
     agentSession,
     linearClient,
     sessionId,
-    previousComments
+    previousComments,
   );
 
   console.log(
-    `🔄 Async Promise created for session ${sessionId}, returning to waitUntil`
+    `🔄 Async Promise created for session ${sessionId}, returning to waitUntil`,
   );
   return asyncPromise;
 }
@@ -240,10 +240,10 @@ async function processAgentSessionWorkWithErrorHandling(
   agentSession: any,
   linearClient: LinearClient,
   sessionId: string,
-  previousComments?: any[]
+  previousComments?: any[],
 ): Promise<void> {
   console.log(
-    `🚀 processAgentSessionWorkWithErrorHandling STARTED for session ${sessionId}`
+    `🚀 processAgentSessionWorkWithErrorHandling STARTED for session ${sessionId}`,
   );
 
   try {
@@ -252,23 +252,23 @@ async function processAgentSessionWorkWithErrorHandling(
       agentSession,
       linearClient,
       sessionId,
-      previousComments
+      previousComments,
     );
     console.log(
-      `✅ processAgentSessionWork COMPLETED for session ${sessionId}`
+      `✅ processAgentSessionWork COMPLETED for session ${sessionId}`,
     );
   } catch (error) {
-    console.error('Error in async agent session processing:', error);
+    console.error("Error in async agent session processing:", error);
     // Log error to Linear using the real session ID
     try {
       await agentActivityDirect.error(
         sessionId,
         `Failed to process agent session: ${
           error instanceof Error ? error.message : String(error)
-        }`
+        }`,
       );
     } catch (logError) {
-      console.error('Failed to log error to Linear:', logError);
+      console.error("Failed to log error to Linear:", logError);
     }
   }
 }
@@ -281,7 +281,7 @@ async function processAgentSessionWork(
   agentSession: any,
   linearClient: LinearClient,
   sessionId: string,
-  previousComments?: any[]
+  previousComments?: any[],
 ) {
   console.log(`🎯 processAgentSessionWork ENTERED for session ${sessionId}`);
 
@@ -294,7 +294,7 @@ async function processAgentSessionWork(
   const issueContext = await getIssueContext(
     linearClient,
     issue.identifier,
-    sourceCommentId
+    sourceCommentId,
   );
 
   // Build context message with comprehensive issue details
@@ -305,11 +305,12 @@ async function processAgentSessionWork(
   if (agentSession.comment) {
     const comment = agentSession.comment;
     const user = comment.user;
-    const userName = user?.name || 'Unknown';
+    const userName = user?.name || "Unknown";
     contextMessage += `\n\n=== IMMEDIATE TRIGGER ===\nThis agent session was triggered by a comment from ${userName}: ${comment.body}`;
   }
 
-  contextMessage += `\n\nPlease analyze this issue thoroughly and take appropriate actions. You can use Linear, GitHub, or Slack tools as needed.`;
+  contextMessage +=
+    "\n\nPlease analyze this issue thoroughly and take appropriate actions. You can use Linear, GitHub, or Slack tools as needed.";
 
   // Create AbortController for this session
   const abortController = new AbortController();
@@ -317,11 +318,11 @@ async function processAgentSessionWork(
 
   // Log that we're starting AI processing
   console.log(
-    `Processing AI response for session ${sessionId}, issue ${issue.identifier}`
+    `Processing AI response for session ${sessionId}, issue ${issue.identifier}`,
   );
   await agentActivityDirect.thought(
     sessionId,
-    `Analyzing issue context for ${issue.identifier} - ${issue.title}`
+    `Analyzing issue context for ${issue.identifier} - ${issue.title}`,
   );
 
   // Status update function with appropriate activity types
@@ -330,21 +331,21 @@ async function processAgentSessionWork(
 
     // Map status updates to appropriate activity types
     if (
-      status.includes('is searching') ||
-      status.includes('is getting') ||
-      status.includes('is creating')
+      status.includes("is searching") ||
+      status.includes("is getting") ||
+      status.includes("is creating")
     ) {
       // Extract action and parameter from status
       const actionMatch = status.match(/is (\w+)/);
-      const action = actionMatch ? actionMatch[1] : 'processing';
+      const action = actionMatch ? actionMatch[1] : "processing";
       await agentActivityDirect.action(
         sessionId,
         action,
-        status.replace(`is ${action}`, '').trim()
+        status.replace(`is ${action}`, "").trim(),
       );
-    } else if (status.includes('completed') || status.includes('finished')) {
+    } else if (status.includes("completed") || status.includes("finished")) {
       await agentActivityDirect.response(sessionId, status);
-    } else if (status.includes('error') || status.includes('failed')) {
+    } else if (status.includes("error") || status.includes("failed")) {
       await agentActivityDirect.error(sessionId, status);
     } else {
       // Default to thought for other statuses
@@ -357,7 +358,7 @@ async function processAgentSessionWork(
 
     // Generate response using AI
     const result = await generateResponse({
-      messages: [{ role: 'user', content: contextMessage }],
+      messages: [{ role: "user", content: contextMessage }],
       updateStatus,
       linearClient,
       slackContext: undefined, // No Slack context
@@ -368,7 +369,7 @@ async function processAgentSessionWork(
     console.log(
       `generateResponse completed for session ${sessionId}, result length: ${
         result?.length || 0
-      }`
+      }`,
     );
 
     // Clean up abort controller on success
@@ -379,7 +380,7 @@ async function processAgentSessionWork(
       await linearAgentSessionManager.completeSession(sessionId);
       console.log(`Completed Linear agent session: ${sessionId}`);
     } catch (error) {
-      console.error('Error completing Linear agent session:', error);
+      console.error("Error completing Linear agent session:", error);
     }
   } catch (error) {
     // Clean up abort controller on error
@@ -390,7 +391,7 @@ async function processAgentSessionWork(
       sessionId,
       `Analysis failed: ${
         error instanceof Error ? error.message : String(error)
-      }`
+      }`,
     );
     throw error;
   }
@@ -404,22 +405,22 @@ async function processAgentSessionWork(
  */
 async function handleAgentSessionPrompted(
   payload: any,
-  linearClient: LinearClient
+  linearClient: LinearClient,
 ) {
   const { agentSession, agentActivity } = payload;
   const sessionId = agentSession.id;
   const issue = agentSession.issue;
 
   if (!issue) {
-    console.error('Agent session prompted without an issue');
+    console.error("Agent session prompted without an issue");
     return;
   }
 
   console.log(`Agent session prompted for issue ${issue.identifier}`);
 
   // Extract the user prompt from the agentActivity first
-  let userPrompt = '';
-  if (agentActivity && agentActivity.content?.type === 'prompt') {
+  let userPrompt = "";
+  if (agentActivity && agentActivity.content?.type === "prompt") {
     userPrompt = agentActivity.content.body;
     console.log(`📝 User prompt extracted from agentActivity: "${userPrompt}"`);
   }
@@ -431,17 +432,17 @@ async function handleAgentSessionPrompted(
   }
 
   if (!userPrompt) {
-    console.error('No user prompt found in agent session prompted event');
+    console.error("No user prompt found in agent session prompted event");
     console.log(
-      'AgentActivity structure:',
-      JSON.stringify(agentActivity, null, 2)
+      "AgentActivity structure:",
+      JSON.stringify(agentActivity, null, 2),
     );
-    console.log('AgentSession comment:', agentSession.comment?.body);
+    console.log("AgentSession comment:", agentSession.comment?.body);
     return;
   }
 
   // Check for /stop command
-  if (userPrompt.trim().toLowerCase() === '/stop') {
+  if (userPrompt.trim().toLowerCase() === "/stop") {
     console.log(`🛑 Stop command received for session ${sessionId}`);
 
     // Abort any active session processing immediately
@@ -455,17 +456,17 @@ async function handleAgentSessionPrompted(
     // Send immediate response about stopping
     await agentActivityDirect.response(
       sessionId,
-      '🛑 **Otron is immediately stopping all operations** as requested. Any ongoing tasks have been cancelled.'
+      "🛑 **Otron is immediately stopping all operations** as requested. Any ongoing tasks have been cancelled.",
     );
 
     // Complete the session
     try {
       await linearAgentSessionManager.completeSession(sessionId);
       console.log(
-        `Completed Linear agent session after stop command: ${sessionId}`
+        `Completed Linear agent session after stop command: ${sessionId}`,
       );
     } catch (error) {
-      console.error('Error completing Linear agent session after stop:', error);
+      console.error("Error completing Linear agent session after stop:", error);
     }
 
     return;
@@ -477,19 +478,19 @@ async function handleAgentSessionPrompted(
   if (activeSessionId && activeSessionId !== sessionId) {
     console.log(
       `Found active session ${activeSessionId} for issue ${issue.id}, ${
-        userPrompt.trim().toLowerCase() === '/stop'
-          ? 'stopping active session'
-          : 'queuing this prompt'
-      }`
+        userPrompt.trim().toLowerCase() === "/stop"
+          ? "stopping active session"
+          : "queuing this prompt"
+      }`,
     );
 
     // If this is a stop command, abort the active session instead of queuing
-    if (userPrompt.trim().toLowerCase() === '/stop') {
+    if (userPrompt.trim().toLowerCase() === "/stop") {
       // Abort the active session processing immediately
       const abortController = sessionAbortControllers.get(activeSessionId);
       if (abortController) {
         console.log(
-          `🛑 Aborting active session processing for ${activeSessionId}`
+          `🛑 Aborting active session processing for ${activeSessionId}`,
         );
         abortController.abort();
         sessionAbortControllers.delete(activeSessionId);
@@ -498,8 +499,8 @@ async function handleAgentSessionPrompted(
       // Also send stop command to queue as fallback
       const stopMessage: QueuedMessage = {
         timestamp: Date.now(),
-        type: 'stop',
-        content: 'STOP_COMMAND',
+        type: "stop",
+        content: "STOP_COMMAND",
         sessionId: sessionId,
         issueId: issue.id,
         metadata: {
@@ -514,7 +515,7 @@ async function handleAgentSessionPrompted(
       // Send immediate response about stopping
       await agentActivityDirect.response(
         sessionId,
-        '🛑 **Otron is immediately stopping all operations** as requested. The active session has been terminated.'
+        "🛑 **Otron is immediately stopping all operations** as requested. The active session has been terminated.",
       );
 
       return;
@@ -523,13 +524,13 @@ async function handleAgentSessionPrompted(
     // IMMEDIATE ACKNOWLEDGMENT still required for non-stop commands
     await agentActivityDirect.thought(
       sessionId,
-      `Prompt acknowledged - joining active analysis for ${issue.identifier}`
+      `Prompt acknowledged - joining active analysis for ${issue.identifier}`,
     );
 
     // Queue this prompt for the active session
     const queuedMessage: QueuedMessage = {
       timestamp: Date.now(),
-      type: 'prompted',
+      type: "prompted",
       content: `User prompt: ${userPrompt}`,
       sessionId: sessionId,
       issueId: issue.id,
@@ -545,7 +546,7 @@ async function handleAgentSessionPrompted(
     // Complete this session since it's been merged with the active one
     await agentActivityDirect.response(
       sessionId,
-      `Prompt queued for active session ${activeSessionId}`
+      `Prompt queued for active session ${activeSessionId}`,
     );
 
     return;
@@ -557,7 +558,7 @@ async function handleAgentSessionPrompted(
   // IMMEDIATE ACKNOWLEDGMENT (within 5 seconds)
   await agentActivityDirect.thought(
     sessionId,
-    `Processing user prompt for ${issue.identifier}`
+    `Processing user prompt for ${issue.identifier}`,
   );
 
   // Return the async processing Promise for waitUntil to handle
@@ -566,7 +567,7 @@ async function handleAgentSessionPrompted(
     userPrompt,
     linearClient,
     sessionId,
-    payload.previousComments
+    payload.previousComments,
   );
 }
 
@@ -578,7 +579,7 @@ async function processAgentSessionPromptWithErrorHandling(
   userPrompt: string,
   linearClient: LinearClient,
   sessionId: string,
-  previousComments?: any[]
+  previousComments?: any[],
 ): Promise<void> {
   try {
     console.log(`Starting async prompt processing for session ${sessionId}`);
@@ -587,20 +588,20 @@ async function processAgentSessionPromptWithErrorHandling(
       userPrompt,
       linearClient,
       sessionId,
-      previousComments
+      previousComments,
     );
   } catch (error) {
-    console.error('Error in async agent session prompt processing:', error);
+    console.error("Error in async agent session prompt processing:", error);
     // Log error to Linear using the real session ID (using thought for less prominent logging)
     try {
       await agentActivityDirect.thought(
         sessionId,
         `❌ Prompt processing failed: ${
           error instanceof Error ? error.message : String(error)
-        }`
+        }`,
       );
     } catch (logError) {
-      console.error('Failed to log prompt error to Linear:', logError);
+      console.error("Failed to log prompt error to Linear:", logError);
     }
   }
 }
@@ -614,7 +615,7 @@ async function processAgentSessionPrompt(
   userPrompt: string,
   linearClient: LinearClient,
   sessionId: string,
-  previousComments?: any[]
+  previousComments?: any[],
 ) {
   const issue = agentSession.issue;
 
@@ -625,7 +626,7 @@ async function processAgentSessionPrompt(
   const issueContext = await getIssueContext(
     linearClient,
     issue.identifier,
-    sourceCommentId
+    sourceCommentId,
   );
 
   // Build context message with comprehensive issue details
@@ -640,11 +641,11 @@ async function processAgentSessionPrompt(
 
   // Log that we're starting AI processing
   console.log(
-    `Processing AI prompt response for session ${sessionId}, issue ${issue.identifier}`
+    `Processing AI prompt response for session ${sessionId}, issue ${issue.identifier}`,
   );
   await agentActivityDirect.thought(
     sessionId,
-    `Processing follow-up prompt for ${issue.identifier}`
+    `Processing follow-up prompt for ${issue.identifier}`,
   );
 
   // Status update function with appropriate activity types
@@ -653,21 +654,21 @@ async function processAgentSessionPrompt(
 
     // Map status updates to appropriate activity types
     if (
-      status.includes('is searching') ||
-      status.includes('is getting') ||
-      status.includes('is creating')
+      status.includes("is searching") ||
+      status.includes("is getting") ||
+      status.includes("is creating")
     ) {
       // Extract action and parameter from status
       const actionMatch = status.match(/is (\w+)/);
-      const action = actionMatch ? actionMatch[1] : 'processing';
+      const action = actionMatch ? actionMatch[1] : "processing";
       await agentActivityDirect.action(
         sessionId,
         action,
-        status.replace(`is ${action}`, '').trim()
+        status.replace(`is ${action}`, "").trim(),
       );
-    } else if (status.includes('completed') || status.includes('finished')) {
+    } else if (status.includes("completed") || status.includes("finished")) {
       await agentActivityDirect.response(sessionId, status);
-    } else if (status.includes('error') || status.includes('failed')) {
+    } else if (status.includes("error") || status.includes("failed")) {
       await agentActivityDirect.error(sessionId, status);
     } else {
       // Default to thought for other statuses
@@ -680,7 +681,7 @@ async function processAgentSessionPrompt(
 
     // Generate response using AI
     const result = await generateResponse({
-      messages: [{ role: 'user', content: contextMessage }],
+      messages: [{ role: "user", content: contextMessage }],
       updateStatus,
       linearClient,
       slackContext: undefined, // No Slack context
@@ -691,7 +692,7 @@ async function processAgentSessionPrompt(
     console.log(
       `generateResponse completed for prompt session ${sessionId}, result length: ${
         result?.length || 0
-      }`
+      }`,
     );
 
     // Clean up abort controller on success
@@ -702,7 +703,7 @@ async function processAgentSessionPrompt(
       await linearAgentSessionManager.completeSession(sessionId);
       console.log(`Completed Linear agent session: ${sessionId}`);
     } catch (error) {
-      console.error('Error completing Linear agent session:', error);
+      console.error("Error completing Linear agent session:", error);
     }
   } catch (error) {
     // Clean up abort controller on error
@@ -710,13 +711,13 @@ async function processAgentSessionPrompt(
 
     console.error(
       `generateResponse failed for prompt session ${sessionId}:`,
-      error
+      error,
     );
     await agentActivityDirect.error(
       sessionId,
       `Follow-up analysis failed: ${
         error instanceof Error ? error.message : String(error)
-      }`
+      }`,
     );
     throw error;
   }

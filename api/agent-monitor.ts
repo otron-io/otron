@@ -1,7 +1,7 @@
-import type { VercelRequest, VercelResponse } from '@vercel/node';
 import { Redis } from '@upstash/redis';
-import { env } from '../lib/core/env.js';
+import type { VercelRequest, VercelResponse } from '@vercel/node';
 import { withInternalAccess } from '../lib/core/auth.js';
+import { env } from '../lib/core/env.js';
 
 // Initialize Redis client
 const redis = new Redis({
@@ -43,8 +43,8 @@ async function handler(req: VercelRequest, res: VercelResponse) {
       const stats = await redis.hgetall(key);
       toolStats[toolName] = stats
         ? {
-            attempts: parseInt(stats.attempts as string) || 0,
-            successes: parseInt(stats.successes as string) || 0,
+            attempts: Number.parseInt(stats.attempts as string) || 0,
+            successes: Number.parseInt(stats.successes as string) || 0,
           }
         : { attempts: 0, successes: 0 };
     });
@@ -135,11 +135,11 @@ async function getActiveContextsCount(issueKeys: string[]) {
 
   const results = await Promise.all(promises);
 
-  results.forEach((result) => {
+  for (const result of results) {
     if (result.active) total++;
     if (result.slack) slack++;
     if (result.linear) linear++;
-  });
+  }
 
   return { total, slack, linear };
 }

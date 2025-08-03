@@ -1,6 +1,6 @@
-import type { VercelRequest, VercelResponse } from '@vercel/node';
-import { env } from '../lib/core/env.js';
-import { withCORS } from '../lib/core/cors.js';
+import type { VercelRequest, VercelResponse } from "@vercel/node";
+import { withCORS } from "../lib/core/cors.js";
+import { env } from "../lib/core/env.js";
 
 /**
  * OpenAPI documentation endpoint
@@ -8,93 +8,93 @@ import { withCORS } from '../lib/core/cors.js';
  */
 async function handler(req: VercelRequest, res: VercelResponse) {
   // Only accept GET requests
-  if (req.method !== 'GET') {
-    return res.status(405).json({ error: 'Method not allowed' });
+  if (req.method !== "GET") {
+    return res.status(405).json({ error: "Method not allowed" });
   }
 
   const openApiSpec = {
-    openapi: '3.0.3',
+    openapi: "3.0.3",
     info: {
-      title: 'Otron AI Agent API',
+      title: "Otron AI Agent API",
       description:
-        'Autonomous AI agent for Linear issue management, GitHub repository integration, and Slack automation',
-      version: '0.0.1',
+        "Autonomous AI agent for Linear issue management, GitHub repository integration, and Slack automation",
+      version: "0.0.1",
       contact: {
-        name: 'Otron',
-        url: 'https://github.com/otron-io/otron',
+        name: "Otron",
+        url: "https://github.com/otron-io/otron",
       },
       license: {
-        name: 'MIT',
-        url: 'https://opensource.org/licenses/MIT',
+        name: "MIT",
+        url: "https://opensource.org/licenses/MIT",
       },
     },
     servers: [
       {
         url: env.VERCEL_URL,
-        description: 'Production server',
+        description: "Production server",
       },
       {
-        url: 'http://localhost:3000',
-        description: 'Development server',
+        url: "http://localhost:3000",
+        description: "Development server",
       },
     ],
     components: {
       securitySchemes: {
         InternalToken: {
-          type: 'apiKey',
-          in: 'header',
-          name: 'X-Internal-Token',
-          description: 'Internal API token for protected endpoints',
+          type: "apiKey",
+          in: "header",
+          name: "X-Internal-Token",
+          description: "Internal API token for protected endpoints",
         },
         BasicAuth: {
-          type: 'http',
-          scheme: 'basic',
-          description: 'Basic authentication for admin interfaces',
+          type: "http",
+          scheme: "basic",
+          description: "Basic authentication for admin interfaces",
         },
       },
       schemas: {
         Error: {
-          type: 'object',
+          type: "object",
           properties: {
             error: {
-              type: 'string',
-              description: 'Error message',
+              type: "string",
+              description: "Error message",
             },
           },
-          required: ['error'],
+          required: ["error"],
         },
         HealthCheck: {
-          type: 'object',
+          type: "object",
           properties: {
             status: {
-              type: 'string',
-              enum: ['healthy', 'degraded', 'unhealthy'],
-              description: 'Overall system health status',
+              type: "string",
+              enum: ["healthy", "degraded", "unhealthy"],
+              description: "Overall system health status",
             },
             uptime: {
-              type: 'number',
-              description: 'System uptime in seconds',
+              type: "number",
+              description: "System uptime in seconds",
             },
             version: {
-              type: 'string',
-              description: 'Application version',
+              type: "string",
+              description: "Application version",
             },
             environment: {
-              type: 'string',
-              description: 'Runtime environment',
+              type: "string",
+              description: "Runtime environment",
             },
             checks: {
-              type: 'object',
-              description: 'Individual health check results',
+              type: "object",
+              description: "Individual health check results",
               additionalProperties: {
-                type: 'object',
+                type: "object",
                 properties: {
                   status: {
-                    type: 'string',
-                    enum: ['healthy', 'unhealthy'],
+                    type: "string",
+                    enum: ["healthy", "unhealthy"],
                   },
                   message: {
-                    type: 'string',
+                    type: "string",
                   },
                 },
               },
@@ -102,720 +102,720 @@ async function handler(req: VercelRequest, res: VercelResponse) {
           },
         },
         MemoryEntry: {
-          type: 'object',
+          type: "object",
           properties: {
             id: {
-              type: 'string',
-              description: 'Unique memory entry identifier',
+              type: "string",
+              description: "Unique memory entry identifier",
             },
             issueId: {
-              type: 'string',
-              description: 'Associated issue or context ID',
+              type: "string",
+              description: "Associated issue or context ID",
             },
             memoryType: {
-              type: 'string',
-              enum: ['conversation', 'action', 'context'],
-              description: 'Type of memory entry',
+              type: "string",
+              enum: ["conversation", "action", "context"],
+              description: "Type of memory entry",
             },
             timestamp: {
-              type: 'number',
-              description: 'Unix timestamp when memory was created',
+              type: "number",
+              description: "Unix timestamp when memory was created",
             },
             type: {
-              type: 'string',
-              description: 'Specific memory type (e.g., tool name for actions)',
+              type: "string",
+              description: "Specific memory type (e.g., tool name for actions)",
             },
             data: {
-              type: 'object',
-              description: 'Memory content data',
+              type: "object",
+              description: "Memory content data",
               additionalProperties: true,
             },
             relevanceScore: {
-              type: 'number',
-              description: 'Relevance score for memory ranking',
+              type: "number",
+              description: "Relevance score for memory ranking",
             },
           },
           required: [
-            'id',
-            'issueId',
-            'memoryType',
-            'timestamp',
-            'type',
-            'data',
+            "id",
+            "issueId",
+            "memoryType",
+            "timestamp",
+            "type",
+            "data",
           ],
         },
         MemoryStatistics: {
-          type: 'object',
+          type: "object",
           properties: {
             totalMemories: {
-              type: 'number',
-              description: 'Total number of memory entries',
+              type: "number",
+              description: "Total number of memory entries",
             },
             conversationMemories: {
-              type: 'number',
-              description: 'Number of conversation memory entries',
+              type: "number",
+              description: "Number of conversation memory entries",
             },
             actionMemories: {
-              type: 'number',
-              description: 'Number of action memory entries',
+              type: "number",
+              description: "Number of action memory entries",
             },
             contextMemories: {
-              type: 'number',
-              description: 'Number of context memory entries',
+              type: "number",
+              description: "Number of context memory entries",
             },
             totalIssues: {
-              type: 'number',
-              description: 'Number of unique issues with memories',
+              type: "number",
+              description: "Number of unique issues with memories",
             },
             oldestMemory: {
-              type: 'number',
-              description: 'Timestamp of oldest memory entry',
+              type: "number",
+              description: "Timestamp of oldest memory entry",
               nullable: true,
             },
             newestMemory: {
-              type: 'number',
-              description: 'Timestamp of newest memory entry',
+              type: "number",
+              description: "Timestamp of newest memory entry",
               nullable: true,
             },
           },
         },
         AgentContext: {
-          type: 'object',
+          type: "object",
           properties: {
             contextId: {
-              type: 'string',
-              description: 'Unique context identifier',
+              type: "string",
+              description: "Unique context identifier",
             },
             platform: {
-              type: 'string',
-              enum: ['linear', 'slack'],
-              description: 'Platform where the context originated',
+              type: "string",
+              enum: ["linear", "slack"],
+              description: "Platform where the context originated",
             },
             title: {
-              type: 'string',
-              description: 'Context title or description',
+              type: "string",
+              description: "Context title or description",
             },
             status: {
-              type: 'string',
-              description: 'Current status of the context',
+              type: "string",
+              description: "Current status of the context",
             },
             lastActivity: {
-              type: 'string',
-              format: 'date-time',
-              description: 'Last activity timestamp',
+              type: "string",
+              format: "date-time",
+              description: "Last activity timestamp",
             },
             actionCount: {
-              type: 'integer',
-              description: 'Number of actions performed in this context',
+              type: "integer",
+              description: "Number of actions performed in this context",
             },
           },
         },
         ToolStats: {
-          type: 'object',
+          type: "object",
           additionalProperties: {
-            type: 'object',
+            type: "object",
             properties: {
               attempts: {
-                type: 'integer',
-                description: 'Number of times this tool was attempted',
+                type: "integer",
+                description: "Number of times this tool was attempted",
               },
               successes: {
-                type: 'integer',
-                description: 'Number of successful tool executions',
+                type: "integer",
+                description: "Number of successful tool executions",
               },
               failures: {
-                type: 'integer',
-                description: 'Number of failed tool executions',
+                type: "integer",
+                description: "Number of failed tool executions",
               },
               lastUsed: {
-                type: 'string',
-                format: 'date-time',
-                description: 'Last time this tool was used',
+                type: "string",
+                format: "date-time",
+                description: "Last time this tool was used",
               },
             },
           },
         },
         ActiveSession: {
-          type: 'object',
+          type: "object",
           properties: {
             sessionId: {
-              type: 'string',
-              description: 'Unique session identifier',
+              type: "string",
+              description: "Unique session identifier",
             },
             contextId: {
-              type: 'string',
-              description: 'Context or issue ID being worked on',
+              type: "string",
+              description: "Context or issue ID being worked on",
             },
             startTime: {
-              type: 'number',
-              description: 'Unix timestamp when session started',
+              type: "number",
+              description: "Unix timestamp when session started",
             },
             platform: {
-              type: 'string',
-              enum: ['slack', 'linear', 'github', 'general'],
-              description: 'Platform where the session originated',
+              type: "string",
+              enum: ["slack", "linear", "github", "general"],
+              description: "Platform where the session originated",
             },
             status: {
-              type: 'string',
+              type: "string",
               enum: [
-                'initializing',
-                'planning',
-                'gathering',
-                'acting',
-                'completing',
+                "initializing",
+                "planning",
+                "gathering",
+                "acting",
+                "completing",
               ],
-              description: 'Current session status',
+              description: "Current session status",
             },
             currentTool: {
-              type: 'string',
-              description: 'Currently executing tool',
+              type: "string",
+              description: "Currently executing tool",
               nullable: true,
             },
             toolsUsed: {
-              type: 'array',
-              items: { type: 'string' },
-              description: 'List of tools used in this session',
+              type: "array",
+              items: { type: "string" },
+              description: "List of tools used in this session",
             },
             actionsPerformed: {
-              type: 'array',
-              items: { type: 'string' },
-              description: 'List of actions performed in this session',
+              type: "array",
+              items: { type: "string" },
+              description: "List of actions performed in this session",
             },
             metadata: {
-              type: 'object',
+              type: "object",
               properties: {
-                issueId: { type: 'string' },
-                channelId: { type: 'string' },
-                threadTs: { type: 'string' },
-                userId: { type: 'string' },
+                issueId: { type: "string" },
+                channelId: { type: "string" },
+                threadTs: { type: "string" },
+                userId: { type: "string" },
               },
-              description: 'Additional session metadata',
+              description: "Additional session metadata",
             },
           },
           required: [
-            'sessionId',
-            'contextId',
-            'startTime',
-            'platform',
-            'status',
-            'toolsUsed',
-            'actionsPerformed',
+            "sessionId",
+            "contextId",
+            "startTime",
+            "platform",
+            "status",
+            "toolsUsed",
+            "actionsPerformed",
           ],
         },
         CompletedSession: {
-          type: 'object',
+          type: "object",
           allOf: [
-            { $ref: '#/components/schemas/ActiveSession' },
+            { $ref: "#/components/schemas/ActiveSession" },
             {
-              type: 'object',
+              type: "object",
               properties: {
                 status: {
-                  type: 'string',
-                  enum: ['completed', 'cancelled', 'error'],
-                  description: 'Final session status',
+                  type: "string",
+                  enum: ["completed", "cancelled", "error"],
+                  description: "Final session status",
                 },
                 endTime: {
-                  type: 'number',
-                  description: 'Unix timestamp when session ended',
+                  type: "number",
+                  description: "Unix timestamp when session ended",
                 },
                 duration: {
-                  type: 'number',
-                  description: 'Session duration in milliseconds',
+                  type: "number",
+                  description: "Session duration in milliseconds",
                 },
                 error: {
-                  type: 'string',
-                  description: 'Error message if session failed',
+                  type: "string",
+                  description: "Error message if session failed",
                   nullable: true,
                 },
               },
-              required: ['endTime', 'duration'],
+              required: ["endTime", "duration"],
             },
           ],
         },
         ActiveSessionsResponse: {
-          type: 'object',
+          type: "object",
           properties: {
             activeSessions: {
-              type: 'array',
-              items: { $ref: '#/components/schemas/ActiveSession' },
-              description: 'Currently running sessions',
+              type: "array",
+              items: { $ref: "#/components/schemas/ActiveSession" },
+              description: "Currently running sessions",
             },
             completedSessions: {
-              type: 'array',
-              items: { $ref: '#/components/schemas/CompletedSession' },
-              description: 'Recently completed sessions',
+              type: "array",
+              items: { $ref: "#/components/schemas/CompletedSession" },
+              description: "Recently completed sessions",
             },
             pagination: {
-              type: 'object',
+              type: "object",
               properties: {
-                limit: { type: 'number' },
-                offset: { type: 'number' },
-                hasMore: { type: 'boolean' },
+                limit: { type: "number" },
+                offset: { type: "number" },
+                hasMore: { type: "boolean" },
               },
-              description: 'Pagination information for completed sessions',
+              description: "Pagination information for completed sessions",
             },
             counts: {
-              type: 'object',
+              type: "object",
               properties: {
-                totalActive: { type: 'number' },
-                totalCompleted: { type: 'number' },
+                totalActive: { type: "number" },
+                totalCompleted: { type: "number" },
               },
-              description: 'Session count statistics',
+              description: "Session count statistics",
             },
           },
         },
         AgentMonitorResponse: {
-          type: 'object',
+          type: "object",
           properties: {
             activeIssues: {
-              type: 'array',
-              items: { $ref: '#/components/schemas/AgentContext' },
+              type: "array",
+              items: { $ref: "#/components/schemas/AgentContext" },
               description:
-                'Currently active contexts (deprecated, use /api/active-sessions)',
+                "Currently active contexts (deprecated, use /api/active-sessions)",
             },
             completedIssues: {
-              type: 'array',
-              items: { $ref: '#/components/schemas/AgentContext' },
+              type: "array",
+              items: { $ref: "#/components/schemas/AgentContext" },
               description:
-                'Recently completed contexts (deprecated, use /api/active-sessions)',
+                "Recently completed contexts (deprecated, use /api/active-sessions)",
             },
             toolStats: {
-              $ref: '#/components/schemas/ToolStats',
-              description: 'Tool usage statistics',
+              $ref: "#/components/schemas/ToolStats",
+              description: "Tool usage statistics",
             },
             systemActivity: {
-              type: 'array',
+              type: "array",
               items: {
-                type: 'object',
+                type: "object",
                 properties: {
-                  timestamp: { type: 'number' },
-                  issueId: { type: 'string' },
+                  timestamp: { type: "number" },
+                  issueId: { type: "string" },
                   data: {
-                    type: 'object',
+                    type: "object",
                     properties: {
-                      tool: { type: 'string' },
-                      success: { type: 'boolean' },
+                      tool: { type: "string" },
+                      success: { type: "boolean" },
                     },
                   },
                 },
               },
-              description: 'Recent system activity',
+              description: "Recent system activity",
             },
             timestamp: {
-              type: 'integer',
-              description: 'Response timestamp',
+              type: "integer",
+              description: "Response timestamp",
             },
             linearConnected: {
-              type: 'boolean',
-              description: 'Whether Linear integration is connected',
+              type: "boolean",
+              description: "Whether Linear integration is connected",
             },
             summary: {
-              type: 'object',
+              type: "object",
               properties: {
-                totalActiveContexts: { type: 'number' },
-                totalCompletedContexts: { type: 'number' },
-                totalSlackContexts: { type: 'number' },
-                totalLinearIssues: { type: 'number' },
-                totalToolOperations: { type: 'number' },
-                totalSuccessfulOperations: { type: 'number' },
+                totalActiveContexts: { type: "number" },
+                totalCompletedContexts: { type: "number" },
+                totalSlackContexts: { type: "number" },
+                totalLinearIssues: { type: "number" },
+                totalToolOperations: { type: "number" },
+                totalSuccessfulOperations: { type: "number" },
               },
-              description: 'Summary statistics',
+              description: "Summary statistics",
             },
           },
         },
         SearchResult: {
-          type: 'object',
+          type: "object",
           properties: {
             repository: {
-              type: 'string',
-              description: 'Repository name',
+              type: "string",
+              description: "Repository name",
             },
             path: {
-              type: 'string',
-              description: 'File path within repository',
+              type: "string",
+              description: "File path within repository",
             },
             content: {
-              type: 'string',
-              description: 'Matched content',
+              type: "string",
+              description: "Matched content",
             },
             score: {
-              type: 'number',
-              description: 'Relevance score (0-1)',
+              type: "number",
+              description: "Relevance score (0-1)",
             },
             language: {
-              type: 'string',
-              description: 'Programming language',
+              type: "string",
+              description: "Programming language",
             },
             type: {
-              type: 'string',
-              enum: ['function', 'class', 'method', 'block', 'file'],
-              description: 'Type of code element',
+              type: "string",
+              enum: ["function", "class", "method", "block", "file"],
+              description: "Type of code element",
             },
             startLine: {
-              type: 'integer',
-              description: 'Starting line number',
+              type: "integer",
+              description: "Starting line number",
             },
             endLine: {
-              type: 'integer',
-              description: 'Ending line number',
+              type: "integer",
+              description: "Ending line number",
             },
           },
         },
         EmbeddingStatus: {
-          type: 'object',
+          type: "object",
           properties: {
             repository: {
-              type: 'string',
-              description: 'Repository name',
+              type: "string",
+              description: "Repository name",
             },
             status: {
-              type: 'string',
-              enum: ['processing', 'completed', 'failed'],
-              description: 'Embedding status',
+              type: "string",
+              enum: ["processing", "completed", "failed"],
+              description: "Embedding status",
             },
             progress: {
-              type: 'number',
-              description: 'Progress percentage (0-100)',
+              type: "number",
+              description: "Progress percentage (0-100)",
             },
             filesProcessed: {
-              type: 'integer',
-              description: 'Number of files processed',
+              type: "integer",
+              description: "Number of files processed",
             },
             totalFiles: {
-              type: 'integer',
-              description: 'Total number of files to process',
+              type: "integer",
+              description: "Total number of files to process",
             },
             lastUpdated: {
-              type: 'string',
-              format: 'date-time',
-              description: 'Last update timestamp',
+              type: "string",
+              format: "date-time",
+              description: "Last update timestamp",
             },
           },
         },
       },
     },
     paths: {
-      '/health': {
+      "/health": {
         get: {
-          summary: 'Health Check',
-          description: 'Get system health status and connectivity checks',
-          tags: ['System'],
+          summary: "Health Check",
+          description: "Get system health status and connectivity checks",
+          tags: ["System"],
           security: [{ InternalToken: [] }],
           responses: {
-            '200': {
-              description: 'System health information',
+            "200": {
+              description: "System health information",
               content: {
-                'application/json': {
-                  schema: { $ref: '#/components/schemas/HealthCheck' },
+                "application/json": {
+                  schema: { $ref: "#/components/schemas/HealthCheck" },
                 },
               },
             },
-            '500': {
-              description: 'Internal server error',
+            "500": {
+              description: "Internal server error",
               content: {
-                'application/json': {
-                  schema: { $ref: '#/components/schemas/Error' },
+                "application/json": {
+                  schema: { $ref: "#/components/schemas/Error" },
                 },
               },
             },
           },
         },
       },
-      '/api/agent-monitor': {
+      "/api/agent-monitor": {
         get: {
-          summary: 'Agent Monitor (Legacy)',
+          summary: "Agent Monitor (Legacy)",
           description:
-            'Get lightweight agent statistics and tool usage. For real-time session monitoring, use /api/active-sessions instead.',
-          tags: ['Agent'],
+            "Get lightweight agent statistics and tool usage. For real-time session monitoring, use /api/active-sessions instead.",
+          tags: ["Agent"],
           security: [{ InternalToken: [] }],
           deprecated: true,
           responses: {
-            '200': {
-              description: 'Agent monitoring data',
+            "200": {
+              description: "Agent monitoring data",
               content: {
-                'application/json': {
-                  schema: { $ref: '#/components/schemas/AgentMonitorResponse' },
+                "application/json": {
+                  schema: { $ref: "#/components/schemas/AgentMonitorResponse" },
                 },
               },
             },
-            '403': {
-              description: 'Forbidden - Invalid or missing internal token',
+            "403": {
+              description: "Forbidden - Invalid or missing internal token",
               content: {
-                'application/json': {
-                  schema: { $ref: '#/components/schemas/Error' },
+                "application/json": {
+                  schema: { $ref: "#/components/schemas/Error" },
                 },
               },
             },
-            '500': {
-              description: 'Internal server error',
+            "500": {
+              description: "Internal server error",
               content: {
-                'application/json': {
-                  schema: { $ref: '#/components/schemas/Error' },
+                "application/json": {
+                  schema: { $ref: "#/components/schemas/Error" },
                 },
               },
             },
           },
         },
       },
-      '/api/active-sessions': {
+      "/api/active-sessions": {
         get: {
-          summary: 'Active Sessions Monitor',
+          summary: "Active Sessions Monitor",
           description:
-            'Get real-time monitoring of active agent sessions with ability to view completed sessions and pagination',
-          tags: ['Agent'],
+            "Get real-time monitoring of active agent sessions with ability to view completed sessions and pagination",
+          tags: ["Agent"],
           security: [{ InternalToken: [] }],
           parameters: [
             {
-              name: 'includeCompleted',
-              in: 'query',
+              name: "includeCompleted",
+              in: "query",
               description:
-                'Whether to include completed sessions (default: false)',
+                "Whether to include completed sessions (default: false)",
               required: false,
               schema: {
-                type: 'boolean',
+                type: "boolean",
                 default: false,
               },
             },
             {
-              name: 'limit',
-              in: 'query',
+              name: "limit",
+              in: "query",
               description:
-                'Maximum number of completed sessions to return (default: 20)',
+                "Maximum number of completed sessions to return (default: 20)",
               required: false,
               schema: {
-                type: 'integer',
+                type: "integer",
                 minimum: 1,
                 maximum: 100,
                 default: 20,
               },
             },
             {
-              name: 'offset',
-              in: 'query',
+              name: "offset",
+              in: "query",
               description:
-                'Offset for completed sessions pagination (default: 0)',
+                "Offset for completed sessions pagination (default: 0)",
               required: false,
               schema: {
-                type: 'integer',
+                type: "integer",
                 minimum: 0,
                 default: 0,
               },
             },
             {
-              name: 'days',
-              in: 'query',
+              name: "days",
+              in: "query",
               description:
-                'Number of days to look back for completed sessions (default: 7)',
+                "Number of days to look back for completed sessions (default: 7)",
               required: false,
               schema: {
-                type: 'integer',
+                type: "integer",
                 minimum: 1,
                 maximum: 365,
                 default: 7,
               },
             },
             {
-              name: 'status',
-              in: 'query',
-              description: 'Filter completed sessions by status (default: all)',
+              name: "status",
+              in: "query",
+              description: "Filter completed sessions by status (default: all)",
               required: false,
               schema: {
-                type: 'string',
-                enum: ['all', 'completed', 'cancelled', 'error'],
-                default: 'all',
+                type: "string",
+                enum: ["all", "completed", "cancelled", "error"],
+                default: "all",
               },
             },
           ],
           responses: {
-            '200': {
-              description: 'Active and completed sessions data',
+            "200": {
+              description: "Active and completed sessions data",
               content: {
-                'application/json': {
+                "application/json": {
                   schema: {
-                    $ref: '#/components/schemas/ActiveSessionsResponse',
+                    $ref: "#/components/schemas/ActiveSessionsResponse",
                   },
                 },
               },
             },
-            '403': {
-              description: 'Forbidden - Invalid or missing internal token',
+            "403": {
+              description: "Forbidden - Invalid or missing internal token",
               content: {
-                'application/json': {
-                  schema: { $ref: '#/components/schemas/Error' },
+                "application/json": {
+                  schema: { $ref: "#/components/schemas/Error" },
                 },
               },
             },
-            '500': {
-              description: 'Internal server error',
+            "500": {
+              description: "Internal server error",
               content: {
-                'application/json': {
-                  schema: { $ref: '#/components/schemas/Error' },
+                "application/json": {
+                  schema: { $ref: "#/components/schemas/Error" },
                 },
               },
             },
           },
         },
         delete: {
-          summary: 'Cancel Active Session',
-          description: 'Cancel a specific active session by session ID',
-          tags: ['Agent'],
+          summary: "Cancel Active Session",
+          description: "Cancel a specific active session by session ID",
+          tags: ["Agent"],
           security: [{ InternalToken: [] }],
           parameters: [
             {
-              name: 'sessionId',
-              in: 'query',
-              description: 'Session ID to cancel',
+              name: "sessionId",
+              in: "query",
+              description: "Session ID to cancel",
               required: true,
               schema: {
-                type: 'string',
+                type: "string",
               },
             },
           ],
           responses: {
-            '200': {
-              description: 'Session cancelled successfully',
+            "200": {
+              description: "Session cancelled successfully",
               content: {
-                'application/json': {
+                "application/json": {
                   schema: {
-                    type: 'object',
+                    type: "object",
                     properties: {
-                      success: { type: 'boolean' },
-                      message: { type: 'string' },
+                      success: { type: "boolean" },
+                      message: { type: "string" },
                     },
                   },
                 },
               },
             },
-            '400': {
-              description: 'Bad request - missing session ID',
+            "400": {
+              description: "Bad request - missing session ID",
               content: {
-                'application/json': {
-                  schema: { $ref: '#/components/schemas/Error' },
+                "application/json": {
+                  schema: { $ref: "#/components/schemas/Error" },
                 },
               },
             },
-            '403': {
-              description: 'Forbidden - Invalid or missing internal token',
+            "403": {
+              description: "Forbidden - Invalid or missing internal token",
               content: {
-                'application/json': {
-                  schema: { $ref: '#/components/schemas/Error' },
+                "application/json": {
+                  schema: { $ref: "#/components/schemas/Error" },
                 },
               },
             },
-            '404': {
-              description: 'Session not found',
+            "404": {
+              description: "Session not found",
               content: {
-                'application/json': {
-                  schema: { $ref: '#/components/schemas/Error' },
+                "application/json": {
+                  schema: { $ref: "#/components/schemas/Error" },
                 },
               },
             },
-            '500': {
-              description: 'Internal server error',
+            "500": {
+              description: "Internal server error",
               content: {
-                'application/json': {
-                  schema: { $ref: '#/components/schemas/Error' },
+                "application/json": {
+                  schema: { $ref: "#/components/schemas/Error" },
                 },
               },
             },
           },
         },
         post: {
-          summary: 'Cancel All Active Sessions',
-          description: 'Cancel all currently active sessions (emergency stop)',
-          tags: ['Agent'],
+          summary: "Cancel All Active Sessions",
+          description: "Cancel all currently active sessions (emergency stop)",
+          tags: ["Agent"],
           security: [{ InternalToken: [] }],
           responses: {
-            '200': {
-              description: 'All sessions cancelled successfully',
+            "200": {
+              description: "All sessions cancelled successfully",
               content: {
-                'application/json': {
+                "application/json": {
                   schema: {
-                    type: 'object',
+                    type: "object",
                     properties: {
-                      success: { type: 'boolean' },
-                      message: { type: 'string' },
-                      cancelledCount: { type: 'number' },
+                      success: { type: "boolean" },
+                      message: { type: "string" },
+                      cancelledCount: { type: "number" },
                     },
                   },
                 },
               },
             },
-            '403': {
-              description: 'Forbidden - Invalid or missing internal token',
+            "403": {
+              description: "Forbidden - Invalid or missing internal token",
               content: {
-                'application/json': {
-                  schema: { $ref: '#/components/schemas/Error' },
+                "application/json": {
+                  schema: { $ref: "#/components/schemas/Error" },
                 },
               },
             },
-            '500': {
-              description: 'Internal server error',
+            "500": {
+              description: "Internal server error",
               content: {
-                'application/json': {
-                  schema: { $ref: '#/components/schemas/Error' },
+                "application/json": {
+                  schema: { $ref: "#/components/schemas/Error" },
                 },
               },
             },
           },
         },
       },
-      '/api/code-search': {
+      "/api/code-search": {
         get: {
-          summary: 'Semantic Code Search',
+          summary: "Semantic Code Search",
           description:
-            'Search through repository embeddings using vector similarity',
-          tags: ['Repository'],
+            "Search through repository embeddings using vector similarity",
+          tags: ["Repository"],
           security: [{ InternalToken: [] }],
           parameters: [
             {
-              name: 'repository',
-              in: 'query',
-              description: 'Repository name to search in',
+              name: "repository",
+              in: "query",
+              description: "Repository name to search in",
               required: true,
               schema: {
-                type: 'string',
-                example: 'owner/repo-name',
+                type: "string",
+                example: "owner/repo-name",
               },
             },
             {
-              name: 'query',
-              in: 'query',
-              description: 'Search query',
+              name: "query",
+              in: "query",
+              description: "Search query",
               required: true,
               schema: {
-                type: 'string',
-                example: 'authentication middleware function',
+                type: "string",
+                example: "authentication middleware function",
               },
             },
             {
-              name: 'method',
-              in: 'query',
-              description: 'Search method (currently only vector is supported)',
+              name: "method",
+              in: "query",
+              description: "Search method (currently only vector is supported)",
               required: false,
               schema: {
-                type: 'string',
-                enum: ['vector'],
-                default: 'vector',
+                type: "string",
+                enum: ["vector"],
+                default: "vector",
               },
             },
             {
-              name: 'fileFilter',
-              in: 'query',
-              description: 'File type filter (e.g., .ts, .js)',
+              name: "fileFilter",
+              in: "query",
+              description: "File type filter (e.g., .ts, .js)",
               required: false,
               schema: {
-                type: 'string',
-                example: '.ts',
+                type: "string",
+                example: ".ts",
               },
             },
             {
-              name: 'limit',
-              in: 'query',
-              description: 'Maximum number of results to return',
+              name: "limit",
+              in: "query",
+              description: "Maximum number of results to return",
               required: false,
               schema: {
-                type: 'integer',
+                type: "integer",
                 minimum: 1,
                 maximum: 100,
                 default: 20,
@@ -823,101 +823,101 @@ async function handler(req: VercelRequest, res: VercelResponse) {
             },
           ],
           responses: {
-            '200': {
-              description: 'Search results',
+            "200": {
+              description: "Search results",
               content: {
-                'application/json': {
+                "application/json": {
                   schema: {
-                    type: 'object',
+                    type: "object",
                     properties: {
                       results: {
-                        type: 'array',
-                        items: { $ref: '#/components/schemas/SearchResult' },
+                        type: "array",
+                        items: { $ref: "#/components/schemas/SearchResult" },
                       },
                       totalResults: {
-                        type: 'integer',
-                        description: 'Total number of results found',
+                        type: "integer",
+                        description: "Total number of results found",
                       },
                       repository: {
-                        type: 'string',
-                        description: 'Repository that was searched',
+                        type: "string",
+                        description: "Repository that was searched",
                       },
                       query: {
-                        type: 'string',
-                        description: 'Original search query',
+                        type: "string",
+                        description: "Original search query",
                       },
                     },
                   },
                 },
               },
             },
-            '400': {
-              description: 'Bad request - missing or invalid parameters',
+            "400": {
+              description: "Bad request - missing or invalid parameters",
               content: {
-                'application/json': {
-                  schema: { $ref: '#/components/schemas/Error' },
+                "application/json": {
+                  schema: { $ref: "#/components/schemas/Error" },
                 },
               },
             },
-            '403': {
-              description: 'Forbidden - Invalid or missing internal token',
+            "403": {
+              description: "Forbidden - Invalid or missing internal token",
               content: {
-                'application/json': {
-                  schema: { $ref: '#/components/schemas/Error' },
+                "application/json": {
+                  schema: { $ref: "#/components/schemas/Error" },
                 },
               },
             },
-            '500': {
-              description: 'Internal server error',
+            "500": {
+              description: "Internal server error",
               content: {
-                'application/json': {
-                  schema: { $ref: '#/components/schemas/Error' },
+                "application/json": {
+                  schema: { $ref: "#/components/schemas/Error" },
                 },
               },
             },
           },
         },
         post: {
-          summary: 'Semantic Code Search (POST)',
+          summary: "Semantic Code Search (POST)",
           description:
-            'Search through repository embeddings using vector similarity with request body',
-          tags: ['Repository'],
+            "Search through repository embeddings using vector similarity with request body",
+          tags: ["Repository"],
           security: [{ InternalToken: [] }],
           requestBody: {
             required: true,
             content: {
-              'application/json': {
+              "application/json": {
                 schema: {
-                  type: 'object',
-                  required: ['repository', 'query'],
+                  type: "object",
+                  required: ["repository", "query"],
                   properties: {
                     repository: {
-                      type: 'string',
-                      description: 'Repository name to search in',
-                      example: 'owner/repo-name',
+                      type: "string",
+                      description: "Repository name to search in",
+                      example: "owner/repo-name",
                     },
                     query: {
-                      type: 'string',
-                      description: 'Search query',
-                      example: 'authentication middleware function',
+                      type: "string",
+                      description: "Search query",
+                      example: "authentication middleware function",
                     },
                     method: {
-                      type: 'string',
-                      enum: ['vector'],
-                      default: 'vector',
-                      description: 'Search method',
+                      type: "string",
+                      enum: ["vector"],
+                      default: "vector",
+                      description: "Search method",
                     },
                     fileFilter: {
-                      type: 'string',
-                      description: 'File type filter',
-                      example: '.ts',
+                      type: "string",
+                      description: "File type filter",
+                      example: ".ts",
                     },
                     limit: {
-                      type: 'integer',
+                      type: "integer",
                       minimum: 1,
                       maximum: 100,
                       default: 20,
-                      description: 'Maximum number of results',
+                      description: "Maximum number of results",
                     },
                   },
                 },
@@ -925,25 +925,25 @@ async function handler(req: VercelRequest, res: VercelResponse) {
             },
           },
           responses: {
-            '200': {
-              description: 'Search results',
+            "200": {
+              description: "Search results",
               content: {
-                'application/json': {
+                "application/json": {
                   schema: {
-                    type: 'object',
+                    type: "object",
                     properties: {
                       results: {
-                        type: 'array',
-                        items: { $ref: '#/components/schemas/SearchResult' },
+                        type: "array",
+                        items: { $ref: "#/components/schemas/SearchResult" },
                       },
                       totalResults: {
-                        type: 'integer',
+                        type: "integer",
                       },
                       repository: {
-                        type: 'string',
+                        type: "string",
                       },
                       query: {
-                        type: 'string',
+                        type: "string",
                       },
                     },
                   },
@@ -953,28 +953,28 @@ async function handler(req: VercelRequest, res: VercelResponse) {
           },
         },
       },
-      '/api/embed-repo': {
+      "/api/embed-repo": {
         post: {
-          summary: 'Embed Repository',
-          description: 'Start the embedding process for a GitHub repository',
-          tags: ['Repository'],
+          summary: "Embed Repository",
+          description: "Start the embedding process for a GitHub repository",
+          tags: ["Repository"],
           requestBody: {
             required: true,
             content: {
-              'application/json': {
+              "application/json": {
                 schema: {
-                  type: 'object',
-                  required: ['repository'],
+                  type: "object",
+                  required: ["repository"],
                   properties: {
                     repository: {
-                      type: 'string',
-                      description: 'Repository name in format owner/repo',
-                      example: 'owner/repo-name',
+                      type: "string",
+                      description: "Repository name in format owner/repo",
+                      example: "owner/repo-name",
                     },
                     force: {
-                      type: 'boolean',
+                      type: "boolean",
                       default: false,
-                      description: 'Force re-embedding even if already exists',
+                      description: "Force re-embedding even if already exists",
                     },
                   },
                 },
@@ -982,195 +982,195 @@ async function handler(req: VercelRequest, res: VercelResponse) {
             },
           },
           responses: {
-            '200': {
-              description: 'Embedding process started',
+            "200": {
+              description: "Embedding process started",
               content: {
-                'application/json': {
+                "application/json": {
                   schema: {
-                    type: 'object',
+                    type: "object",
                     properties: {
                       message: {
-                        type: 'string',
-                        description: 'Success message',
+                        type: "string",
+                        description: "Success message",
                       },
                       repository: {
-                        type: 'string',
-                        description: 'Repository name',
+                        type: "string",
+                        description: "Repository name",
                       },
                       status: {
-                        type: 'string',
-                        enum: ['started', 'already_exists'],
-                        description: 'Embedding status',
+                        type: "string",
+                        enum: ["started", "already_exists"],
+                        description: "Embedding status",
                       },
                     },
                   },
                 },
               },
             },
-            '400': {
-              description: 'Bad request - invalid repository format',
+            "400": {
+              description: "Bad request - invalid repository format",
               content: {
-                'application/json': {
-                  schema: { $ref: '#/components/schemas/Error' },
+                "application/json": {
+                  schema: { $ref: "#/components/schemas/Error" },
                 },
               },
             },
-            '500': {
-              description: 'Internal server error',
+            "500": {
+              description: "Internal server error",
               content: {
-                'application/json': {
-                  schema: { $ref: '#/components/schemas/Error' },
+                "application/json": {
+                  schema: { $ref: "#/components/schemas/Error" },
                 },
               },
             },
           },
         },
         delete: {
-          summary: 'Delete Repository Embeddings',
-          description: 'Remove all embeddings for a repository',
-          tags: ['Repository'],
+          summary: "Delete Repository Embeddings",
+          description: "Remove all embeddings for a repository",
+          tags: ["Repository"],
           parameters: [
             {
-              name: 'repository',
-              in: 'query',
-              description: 'Repository name to delete embeddings for',
+              name: "repository",
+              in: "query",
+              description: "Repository name to delete embeddings for",
               required: true,
               schema: {
-                type: 'string',
-                example: 'owner/repo-name',
+                type: "string",
+                example: "owner/repo-name",
               },
             },
           ],
           responses: {
-            '200': {
-              description: 'Repository embeddings deleted successfully',
+            "200": {
+              description: "Repository embeddings deleted successfully",
               content: {
-                'application/json': {
+                "application/json": {
                   schema: {
-                    type: 'object',
+                    type: "object",
                     properties: {
                       success: {
-                        type: 'boolean',
+                        type: "boolean",
                       },
                       message: {
-                        type: 'string',
+                        type: "string",
                       },
                     },
                   },
                 },
               },
             },
-            '400': {
-              description: 'Bad request - missing repository parameter',
+            "400": {
+              description: "Bad request - missing repository parameter",
               content: {
-                'application/json': {
-                  schema: { $ref: '#/components/schemas/Error' },
+                "application/json": {
+                  schema: { $ref: "#/components/schemas/Error" },
                 },
               },
             },
-            '500': {
-              description: 'Internal server error',
+            "500": {
+              description: "Internal server error",
               content: {
-                'application/json': {
-                  schema: { $ref: '#/components/schemas/Error' },
+                "application/json": {
+                  schema: { $ref: "#/components/schemas/Error" },
                 },
               },
             },
           },
         },
       },
-      '/api/embedding-status': {
+      "/api/embedding-status": {
         get: {
-          summary: 'Get Embedding Status',
-          description: 'Get the status of repository embedding processes',
-          tags: ['Repository'],
+          summary: "Get Embedding Status",
+          description: "Get the status of repository embedding processes",
+          tags: ["Repository"],
           security: [{ InternalToken: [] }],
           parameters: [
             {
-              name: 'repository',
-              in: 'query',
-              description: 'Specific repository to get status for (optional)',
+              name: "repository",
+              in: "query",
+              description: "Specific repository to get status for (optional)",
               required: false,
               schema: {
-                type: 'string',
-                example: 'owner/repo-name',
+                type: "string",
+                example: "owner/repo-name",
               },
             },
           ],
           responses: {
-            '200': {
-              description: 'Embedding status information',
+            "200": {
+              description: "Embedding status information",
               content: {
-                'application/json': {
+                "application/json": {
                   schema: {
                     oneOf: [
                       {
-                        type: 'array',
-                        items: { $ref: '#/components/schemas/EmbeddingStatus' },
-                        description: 'Array of all repository statuses',
+                        type: "array",
+                        items: { $ref: "#/components/schemas/EmbeddingStatus" },
+                        description: "Array of all repository statuses",
                       },
                       {
-                        $ref: '#/components/schemas/EmbeddingStatus',
-                        description: 'Single repository status',
+                        $ref: "#/components/schemas/EmbeddingStatus",
+                        description: "Single repository status",
                       },
                     ],
                   },
                 },
               },
             },
-            '404': {
-              description: 'Repository not found',
+            "404": {
+              description: "Repository not found",
               content: {
-                'application/json': {
-                  schema: { $ref: '#/components/schemas/Error' },
+                "application/json": {
+                  schema: { $ref: "#/components/schemas/Error" },
                 },
               },
             },
-            '500': {
-              description: 'Internal server error',
+            "500": {
+              description: "Internal server error",
               content: {
-                'application/json': {
-                  schema: { $ref: '#/components/schemas/Error' },
+                "application/json": {
+                  schema: { $ref: "#/components/schemas/Error" },
                 },
               },
             },
           },
         },
       },
-      '/api/issue-actions': {
+      "/api/issue-actions": {
         get: {
-          summary: 'Get Issue Actions',
-          description: 'Retrieve actions performed for a specific issue',
-          tags: ['Issues'],
+          summary: "Get Issue Actions",
+          description: "Retrieve actions performed for a specific issue",
+          tags: ["Issues"],
           security: [{ InternalToken: [] }],
           parameters: [
             {
-              name: 'issueId',
-              in: 'query',
-              description: 'Linear issue ID',
+              name: "issueId",
+              in: "query",
+              description: "Linear issue ID",
               required: true,
               schema: {
-                type: 'string',
+                type: "string",
               },
             },
             {
-              name: 'skip',
-              in: 'query',
-              description: 'Number of actions to skip for pagination',
+              name: "skip",
+              in: "query",
+              description: "Number of actions to skip for pagination",
               required: false,
               schema: {
-                type: 'integer',
+                type: "integer",
                 minimum: 0,
                 default: 0,
               },
             },
             {
-              name: 'limit',
-              in: 'query',
-              description: 'Maximum number of actions to return',
+              name: "limit",
+              in: "query",
+              description: "Maximum number of actions to return",
               required: false,
               schema: {
-                type: 'integer',
+                type: "integer",
                 minimum: 1,
                 maximum: 100,
                 default: 20,
@@ -1178,123 +1178,123 @@ async function handler(req: VercelRequest, res: VercelResponse) {
             },
           ],
           responses: {
-            '200': {
-              description: 'Issue actions data',
+            "200": {
+              description: "Issue actions data",
               content: {
-                'application/json': {
+                "application/json": {
                   schema: {
-                    type: 'object',
+                    type: "object",
                     properties: {
                       actions: {
-                        type: 'array',
+                        type: "array",
                         items: {
-                          type: 'object',
+                          type: "object",
                           description:
-                            'Action data structure varies by action type',
+                            "Action data structure varies by action type",
                         },
                       },
                       totalActions: {
-                        type: 'integer',
-                        description: 'Total number of actions for this issue',
+                        type: "integer",
+                        description: "Total number of actions for this issue",
                       },
                       skip: {
-                        type: 'integer',
-                        description: 'Number of actions skipped',
+                        type: "integer",
+                        description: "Number of actions skipped",
                       },
                       limit: {
-                        type: 'integer',
-                        description: 'Maximum actions returned',
+                        type: "integer",
+                        description: "Maximum actions returned",
                       },
                       hasMore: {
-                        type: 'boolean',
-                        description: 'Whether there are more actions available',
+                        type: "boolean",
+                        description: "Whether there are more actions available",
                       },
                       issueId: {
-                        type: 'string',
-                        description: 'The issue ID that was queried',
+                        type: "string",
+                        description: "The issue ID that was queried",
                       },
                       timestamp: {
-                        type: 'integer',
-                        description: 'Response timestamp',
+                        type: "integer",
+                        description: "Response timestamp",
                       },
                     },
                   },
                 },
               },
             },
-            '400': {
-              description: 'Bad request - missing issue ID',
+            "400": {
+              description: "Bad request - missing issue ID",
               content: {
-                'application/json': {
-                  schema: { $ref: '#/components/schemas/Error' },
+                "application/json": {
+                  schema: { $ref: "#/components/schemas/Error" },
                 },
               },
             },
-            '403': {
-              description: 'Forbidden - Invalid or missing internal token',
+            "403": {
+              description: "Forbidden - Invalid or missing internal token",
               content: {
-                'application/json': {
-                  schema: { $ref: '#/components/schemas/Error' },
+                "application/json": {
+                  schema: { $ref: "#/components/schemas/Error" },
                 },
               },
             },
-            '500': {
-              description: 'Internal server error',
+            "500": {
+              description: "Internal server error",
               content: {
-                'application/json': {
-                  schema: { $ref: '#/components/schemas/Error' },
+                "application/json": {
+                  schema: { $ref: "#/components/schemas/Error" },
                 },
               },
             },
           },
         },
       },
-      '/api/issue-details': {
+      "/api/issue-details": {
         get: {
-          summary: 'Get Issue Details',
+          summary: "Get Issue Details",
           description:
-            'Retrieve detailed information about an issue including actions, conversations, and context',
-          tags: ['Issues'],
+            "Retrieve detailed information about an issue including actions, conversations, and context",
+          tags: ["Issues"],
           security: [{ InternalToken: [] }],
           parameters: [
             {
-              name: 'issueId',
-              in: 'query',
-              description: 'Issue ID',
+              name: "issueId",
+              in: "query",
+              description: "Issue ID",
               required: true,
               schema: {
-                type: 'string',
+                type: "string",
               },
             },
             {
-              name: 'type',
-              in: 'query',
-              description: 'Type of data to retrieve',
+              name: "type",
+              in: "query",
+              description: "Type of data to retrieve",
               required: false,
               schema: {
-                type: 'string',
-                enum: ['all', 'actions', 'conversations', 'context'],
-                default: 'all',
+                type: "string",
+                enum: ["all", "actions", "conversations", "context"],
+                default: "all",
               },
             },
             {
-              name: 'skip',
-              in: 'query',
-              description: 'Number of items to skip for pagination',
+              name: "skip",
+              in: "query",
+              description: "Number of items to skip for pagination",
               required: false,
               schema: {
-                type: 'integer',
+                type: "integer",
                 minimum: 0,
                 default: 0,
               },
             },
             {
-              name: 'limit',
-              in: 'query',
-              description: 'Maximum number of items to return',
+              name: "limit",
+              in: "query",
+              description: "Maximum number of items to return",
               required: false,
               schema: {
-                type: 'integer',
+                type: "integer",
                 minimum: 1,
                 maximum: 100,
                 default: 50,
@@ -1302,374 +1302,374 @@ async function handler(req: VercelRequest, res: VercelResponse) {
             },
           ],
           responses: {
-            '200': {
-              description: 'Issue details data',
+            "200": {
+              description: "Issue details data",
               content: {
-                'application/json': {
+                "application/json": {
                   schema: {
-                    type: 'object',
+                    type: "object",
                     properties: {
                       actions: {
-                        type: 'array',
+                        type: "array",
                         items: {
-                          type: 'object',
-                          description: 'Action data',
+                          type: "object",
+                          description: "Action data",
                         },
                       },
                       conversations: {
-                        type: 'array',
+                        type: "array",
                         items: {
-                          type: 'object',
-                          description: 'Conversation data',
+                          type: "object",
+                          description: "Conversation data",
                         },
                       },
                       context: {
-                        type: 'array',
+                        type: "array",
                         items: {
-                          type: 'object',
-                          description: 'Context data',
+                          type: "object",
+                          description: "Context data",
                         },
                       },
                       totalActions: {
-                        type: 'integer',
-                        description: 'Total number of actions',
+                        type: "integer",
+                        description: "Total number of actions",
                       },
                       totalConversations: {
-                        type: 'integer',
-                        description: 'Total number of conversations',
+                        type: "integer",
+                        description: "Total number of conversations",
                       },
                       totalContext: {
-                        type: 'integer',
-                        description: 'Total number of context entries',
+                        type: "integer",
+                        description: "Total number of context entries",
                       },
                       issueId: {
-                        type: 'string',
-                        description: 'The issue ID that was queried',
+                        type: "string",
+                        description: "The issue ID that was queried",
                       },
                       skip: {
-                        type: 'integer',
-                        description: 'Number of items skipped',
+                        type: "integer",
+                        description: "Number of items skipped",
                       },
                       limit: {
-                        type: 'integer',
-                        description: 'Maximum items returned',
+                        type: "integer",
+                        description: "Maximum items returned",
                       },
                       timestamp: {
-                        type: 'integer',
-                        description: 'Response timestamp',
+                        type: "integer",
+                        description: "Response timestamp",
                       },
                     },
                   },
                 },
               },
             },
-            '400': {
-              description: 'Bad request - missing issue ID',
+            "400": {
+              description: "Bad request - missing issue ID",
               content: {
-                'application/json': {
-                  schema: { $ref: '#/components/schemas/Error' },
+                "application/json": {
+                  schema: { $ref: "#/components/schemas/Error" },
                 },
               },
             },
-            '403': {
-              description: 'Forbidden - Invalid or missing internal token',
+            "403": {
+              description: "Forbidden - Invalid or missing internal token",
               content: {
-                'application/json': {
-                  schema: { $ref: '#/components/schemas/Error' },
+                "application/json": {
+                  schema: { $ref: "#/components/schemas/Error" },
                 },
               },
             },
-            '500': {
-              description: 'Internal server error',
+            "500": {
+              description: "Internal server error",
               content: {
-                'application/json': {
-                  schema: { $ref: '#/components/schemas/Error' },
+                "application/json": {
+                  schema: { $ref: "#/components/schemas/Error" },
                 },
               },
             },
           },
         },
       },
-      '/api/memory-browser': {
+      "/api/memory-browser": {
         get: {
-          summary: 'Browse Memory Entries',
+          summary: "Browse Memory Entries",
           description:
-            'Retrieve paginated memory entries with filtering and search capabilities',
-          tags: ['Memory'],
+            "Retrieve paginated memory entries with filtering and search capabilities",
+          tags: ["Memory"],
           security: [{ InternalToken: [] }],
           parameters: [
             {
-              name: 'page',
-              in: 'query',
-              description: 'Page number for pagination (1-based)',
+              name: "page",
+              in: "query",
+              description: "Page number for pagination (1-based)",
               required: false,
               schema: {
-                type: 'integer',
+                type: "integer",
                 minimum: 1,
                 default: 1,
               },
             },
             {
-              name: 'limit',
-              in: 'query',
-              description: 'Number of items per page',
+              name: "limit",
+              in: "query",
+              description: "Number of items per page",
               required: false,
               schema: {
-                type: 'integer',
+                type: "integer",
                 minimum: 1,
                 maximum: 100,
                 default: 20,
               },
             },
             {
-              name: 'issueId',
-              in: 'query',
-              description: 'Filter by specific issue ID',
+              name: "issueId",
+              in: "query",
+              description: "Filter by specific issue ID",
               required: false,
               schema: {
-                type: 'string',
+                type: "string",
               },
             },
             {
-              name: 'memoryType',
-              in: 'query',
-              description: 'Filter by memory type',
+              name: "memoryType",
+              in: "query",
+              description: "Filter by memory type",
               required: false,
               schema: {
-                type: 'string',
-                enum: ['conversation', 'action', 'context'],
+                type: "string",
+                enum: ["conversation", "action", "context"],
               },
             },
             {
-              name: 'dateFrom',
-              in: 'query',
+              name: "dateFrom",
+              in: "query",
               description:
-                'Filter memories from this timestamp (Unix timestamp)',
+                "Filter memories from this timestamp (Unix timestamp)",
               required: false,
               schema: {
-                type: 'number',
+                type: "number",
               },
             },
             {
-              name: 'dateTo',
-              in: 'query',
+              name: "dateTo",
+              in: "query",
               description:
-                'Filter memories until this timestamp (Unix timestamp)',
+                "Filter memories until this timestamp (Unix timestamp)",
               required: false,
               schema: {
-                type: 'number',
+                type: "number",
               },
             },
             {
-              name: 'slackChannel',
-              in: 'query',
-              description: 'Filter by Slack channel ID',
+              name: "slackChannel",
+              in: "query",
+              description: "Filter by Slack channel ID",
               required: false,
               schema: {
-                type: 'string',
+                type: "string",
               },
             },
             {
-              name: 'searchQuery',
-              in: 'query',
-              description: 'Search within memory content',
+              name: "searchQuery",
+              in: "query",
+              description: "Search within memory content",
               required: false,
               schema: {
-                type: 'string',
+                type: "string",
               },
             },
           ],
           responses: {
-            '200': {
-              description: 'Memory entries with pagination and statistics',
+            "200": {
+              description: "Memory entries with pagination and statistics",
               content: {
-                'application/json': {
+                "application/json": {
                   schema: {
-                    type: 'object',
+                    type: "object",
                     properties: {
                       memories: {
-                        type: 'array',
-                        items: { $ref: '#/components/schemas/MemoryEntry' },
-                        description: 'Array of memory entries',
+                        type: "array",
+                        items: { $ref: "#/components/schemas/MemoryEntry" },
+                        description: "Array of memory entries",
                       },
                       pagination: {
-                        type: 'object',
+                        type: "object",
                         properties: {
                           page: {
-                            type: 'integer',
-                            description: 'Current page number',
+                            type: "integer",
+                            description: "Current page number",
                           },
                           limit: {
-                            type: 'integer',
-                            description: 'Items per page',
+                            type: "integer",
+                            description: "Items per page",
                           },
                           total: {
-                            type: 'integer',
-                            description: 'Total number of items',
+                            type: "integer",
+                            description: "Total number of items",
                           },
                           totalPages: {
-                            type: 'integer',
-                            description: 'Total number of pages',
+                            type: "integer",
+                            description: "Total number of pages",
                           },
                         },
                       },
                       statistics: {
-                        $ref: '#/components/schemas/MemoryStatistics',
-                        description: 'Memory statistics',
+                        $ref: "#/components/schemas/MemoryStatistics",
+                        description: "Memory statistics",
                       },
                     },
                   },
                 },
               },
             },
-            '403': {
-              description: 'Forbidden - Invalid or missing internal token',
+            "403": {
+              description: "Forbidden - Invalid or missing internal token",
               content: {
-                'application/json': {
-                  schema: { $ref: '#/components/schemas/Error' },
+                "application/json": {
+                  schema: { $ref: "#/components/schemas/Error" },
                 },
               },
             },
-            '500': {
-              description: 'Internal server error',
+            "500": {
+              description: "Internal server error",
               content: {
-                'application/json': {
-                  schema: { $ref: '#/components/schemas/Error' },
+                "application/json": {
+                  schema: { $ref: "#/components/schemas/Error" },
                 },
               },
             },
           },
         },
         delete: {
-          summary: 'Delete Memory Entry',
-          description: 'Delete a specific memory entry by ID',
-          tags: ['Memory'],
+          summary: "Delete Memory Entry",
+          description: "Delete a specific memory entry by ID",
+          tags: ["Memory"],
           security: [{ InternalToken: [] }],
           parameters: [
             {
-              name: 'id',
-              in: 'query',
-              description: 'Memory entry ID to delete',
+              name: "id",
+              in: "query",
+              description: "Memory entry ID to delete",
               required: true,
               schema: {
-                type: 'string',
+                type: "string",
               },
             },
           ],
           responses: {
-            '200': {
-              description: 'Memory entry deleted successfully',
+            "200": {
+              description: "Memory entry deleted successfully",
               content: {
-                'application/json': {
+                "application/json": {
                   schema: {
-                    type: 'object',
+                    type: "object",
                     properties: {
                       success: {
-                        type: 'boolean',
+                        type: "boolean",
                       },
                       message: {
-                        type: 'string',
+                        type: "string",
                       },
                     },
                   },
                 },
               },
             },
-            '400': {
-              description: 'Bad request - missing memory ID',
+            "400": {
+              description: "Bad request - missing memory ID",
               content: {
-                'application/json': {
-                  schema: { $ref: '#/components/schemas/Error' },
+                "application/json": {
+                  schema: { $ref: "#/components/schemas/Error" },
                 },
               },
             },
-            '404': {
-              description: 'Memory entry not found',
+            "404": {
+              description: "Memory entry not found",
               content: {
-                'application/json': {
-                  schema: { $ref: '#/components/schemas/Error' },
+                "application/json": {
+                  schema: { $ref: "#/components/schemas/Error" },
                 },
               },
             },
-            '403': {
-              description: 'Forbidden - Invalid or missing internal token',
+            "403": {
+              description: "Forbidden - Invalid or missing internal token",
               content: {
-                'application/json': {
-                  schema: { $ref: '#/components/schemas/Error' },
+                "application/json": {
+                  schema: { $ref: "#/components/schemas/Error" },
                 },
               },
             },
-            '500': {
-              description: 'Internal server error',
+            "500": {
+              description: "Internal server error",
               content: {
-                'application/json': {
-                  schema: { $ref: '#/components/schemas/Error' },
+                "application/json": {
+                  schema: { $ref: "#/components/schemas/Error" },
                 },
               },
             },
           },
         },
         post: {
-          summary: 'Bulk Memory Operations',
+          summary: "Bulk Memory Operations",
           description:
-            'Perform bulk operations on memory entries (delete by filters, delete by IDs, cleanup)',
-          tags: ['Memory'],
+            "Perform bulk operations on memory entries (delete by filters, delete by IDs, cleanup)",
+          tags: ["Memory"],
           security: [{ InternalToken: [] }],
           requestBody: {
             required: true,
             content: {
-              'application/json': {
+              "application/json": {
                 schema: {
-                  type: 'object',
-                  required: ['operation'],
+                  type: "object",
+                  required: ["operation"],
                   properties: {
                     operation: {
-                      type: 'string',
-                      enum: ['deleteByFilters', 'deleteByIds', 'cleanup'],
-                      description: 'Type of bulk operation to perform',
+                      type: "string",
+                      enum: ["deleteByFilters", "deleteByIds", "cleanup"],
+                      description: "Type of bulk operation to perform",
                     },
                     filters: {
-                      type: 'object',
-                      description: 'Filters for deleteByFilters operation',
+                      type: "object",
+                      description: "Filters for deleteByFilters operation",
                       properties: {
                         issueId: {
-                          type: 'string',
-                          description: 'Filter by issue ID',
+                          type: "string",
+                          description: "Filter by issue ID",
                         },
                         memoryType: {
-                          type: 'string',
-                          enum: ['conversation', 'action', 'context'],
-                          description: 'Filter by memory type',
+                          type: "string",
+                          enum: ["conversation", "action", "context"],
+                          description: "Filter by memory type",
                         },
                         dateFrom: {
-                          type: 'number',
-                          description: 'Filter from timestamp',
+                          type: "number",
+                          description: "Filter from timestamp",
                         },
                         dateTo: {
-                          type: 'number',
-                          description: 'Filter until timestamp',
+                          type: "number",
+                          description: "Filter until timestamp",
                         },
                         slackChannel: {
-                          type: 'string',
-                          description: 'Filter by Slack channel',
+                          type: "string",
+                          description: "Filter by Slack channel",
                         },
                         searchQuery: {
-                          type: 'string',
-                          description: 'Search query for content',
+                          type: "string",
+                          description: "Search query for content",
                         },
                       },
                     },
                     memoryIds: {
-                      type: 'array',
+                      type: "array",
                       items: {
-                        type: 'string',
+                        type: "string",
                       },
                       description:
-                        'Array of memory IDs for deleteByIds operation',
+                        "Array of memory IDs for deleteByIds operation",
                     },
                     olderThanDays: {
-                      type: 'number',
-                      description: 'Number of days for cleanup operation',
+                      type: "number",
+                      description: "Number of days for cleanup operation",
                       minimum: 1,
                     },
                   },
@@ -1678,211 +1678,211 @@ async function handler(req: VercelRequest, res: VercelResponse) {
             },
           },
           responses: {
-            '200': {
-              description: 'Bulk operation completed successfully',
+            "200": {
+              description: "Bulk operation completed successfully",
               content: {
-                'application/json': {
+                "application/json": {
                   schema: {
-                    type: 'object',
+                    type: "object",
                     properties: {
                       success: {
-                        type: 'boolean',
+                        type: "boolean",
                       },
                       message: {
-                        type: 'string',
+                        type: "string",
                       },
                       deletedCount: {
-                        type: 'integer',
-                        description: 'Number of memories deleted',
+                        type: "integer",
+                        description: "Number of memories deleted",
                       },
                     },
                   },
                 },
               },
             },
-            '400': {
-              description: 'Bad request - invalid operation or parameters',
+            "400": {
+              description: "Bad request - invalid operation or parameters",
               content: {
-                'application/json': {
-                  schema: { $ref: '#/components/schemas/Error' },
+                "application/json": {
+                  schema: { $ref: "#/components/schemas/Error" },
                 },
               },
             },
-            '403': {
-              description: 'Forbidden - Invalid or missing internal token',
+            "403": {
+              description: "Forbidden - Invalid or missing internal token",
               content: {
-                'application/json': {
-                  schema: { $ref: '#/components/schemas/Error' },
+                "application/json": {
+                  schema: { $ref: "#/components/schemas/Error" },
                 },
               },
             },
-            '500': {
-              description: 'Internal server error',
+            "500": {
+              description: "Internal server error",
               content: {
-                'application/json': {
-                  schema: { $ref: '#/components/schemas/Error' },
+                "application/json": {
+                  schema: { $ref: "#/components/schemas/Error" },
                 },
               },
             },
           },
         },
       },
-      '/webhook': {
+      "/webhook": {
         post: {
-          summary: 'Linear Webhook Handler',
-          description: 'Receive and process Linear webhook events',
-          tags: ['Webhooks'],
+          summary: "Linear Webhook Handler",
+          description: "Receive and process Linear webhook events",
+          tags: ["Webhooks"],
           requestBody: {
             required: true,
             content: {
-              'application/json': {
+              "application/json": {
                 schema: {
-                  type: 'object',
+                  type: "object",
                   description:
-                    'Linear webhook payload (structure varies by event type)',
+                    "Linear webhook payload (structure varies by event type)",
                 },
               },
             },
           },
           responses: {
-            '200': {
-              description: 'Webhook processed successfully',
+            "200": {
+              description: "Webhook processed successfully",
               content: {
-                'application/json': {
+                "application/json": {
                   schema: {
-                    type: 'object',
+                    type: "object",
                     properties: {
                       received: {
-                        type: 'boolean',
-                        description: 'Whether the webhook was received',
+                        type: "boolean",
+                        description: "Whether the webhook was received",
                       },
                     },
                   },
                 },
               },
             },
-            '400': {
-              description: 'Bad request - invalid webhook signature or payload',
+            "400": {
+              description: "Bad request - invalid webhook signature or payload",
               content: {
-                'application/json': {
-                  schema: { $ref: '#/components/schemas/Error' },
+                "application/json": {
+                  schema: { $ref: "#/components/schemas/Error" },
                 },
               },
             },
-            '405': {
-              description: 'Method not allowed - only POST is supported',
+            "405": {
+              description: "Method not allowed - only POST is supported",
               content: {
-                'application/json': {
-                  schema: { $ref: '#/components/schemas/Error' },
+                "application/json": {
+                  schema: { $ref: "#/components/schemas/Error" },
                 },
               },
             },
           },
         },
       },
-      '/api/events': {
+      "/api/events": {
         post: {
-          summary: 'Slack Events Handler',
-          description: 'Receive and process Slack event API events',
-          tags: ['Webhooks'],
+          summary: "Slack Events Handler",
+          description: "Receive and process Slack event API events",
+          tags: ["Webhooks"],
           requestBody: {
             required: true,
             content: {
-              'application/json': {
+              "application/json": {
                 schema: {
-                  type: 'object',
+                  type: "object",
                   description:
-                    'Slack event payload (structure varies by event type)',
+                    "Slack event payload (structure varies by event type)",
                 },
               },
             },
           },
           responses: {
-            '200': {
-              description: 'Event processed successfully',
+            "200": {
+              description: "Event processed successfully",
               content: {
-                'application/json': {
+                "application/json": {
                   schema: {
-                    type: 'object',
+                    type: "object",
                     properties: {
                       challenge: {
-                        type: 'string',
-                        description: 'Challenge response for URL verification',
+                        type: "string",
+                        description: "Challenge response for URL verification",
                       },
                     },
                   },
                 },
               },
             },
-            '400': {
-              description: 'Bad request - invalid event signature or payload',
+            "400": {
+              description: "Bad request - invalid event signature or payload",
               content: {
-                'application/json': {
-                  schema: { $ref: '#/components/schemas/Error' },
+                "application/json": {
+                  schema: { $ref: "#/components/schemas/Error" },
                 },
               },
             },
-            '405': {
-              description: 'Method not allowed - only POST is supported',
+            "405": {
+              description: "Method not allowed - only POST is supported",
               content: {
-                'application/json': {
-                  schema: { $ref: '#/components/schemas/Error' },
+                "application/json": {
+                  schema: { $ref: "#/components/schemas/Error" },
                 },
               },
             },
           },
         },
       },
-      '/oauth/callback': {
+      "/oauth/callback": {
         get: {
-          summary: 'OAuth Callback Handler',
-          description: 'Handle OAuth callback from Linear authorization flow',
-          tags: ['Authentication'],
+          summary: "OAuth Callback Handler",
+          description: "Handle OAuth callback from Linear authorization flow",
+          tags: ["Authentication"],
           parameters: [
             {
-              name: 'code',
-              in: 'query',
-              description: 'Authorization code from Linear',
+              name: "code",
+              in: "query",
+              description: "Authorization code from Linear",
               required: true,
               schema: {
-                type: 'string',
+                type: "string",
               },
             },
             {
-              name: 'state',
-              in: 'query',
-              description: 'State parameter for CSRF protection',
+              name: "state",
+              in: "query",
+              description: "State parameter for CSRF protection",
               required: false,
               schema: {
-                type: 'string',
+                type: "string",
               },
             },
           ],
           responses: {
-            '302': {
-              description: 'Redirect to success or error page',
+            "302": {
+              description: "Redirect to success or error page",
             },
-            '400': {
+            "400": {
               description:
-                'Bad request - missing or invalid authorization code',
+                "Bad request - missing or invalid authorization code",
             },
-            '500': {
-              description: 'Internal server error during OAuth flow',
+            "500": {
+              description: "Internal server error during OAuth flow",
             },
           },
         },
       },
-      '/linear-app': {
+      "/linear-app": {
         get: {
-          summary: 'Linear App Installation',
-          description: 'Redirect to Linear for app installation/authorization',
-          tags: ['Authentication'],
+          summary: "Linear App Installation",
+          description: "Redirect to Linear for app installation/authorization",
+          tags: ["Authentication"],
           responses: {
-            '307': {
-              description: 'Redirect to Linear authorization URL',
+            "307": {
+              description: "Redirect to Linear authorization URL",
             },
-            '500': {
-              description: 'Internal server error generating auth URL',
+            "500": {
+              description: "Internal server error generating auth URL",
             },
           },
         },
@@ -1890,33 +1890,33 @@ async function handler(req: VercelRequest, res: VercelResponse) {
     },
     tags: [
       {
-        name: 'System',
-        description: 'System health and status endpoints',
+        name: "System",
+        description: "System health and status endpoints",
       },
       {
-        name: 'Agent',
+        name: "Agent",
         description:
-          'AI agent monitoring, real-time session tracking, and cancellation endpoints',
+          "AI agent monitoring, real-time session tracking, and cancellation endpoints",
       },
       {
-        name: 'Repository',
-        description: 'Repository embedding and search endpoints',
+        name: "Repository",
+        description: "Repository embedding and search endpoints",
       },
       {
-        name: 'Issues',
-        description: 'Issue tracking and action endpoints',
+        name: "Issues",
+        description: "Issue tracking and action endpoints",
       },
       {
-        name: 'Memory',
-        description: 'Memory management and browsing endpoints',
+        name: "Memory",
+        description: "Memory management and browsing endpoints",
       },
       {
-        name: 'Webhooks',
-        description: 'Webhook handlers for external integrations',
+        name: "Webhooks",
+        description: "Webhook handlers for external integrations",
       },
       {
-        name: 'Authentication',
-        description: 'OAuth and authentication endpoints',
+        name: "Authentication",
+        description: "OAuth and authentication endpoints",
       },
     ],
   };

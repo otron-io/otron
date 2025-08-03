@@ -1,15 +1,15 @@
 import type { SlackEvent } from '@slack/web-api';
+import { waitUntil } from '@vercel/functions';
+import { handleNewAppMention } from '../lib/slack/handle-app-mention.js';
+import {
+  type SlackInteractivePayload,
+  handleSlackInteractive,
+} from '../lib/slack/handle-interactive.js';
 import {
   assistantThreadMessage,
   handleNewAssistantMessage,
 } from '../lib/slack/handle-messages.js';
-import { waitUntil } from '@vercel/functions';
-import { handleNewAppMention } from '../lib/slack/handle-app-mention.js';
-import { verifyRequest, getBotId } from '../lib/slack/slack-utils.js';
-import {
-  handleSlackInteractive,
-  type SlackInteractivePayload,
-} from '../lib/slack/handle-interactive.js';
+import { getBotId, verifyRequest } from '../lib/slack/slack-utils.js';
 
 export async function POST(request: Request) {
   const contentType = request.headers.get('content-type') || '';
@@ -92,7 +92,7 @@ async function handleInteractivePayload(
 }
 
 async function handleSlackEvents(request: Request, rawBody: string) {
-  let payload;
+  let payload: Record<string, unknown>;
   try {
     payload = JSON.parse(rawBody);
   } catch (error) {
@@ -115,7 +115,7 @@ async function handleSlackEvents(request: Request, rawBody: string) {
       console.error('URL verification failed:', error);
       return new Response('Verification failed', { status: 401 });
     }
-    return new Response(payload.challenge, { status: 200 });
+    return new Response(payload.challenge as string, { status: 200 });
   }
 
   // Verify all other event callbacks

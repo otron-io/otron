@@ -1,4 +1,4 @@
-import { exa } from '../core/utils.js';
+import { exa } from "../core/utils.js";
 
 // Enhanced Exa search and answer tools
 export const executeExaSearch = async (
@@ -15,75 +15,76 @@ export const executeExaSearch = async (
     useAutoprompt,
   }: {
     query: string;
-    mode: 'search' | 'answer' | 'research';
+    mode: "search" | "answer" | "research";
     numResults: number;
     includeContent: boolean;
-    livecrawl: 'always' | 'never' | 'when-necessary';
+    livecrawl: "always" | "never" | "when-necessary";
     timeRange?: string;
     domainFilter?: string;
     fileType?: string;
     category?: string;
     useAutoprompt: boolean;
   },
-  updateStatus?: (status: string) => void
+  updateStatus?: (status: string) => void,
 ) => {
   try {
-    if (mode === 'answer') {
+    if (mode === "answer") {
       updateStatus?.(`is getting AI-powered answer for: ${query}...`);
 
       const answerOptions: any = {
         useAutoprompt,
         numResults: numResults || 5,
-        livecrawl: livecrawl || 'when-necessary',
+        livecrawl: livecrawl || "when-necessary",
       };
 
-      if (timeRange && timeRange.trim()) {
+      if (timeRange?.trim()) {
         const timeRangeMap: { [key: string]: string } = {
-          day: '1d',
-          week: '1w',
-          month: '1m',
-          year: '1y',
+          day: "1d",
+          week: "1w",
+          month: "1m",
+          year: "1y",
         };
         answerOptions.startCrawlDate = timeRangeMap[timeRange];
       }
 
-      if (domainFilter && domainFilter.trim()) {
+      if (domainFilter?.trim()) {
         answerOptions.includeDomains = [domainFilter];
       }
 
-      if (category && category.trim()) {
+      if (category?.trim()) {
         answerOptions.category = category;
       }
 
       const response = await exa.answer(query, answerOptions);
 
       return {
-        mode: 'answer',
+        mode: "answer",
         answer: response.answer,
         sources:
           response.citations?.map((citation: any) => ({
-            title: citation.title || '',
-            url: citation.url || '',
-            snippet: citation.text?.slice(0, 500) || '',
+            title: citation.title || "",
+            url: citation.url || "",
+            snippet: citation.text?.slice(0, 500) || "",
             publishedDate: citation.publishedDate,
             author: citation.author,
           })) || [],
         query: query,
       };
-    } else if (mode === 'research') {
+    }
+    if (mode === "research") {
       updateStatus?.(`is conducting research on: ${query}...`);
 
       // Use multiple search strategies for comprehensive research
       const searchOptions: any = {
-        type: 'neural',
+        type: "neural",
         numResults: numResults || 10,
-        livecrawl: livecrawl || 'always',
+        livecrawl: livecrawl || "always",
         text: includeContent,
         highlights: true,
         summary: true,
       };
 
-      if (timeRange && timeRange.trim()) {
+      if (timeRange?.trim()) {
         const timeRangeMap: { [key: string]: string } = {
           day: new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString(),
           week: new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString(),
@@ -93,15 +94,15 @@ export const executeExaSearch = async (
         searchOptions.startPublishedDate = timeRangeMap[timeRange];
       }
 
-      if (domainFilter && domainFilter.trim()) {
+      if (domainFilter?.trim()) {
         searchOptions.includeDomains = [domainFilter];
       }
 
-      if (fileType && fileType.trim()) {
+      if (fileType?.trim()) {
         searchOptions.includeText = [fileType];
       }
 
-      if (category && category.trim()) {
+      if (category?.trim()) {
         searchOptions.category = category;
       }
 
@@ -111,8 +112,8 @@ export const executeExaSearch = async (
       const processedResults = searchResults.results.map((result: any) => ({
         title: result.title,
         url: result.url,
-        content: result.text || '',
-        summary: result.summary || '',
+        content: result.text || "",
+        summary: result.summary || "",
         highlights: result.highlights || [],
         highlightScores: result.highlightScores || [],
         publishedDate: result.publishedDate,
@@ -123,73 +124,70 @@ export const executeExaSearch = async (
       }));
 
       return {
-        mode: 'research',
+        mode: "research",
         results: processedResults,
         totalResults: processedResults.length,
         query: query,
         researchSummary: `Research conducted on "${query}" returned ${processedResults.length} comprehensive sources with content analysis.`,
       };
-    } else {
-      // Standard search mode
-      updateStatus?.(`is searching for: ${query}...`);
-
-      const searchOptions: any = {
-        type: useAutoprompt ? 'auto' : 'neural',
-        numResults: numResults || 5,
-        livecrawl: livecrawl || 'when-necessary',
-        text: includeContent,
-        highlights: includeContent,
-      };
-
-      if (timeRange && timeRange.trim()) {
-        const timeRangeMap: { [key: string]: string } = {
-          day: new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString(),
-          week: new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString(),
-          month: new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString(),
-          year: new Date(Date.now() - 365 * 24 * 60 * 60 * 1000).toISOString(),
-        };
-        searchOptions.startPublishedDate = timeRangeMap[timeRange];
-      }
-
-      if (domainFilter && domainFilter.trim()) {
-        searchOptions.includeDomains = [domainFilter];
-      }
-
-      if (fileType && fileType.trim()) {
-        searchOptions.includeText = [fileType];
-      }
-
-      if (category && category.trim()) {
-        searchOptions.category = category;
-      }
-
-      const searchFunction = includeContent
-        ? exa.searchAndContents
-        : exa.search;
-      const response = await searchFunction(query, searchOptions);
-
-      return {
-        mode: 'search',
-        results: response.results.map((result: any) => ({
-          title: result.title,
-          url: result.url,
-          snippet: result.text?.slice(0, 1000) || result.summary || '',
-          content: result.text || '',
-          highlights: result.highlights || [],
-          publishedDate: result.publishedDate,
-          author: result.author,
-          score: result.score,
-          image: result.image,
-        })),
-        totalResults: response.results.length,
-        query: query,
-      };
     }
+    // Standard search mode
+    updateStatus?.(`is searching for: ${query}...`);
+
+    const searchOptions: any = {
+      type: useAutoprompt ? "auto" : "neural",
+      numResults: numResults || 5,
+      livecrawl: livecrawl || "when-necessary",
+      text: includeContent,
+      highlights: includeContent,
+    };
+
+    if (timeRange?.trim()) {
+      const timeRangeMap: { [key: string]: string } = {
+        day: new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString(),
+        week: new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString(),
+        month: new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString(),
+        year: new Date(Date.now() - 365 * 24 * 60 * 60 * 1000).toISOString(),
+      };
+      searchOptions.startPublishedDate = timeRangeMap[timeRange];
+    }
+
+    if (domainFilter?.trim()) {
+      searchOptions.includeDomains = [domainFilter];
+    }
+
+    if (fileType?.trim()) {
+      searchOptions.includeText = [fileType];
+    }
+
+    if (category?.trim()) {
+      searchOptions.category = category;
+    }
+
+    const searchFunction = includeContent ? exa.searchAndContents : exa.search;
+    const response = await searchFunction(query, searchOptions);
+
+    return {
+      mode: "search",
+      results: response.results.map((result: any) => ({
+        title: result.title,
+        url: result.url,
+        snippet: result.text?.slice(0, 1000) || result.summary || "",
+        content: result.text || "",
+        highlights: result.highlights || [],
+        publishedDate: result.publishedDate,
+        author: result.author,
+        score: result.score,
+        image: result.image,
+      })),
+      totalResults: response.results.length,
+      query: query,
+    };
   } catch (error) {
-    console.error('Error in Exa search:', error);
+    console.error("Error in Exa search:", error);
     return {
       mode,
-      error: error instanceof Error ? error.message : 'Unknown error occurred',
+      error: error instanceof Error ? error.message : "Unknown error occurred",
       query,
       results: [],
     };
@@ -210,7 +208,7 @@ export const executeExaCrawlContent = async (
     includeMetadata: boolean;
     textOnly: boolean;
   },
-  updateStatus?: (status: string) => void
+  updateStatus?: (status: string) => void,
 ) => {
   try {
     updateStatus?.(`is crawling content from ${urls.length} URL(s)...`);
@@ -229,8 +227,8 @@ export const executeExaCrawlContent = async (
       results: response.results.map((result: any) => ({
         url: result.url,
         title: result.title,
-        content: result.text || '',
-        html: result.html || '',
+        content: result.text || "",
+        html: result.html || "",
         links: result.links || [],
         metadata: result.metadata || {},
         author: result.author,
@@ -240,10 +238,10 @@ export const executeExaCrawlContent = async (
       totalCrawled: response.results.length,
     };
   } catch (error) {
-    console.error('Error in Exa crawl:', error);
+    console.error("Error in Exa crawl:", error);
     return {
       success: false,
-      error: error instanceof Error ? error.message : 'Unknown error occurred',
+      error: error instanceof Error ? error.message : "Unknown error occurred",
       results: [],
     };
   }
@@ -260,10 +258,10 @@ export const executeExaFindSimilar = async (
     url: string;
     numResults: number;
     includeContent: boolean;
-    livecrawl: 'always' | 'never' | 'when-necessary';
+    livecrawl: "always" | "never" | "when-necessary";
     excludeSourceDomain: boolean;
   },
-  updateStatus?: (status: string) => void
+  updateStatus?: (status: string) => void,
 ) => {
   try {
     updateStatus?.(`is finding content similar to: ${url}...`);
@@ -271,7 +269,7 @@ export const executeExaFindSimilar = async (
     const similarOptions: any = {
       numResults: numResults || 5,
       text: includeContent,
-      livecrawl: livecrawl || 'when-necessary',
+      livecrawl: livecrawl || "when-necessary",
       excludeSourceDomain: excludeSourceDomain,
     };
 
@@ -283,8 +281,8 @@ export const executeExaFindSimilar = async (
       results: response.results.map((result: any) => ({
         title: result.title,
         url: result.url,
-        snippet: result.text?.slice(0, 1000) || '',
-        content: result.text || '',
+        snippet: result.text?.slice(0, 1000) || "",
+        content: result.text || "",
         publishedDate: result.publishedDate,
         author: result.author,
         score: result.score,
@@ -293,10 +291,10 @@ export const executeExaFindSimilar = async (
       totalResults: response.results.length,
     };
   } catch (error) {
-    console.error('Error in Exa find similar:', error);
+    console.error("Error in Exa find similar:", error);
     return {
       success: false,
-      error: error instanceof Error ? error.message : 'Unknown error occurred',
+      error: error instanceof Error ? error.message : "Unknown error occurred",
       sourceUrl: url,
       results: [],
     };
@@ -306,11 +304,11 @@ export const executeExaFindSimilar = async (
 // Legacy web search function for backward compatibility
 export const executeSearchWeb = async (
   { query }: { query: string },
-  updateStatus?: (status: string) => void
+  updateStatus?: (status: string) => void,
 ) => {
   updateStatus?.(`is searching the web for ${query}...`);
   const { results } = await exa.searchAndContents(query, {
-    livecrawl: 'always',
+    livecrawl: "always",
     numResults: 3,
   });
 
