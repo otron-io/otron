@@ -1,7 +1,7 @@
-import { Redis } from '@upstash/redis';
-import type { VercelRequest, VercelResponse } from '@vercel/node';
-import { withInternalAccess } from '../lib/core/auth.js';
-import { env } from '../lib/core/env.js';
+import { Redis } from "@upstash/redis";
+import type { VercelRequest, VercelResponse } from "@vercel/node";
+import { withInternalAccess } from "../lib/core/auth.js";
+import { env } from "../lib/core/env.js";
 
 // Initialize Redis client
 const redis = new Redis({
@@ -11,7 +11,7 @@ const redis = new Redis({
 
 interface EmbeddingStatus {
   repository: string;
-  status: 'in_progress' | 'completed' | 'failed';
+  status: "in_progress" | "completed" | "failed";
   progress: number;
   processedFiles: number;
   totalFiles?: number;
@@ -27,13 +27,13 @@ const getProcessedFilesKey = (repo: string) =>
 
 async function handler(req: VercelRequest, res: VercelResponse) {
   // Only accept GET requests
-  if (req.method !== 'GET') {
-    return res.status(405).json({ error: 'Method not allowed' });
+  if (req.method !== "GET") {
+    return res.status(405).json({ error: "Method not allowed" });
   }
 
   try {
     // Get all repository status keys
-    const keys = await redis.keys('embedding:repo:*:status');
+    const keys = await redis.keys("embedding:repo:*:status");
     const repositories: EmbeddingStatus[] = [];
 
     for (const key of keys) {
@@ -45,13 +45,13 @@ async function handler(req: VercelRequest, res: VercelResponse) {
         let parsedStatus: Record<string, unknown>;
 
         // Handle different types of status data
-        if (typeof repoStatus === 'object' && repoStatus !== null) {
+        if (typeof repoStatus === "object" && repoStatus !== null) {
           parsedStatus = repoStatus;
-        } else if (typeof repoStatus === 'string') {
+        } else if (typeof repoStatus === "string") {
           // Skip invalid entries
-          if (repoStatus === '[object Object]') {
+          if (repoStatus === "[object Object]") {
             console.warn(
-              `Found invalid repository status for ${key}, skipping`
+              `Found invalid repository status for ${key}, skipping`,
             );
             continue;
           }
@@ -61,13 +61,13 @@ async function handler(req: VercelRequest, res: VercelResponse) {
           } catch (parseError) {
             console.error(
               `Error parsing repository status for ${key}:`,
-              parseError
+              parseError,
             );
             continue;
           }
         } else {
           console.error(
-            `Unexpected repository status type for ${key}: ${typeof repoStatus}`
+            `Unexpected repository status type for ${key}: ${typeof repoStatus}`,
           );
           continue;
         }
@@ -75,7 +75,7 @@ async function handler(req: VercelRequest, res: VercelResponse) {
         // Validate required fields
         if (!parsedStatus.repository || !parsedStatus.status) {
           console.warn(
-            `Invalid repository status data for ${key}, missing required fields`
+            `Invalid repository status data for ${key}, missing required fields`,
           );
           continue;
         }
@@ -86,7 +86,7 @@ async function handler(req: VercelRequest, res: VercelResponse) {
 
         try {
           const processedFilesSet = await redis.smembers(
-            getProcessedFilesKey(parsedStatus.repository)
+            getProcessedFilesKey(parsedStatus.repository),
           );
           actualProcessedFiles = processedFilesSet
             ? processedFilesSet.length
@@ -94,19 +94,19 @@ async function handler(req: VercelRequest, res: VercelResponse) {
 
           // For completed repositories, set totalFiles to match processedFiles
           // This fixes the count discrepancy after re-embedding operations
-          if (parsedStatus.status === 'completed') {
+          if (parsedStatus.status === "completed") {
             actualTotalFiles = actualProcessedFiles;
-          } else if (parsedStatus.status === 'in_progress') {
+          } else if (parsedStatus.status === "in_progress") {
             // For in-progress repos, use the larger of the two values to avoid showing more processed than total
             actualTotalFiles = Math.max(
               actualProcessedFiles,
-              parsedStatus.totalFiles || 0
+              parsedStatus.totalFiles || 0,
             );
           }
         } catch (error) {
           console.error(
             `Error getting processed files count for ${parsedStatus.repository}:`,
-            error
+            error,
           );
           // Fall back to stored values if Redis query fails
           actualProcessedFiles = parsedStatus.processedFiles || 0;
@@ -136,7 +136,7 @@ async function handler(req: VercelRequest, res: VercelResponse) {
     repositories.sort((a, b) => b.lastProcessedAt - a.lastProcessedAt);
 
     console.log(
-      `Found ${repositories.length} repositories from ${keys.length} keys`
+      `Found ${repositories.length} repositories from ${keys.length} keys`,
     );
 
     return res.status(200).json({
@@ -145,9 +145,9 @@ async function handler(req: VercelRequest, res: VercelResponse) {
       timestamp: Date.now(),
     });
   } catch (error) {
-    console.error('Error retrieving embedding status:', error);
+    console.error("Error retrieving embedding status:", error);
     return res.status(500).json({
-      error: 'Failed to retrieve embedding status',
+      error: "Failed to retrieve embedding status",
       message: error instanceof Error ? error.message : String(error),
     });
   }

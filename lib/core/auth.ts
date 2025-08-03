@@ -1,34 +1,34 @@
-import { createHmac, timingSafeEqual } from 'node:crypto';
-import type { VercelRequest, VercelResponse } from '@vercel/node';
-import { addCorsHeaders } from './cors.js';
-import { env } from './env.js';
+import { createHmac, timingSafeEqual } from "node:crypto";
+import type { VercelRequest, VercelResponse } from "@vercel/node";
+import { addCorsHeaders } from "./cors.js";
+import { env } from "./env.js";
 
 /**
  * Middleware to protect routes with a simple password
  */
 export function withPasswordProtection(
-  handler: (req: VercelRequest, res: VercelResponse) => Promise<void>
+  handler: (req: VercelRequest, res: VercelResponse) => Promise<void>,
 ) {
   return async (req: VercelRequest, res: VercelResponse) => {
     // Get auth header
     const authHeader = req.headers.authorization;
 
-    if (!authHeader || !authHeader.startsWith('Basic ')) {
-      res.setHeader('WWW-Authenticate', 'Basic');
-      return res.status(401).json({ error: 'Authentication required' });
+    if (!authHeader || !authHeader.startsWith("Basic ")) {
+      res.setHeader("WWW-Authenticate", "Basic");
+      return res.status(401).json({ error: "Authentication required" });
     }
 
     // Decode the base64 auth header
     const credentials = Buffer.from(
-      authHeader.split(' ')[1],
-      'base64'
-    ).toString('utf-8');
-    const [username, password] = credentials.split(':');
+      authHeader.split(" ")[1],
+      "base64",
+    ).toString("utf-8");
+    const [username, password] = credentials.split(":");
 
     // Check if password matches
     if (password !== env.ADMIN_PASSWORD) {
-      res.setHeader('WWW-Authenticate', 'Basic');
-      return res.status(401).json({ error: 'Invalid credentials' });
+      res.setHeader("WWW-Authenticate", "Basic");
+      return res.status(401).json({ error: "Invalid credentials" });
     }
 
     // Authorized - proceed to handler
@@ -40,7 +40,7 @@ export function withPasswordProtection(
  * Middleware to protect API routes that should only be accessible from the app
  */
 export function withInternalAccess(
-  handler: (req: VercelRequest, res: VercelResponse) => Promise<void>
+  handler: (req: VercelRequest, res: VercelResponse) => Promise<void>,
 ) {
   return async (req: VercelRequest, res: VercelResponse) => {
     // Add CORS headers for cross-origin requests
@@ -52,13 +52,13 @@ export function withInternalAccess(
     }
 
     // Check for the internal access token
-    const token = req.headers['x-internal-token'] || req.query.token;
+    const token = req.headers["x-internal-token"] || req.query.token;
 
     // Simple internal token - app will include this token when making API requests
     if (token !== env.INTERNAL_API_TOKEN) {
       return res
         .status(403)
-        .json({ error: 'Forbidden: Internal API access only' });
+        .json({ error: "Forbidden: Internal API access only" });
     }
 
     // Authorized - proceed to handler
@@ -71,11 +71,11 @@ export function withInternalAccess(
  */
 export function verifyLinearWebhook(signature: string, body: string): boolean {
   try {
-    const hmac = createHmac('sha256', env.WEBHOOK_SIGNING_SECRET);
-    const digest = hmac.update(body).digest('hex');
+    const hmac = createHmac("sha256", env.WEBHOOK_SIGNING_SECRET);
+    const digest = hmac.update(body).digest("hex");
     return signature === digest;
   } catch (error) {
-    console.error('Error verifying webhook signature:', error);
+    console.error("Error verifying webhook signature:", error);
     return false;
   }
 }

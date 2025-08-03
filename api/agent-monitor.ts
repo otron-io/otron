@@ -1,7 +1,7 @@
-import { Redis } from '@upstash/redis';
-import type { VercelRequest, VercelResponse } from '@vercel/node';
-import { withInternalAccess } from '../lib/core/auth.js';
-import { env } from '../lib/core/env.js';
+import { Redis } from "@upstash/redis";
+import type { VercelRequest, VercelResponse } from "@vercel/node";
+import { withInternalAccess } from "../lib/core/auth.js";
+import { env } from "../lib/core/env.js";
 
 // Initialize Redis client
 const redis = new Redis({
@@ -11,8 +11,8 @@ const redis = new Redis({
 
 async function handler(req: VercelRequest, res: VercelResponse) {
   // Only accept GET requests
-  if (req.method !== 'GET') {
-    return res.status(405).json({ error: 'Method not allowed' });
+  if (req.method !== "GET") {
+    return res.status(405).json({ error: "Method not allowed" });
   }
 
   try {
@@ -24,9 +24,9 @@ async function handler(req: VercelRequest, res: VercelResponse) {
       toolKeys,
       activeSessionsList,
     ] = await Promise.all([
-      redis.keys('memory:issue:*:action'),
-      redis.keys('memory:tools:*:stats'),
-      redis.smembers('active_sessions_list'),
+      redis.keys("memory:issue:*:action"),
+      redis.keys("memory:tools:*:stats"),
+      redis.smembers("active_sessions_list"),
     ]);
 
     // Get basic activity counts without processing all the data
@@ -37,7 +37,7 @@ async function handler(req: VercelRequest, res: VercelResponse) {
     const toolStats: Record<string, { attempts: number; successes: number }> =
       {};
     const toolStatsPromises = toolKeys.slice(0, 20).map(async (key) => {
-      const toolName = key.split(':')[2];
+      const toolName = key.split(":")[2];
       if (!toolName) return;
 
       const stats = await redis.hgetall(key);
@@ -53,17 +53,17 @@ async function handler(req: VercelRequest, res: VercelResponse) {
 
     // Get recent system activity (limited to last 20 items for performance)
     const recentSystemActivity = await getRecentSystemActivity(
-      issueKeys.slice(0, 10)
+      issueKeys.slice(0, 10),
     );
 
     // Calculate totals for summary
     const totalToolOperations = Object.values(toolStats).reduce(
       (sum, stat) => sum + stat.attempts,
-      0
+      0,
     );
     const totalSuccessfulOperations = Object.values(toolStats).reduce(
       (sum, stat) => sum + stat.successes,
-      0
+      0,
     );
 
     return res.status(200).json({
@@ -84,8 +84,8 @@ async function handler(req: VercelRequest, res: VercelResponse) {
       },
     });
   } catch (error) {
-    console.error('Error retrieving agent status:', error);
-    return res.status(500).json({ error: 'Failed to retrieve agent status' });
+    console.error("Error retrieving agent status:", error);
+    return res.status(500).json({ error: "Failed to retrieve agent status" });
   }
 }
 
@@ -100,7 +100,7 @@ async function getActiveContextsCount(issueKeys: string[]) {
   const keysToCheck = issueKeys.slice(0, 50);
 
   const promises = keysToCheck.map(async (key) => {
-    const contextId = key.split(':')[2];
+    const contextId = key.split(":")[2];
     if (!contextId) return { active: false, slack: false, linear: false };
 
     try {
@@ -112,12 +112,12 @@ async function getActiveContextsCount(issueKeys: string[]) {
       }
 
       const action =
-        typeof recentActions[0] === 'object'
+        typeof recentActions[0] === "object"
           ? recentActions[0]
           : JSON.parse(recentActions[0] as string);
 
       const isActive = action.timestamp && action.timestamp > cutoff;
-      const isSlack = contextId.startsWith('slack:');
+      const isSlack = contextId.startsWith("slack:");
       const isLinear =
         !isSlack &&
         (/^[A-Z]{2,}-\d+$/.test(contextId) ||
@@ -152,13 +152,13 @@ async function getRecentSystemActivity(issueKeys: string[]) {
   const keysToCheck = issueKeys.slice(0, 5);
 
   for (const key of keysToCheck) {
-    const issueId = key.split(':')[2];
+    const issueId = key.split(":")[2];
     const recentActions = await redis.lrange(key, 0, 2); // Get only 3 most recent per issue
 
     for (const action of recentActions) {
       try {
         const parsedAction =
-          typeof action === 'object' ? action : JSON.parse(action as string);
+          typeof action === "object" ? action : JSON.parse(action as string);
         recentSystemActivity.push({
           ...parsedAction,
           issueId,
