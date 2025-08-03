@@ -1,10 +1,10 @@
-import type { AppMentionEvent } from '@slack/web-api';
-import { client, getThread, getLinearClientForSlack } from './slack-utils.js';
-import { generateResponse } from '../generate-response.js';
+import type { AppMentionEvent } from "@slack/web-api";
+import { generateResponse } from "../generate-response.js";
+import { client, getLinearClientForSlack, getThread } from "./slack-utils.js";
 
 const updateStatusUtil = async (
   initialStatus: string,
-  event: AppMentionEvent
+  event: AppMentionEvent,
 ) => {
   const initialMessage = await client.chat.postMessage({
     channel: event.channel,
@@ -13,7 +13,7 @@ const updateStatusUtil = async (
   });
 
   if (!initialMessage || !initialMessage.ts)
-    throw new Error('Failed to post initial message');
+    throw new Error("Failed to post initial message");
 
   const updateMessage = async (status: string) => {
     await client.chat.update({
@@ -27,11 +27,11 @@ const updateStatusUtil = async (
 
 export async function handleNewAppMention(
   event: AppMentionEvent,
-  botUserId: string
+  botUserId: string,
 ) {
-  console.log('Handling app mention');
+  console.log("Handling app mention");
   if (event.bot_id || event.bot_id === botUserId || event.bot_profile) {
-    console.log('Skipping app mention');
+    console.log("Skipping app mention");
     return;
   }
 
@@ -57,29 +57,29 @@ export async function handleNewAppMention(
   if (thread_ts) {
     const messages = await getThread(channel, thread_ts, botUserId);
     // Let the AI decide whether and how to respond using its tools
-    await generateResponse(
+    await generateResponse({
       messages,
-      updateMessage,
+      updateStatus: updateMessage,
       linearClient,
       slackContext,
-      undefined // No abort signal for app mentions
-    );
+      abortSignal: undefined, // No abort signal for app mentions
+    });
   } else {
     // For non-threaded messages, include current message context
     const currentMessageContext = `[Message from user ${event.user} at ${
       event.ts
-    }]: ${event.text.replace(`<@${botUserId}> `, '')}`;
+    }]: ${event.text.replace(`<@${botUserId}> `, "")}`;
 
     // Let the AI decide whether and how to respond using its tools
-    await generateResponse(
-      [{ role: 'user', content: currentMessageContext }],
-      updateMessage,
+    await generateResponse({
+      messages: [{ role: "user", content: currentMessageContext }],
+      updateStatus: updateMessage,
       linearClient,
       slackContext,
-      undefined // No abort signal for app mentions
-    );
+      abortSignal: undefined, // No abort signal for app mentions
+    });
   }
 
   // Clear status after processing
-  await updateMessage('');
+  await updateMessage("");
 }

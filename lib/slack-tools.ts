@@ -1,4 +1,4 @@
-import * as slackUtils from './slack/slack-utils.js';
+import * as slackUtils from "./slack/slack-utils.js";
 
 // Slack tool execution functions
 
@@ -8,7 +8,7 @@ export const executeSendSlackMessage = async (
     text,
     threadTs,
   }: { channel: string; text: string; threadTs: string },
-  updateStatus?: (status: string) => void
+  updateStatus?: (status: string) => void,
 ) => {
   updateStatus?.(`is sending message to ${channel}...`);
 
@@ -21,7 +21,7 @@ export const executeSendSlackMessage = async (
 
 export const executeSendDirectMessage = async (
   { userIdOrEmail, text }: { userIdOrEmail: string; text: string },
-  updateStatus?: (status: string) => void
+  updateStatus?: (status: string) => void,
 ) => {
   updateStatus?.(`is sending direct message to ${userIdOrEmail}...`);
 
@@ -38,14 +38,14 @@ export const executeSendChannelMessage = async (
     text,
     threadTs,
   }: { channelNameOrId: string; text: string; threadTs: string },
-  updateStatus?: (status: string) => void
+  updateStatus?: (status: string) => void,
 ) => {
   updateStatus?.(`is sending message to channel ${channelNameOrId}...`);
 
   await slackUtils.sendChannelMessage(
     channelNameOrId,
     text,
-    threadTs || undefined
+    threadTs || undefined,
   );
   return {
     success: true,
@@ -59,7 +59,7 @@ export const executeAddSlackReaction = async (
     timestamp,
     emoji,
   }: { channel: string; timestamp: string; emoji: string },
-  updateStatus?: (status: string) => void
+  updateStatus?: (status: string) => void,
 ) => {
   updateStatus?.(`is adding reaction ${emoji} to message...`);
 
@@ -76,7 +76,7 @@ export const executeRemoveSlackReaction = async (
     timestamp,
     emoji,
   }: { channel: string; timestamp: string; emoji: string },
-  updateStatus?: (status: string) => void
+  updateStatus?: (status: string) => void,
 ) => {
   updateStatus?.(`is removing reaction ${emoji} from message...`);
 
@@ -89,20 +89,20 @@ export const executeRemoveSlackReaction = async (
 
 export const executeGetSlackChannelHistory = async (
   { channel, limit }: { channel: string; limit: number },
-  updateStatus?: (status: string) => void
+  updateStatus?: (status: string) => void,
 ) => {
   updateStatus?.(`is getting channel history for ${channel}...`);
 
   const history = await slackUtils.getBriefChannelHistory(
     channel,
-    limit === 0 ? undefined : limit
+    limit === 0 ? undefined : limit,
   );
   return { history };
 };
 
 export const executeGetSlackThread = async (
   { channel, threadTs }: { channel: string; threadTs: string },
-  updateStatus?: (status: string) => void
+  updateStatus?: (status: string) => void,
 ) => {
   updateStatus?.(`is getting thread from ${channel}...`);
 
@@ -117,7 +117,7 @@ export const executeUpdateSlackMessage = async (
     timestamp,
     text,
   }: { channel: string; timestamp: string; text: string },
-  updateStatus?: (status: string) => void
+  updateStatus?: (status: string) => void,
 ) => {
   updateStatus?.(`is updating message in ${channel}...`);
 
@@ -130,7 +130,7 @@ export const executeUpdateSlackMessage = async (
 
 export const executeDeleteSlackMessage = async (
   { channel, timestamp }: { channel: string; timestamp: string },
-  updateStatus?: (status: string) => void
+  updateStatus?: (status: string) => void,
 ) => {
   updateStatus?.(`is deleting message from ${channel}...`);
 
@@ -143,12 +143,12 @@ export const executeDeleteSlackMessage = async (
 
 export const executeGetSlackUserInfo = async (
   { userIdOrEmail }: { userIdOrEmail: string },
-  updateStatus?: (status: string) => void
+  updateStatus?: (status: string) => void,
 ) => {
   updateStatus?.(`is getting user info for ${userIdOrEmail}...`);
 
   let userInfo;
-  if (userIdOrEmail.includes('@')) {
+  if (userIdOrEmail.includes("@")) {
     userInfo = await slackUtils.getUserByEmail(userIdOrEmail);
   } else {
     userInfo = await slackUtils.getUserInfo(userIdOrEmail);
@@ -159,12 +159,12 @@ export const executeGetSlackUserInfo = async (
 
 export const executeGetSlackChannelInfo = async (
   { channelNameOrId }: { channelNameOrId: string },
-  updateStatus?: (status: string) => void
+  updateStatus?: (status: string) => void,
 ) => {
   updateStatus?.(`is getting channel info for ${channelNameOrId}...`);
 
   let channelInfo;
-  if (channelNameOrId.startsWith('#')) {
+  if (channelNameOrId.startsWith("#")) {
     const channelName = channelNameOrId.slice(1);
     channelInfo = await slackUtils.getChannelByName(channelName);
   } else {
@@ -176,7 +176,7 @@ export const executeGetSlackChannelInfo = async (
 
 export const executeJoinSlackChannel = async (
   { channelId }: { channelId: string },
-  updateStatus?: (status: string) => void
+  updateStatus?: (status: string) => void,
 ) => {
   updateStatus?.(`is joining channel ${channelId}...`);
 
@@ -189,7 +189,7 @@ export const executeJoinSlackChannel = async (
 
 export const executeSearchSlackMessages = async (
   { query, count }: { query: string; count: number },
-  updateStatus?: (status: string) => void
+  updateStatus?: (status: string) => void,
 ) => {
   updateStatus?.(`is searching for messages: "${query}"...`);
 
@@ -201,9 +201,9 @@ export const executeSearchSlackMessages = async (
 
 export const executeGetSlackPermalink = async (
   { channel, messageTs }: { channel: string; messageTs: string },
-  updateStatus?: (status: string) => void
+  updateStatus?: (status: string) => void,
 ) => {
-  updateStatus?.(`is getting permalink for message...`);
+  updateStatus?.("is getting permalink for message...");
 
   const permalink = await slackUtils.getPermalink(channel, messageTs);
   return { permalink };
@@ -215,14 +215,14 @@ export const executeSetSlackStatus = async (
     statusEmoji,
     statusExpiration,
   }: { statusText: string; statusEmoji: string; statusExpiration: number },
-  updateStatus?: (status: string) => void
+  updateStatus?: (status: string) => void,
 ) => {
   updateStatus?.(`is setting status to "${statusText}"...`);
 
   await slackUtils.setStatus(
     statusText,
     statusEmoji || undefined,
-    statusExpiration === 0 ? undefined : statusExpiration
+    statusExpiration === 0 ? undefined : statusExpiration,
   );
   return {
     success: true,
@@ -232,7 +232,7 @@ export const executeSetSlackStatus = async (
 
 export const executePinSlackMessage = async (
   { channel, timestamp }: { channel: string; timestamp: string },
-  updateStatus?: (status: string) => void
+  updateStatus?: (status: string) => void,
 ) => {
   updateStatus?.(`is pinning message in ${channel}...`);
 
@@ -245,7 +245,7 @@ export const executePinSlackMessage = async (
 
 export const executeUnpinSlackMessage = async (
   { channel, timestamp }: { channel: string; timestamp: string },
-  updateStatus?: (status: string) => void
+  updateStatus?: (status: string) => void,
 ) => {
   updateStatus?.(`is unpinning message in ${channel}...`);
 
@@ -268,7 +268,7 @@ export const executeSendRichSlackMessage = async (
     text: string;
     threadTs: string;
   },
-  updateStatus?: (status: string) => void
+  updateStatus?: (status: string) => void,
 ) => {
   updateStatus?.(`is sending rich message to ${channel}...`);
 
@@ -276,7 +276,7 @@ export const executeSendRichSlackMessage = async (
     channel,
     blocks,
     text || undefined,
-    threadTs || undefined
+    threadTs || undefined,
   );
   return {
     success: true,
@@ -296,13 +296,13 @@ export const executeSendRichChannelMessage = async (
     text: string;
     threadTs: string;
   },
-  updateStatus?: (status: string) => void
+  updateStatus?: (status: string) => void,
 ) => {
   updateStatus?.(`is sending rich message to channel ${channelNameOrId}...`);
 
   // Handle channel name resolution
   let channelId = channelNameOrId;
-  if (channelNameOrId.startsWith('#')) {
+  if (channelNameOrId.startsWith("#")) {
     const channelName = channelNameOrId.slice(1);
     const channelInfo = await slackUtils.getChannelByName(channelName);
     if (!channelInfo?.id) {
@@ -315,7 +315,7 @@ export const executeSendRichChannelMessage = async (
     channelId,
     blocks,
     text || undefined,
-    threadTs || undefined
+    threadTs || undefined,
   );
   return {
     success: true,
@@ -333,13 +333,13 @@ export const executeSendRichDirectMessage = async (
     blocks: any[];
     text: string;
   },
-  updateStatus?: (status: string) => void
+  updateStatus?: (status: string) => void,
 ) => {
   updateStatus?.(`is sending rich direct message to ${userIdOrEmail}...`);
 
   // Handle user resolution
   let userId = userIdOrEmail;
-  if (userIdOrEmail.includes('@')) {
+  if (userIdOrEmail.includes("@")) {
     const userInfo = await slackUtils.getUserByEmail(userIdOrEmail);
     if (!userInfo?.id) {
       throw new Error(`User with email ${userIdOrEmail} not found`);
@@ -353,7 +353,7 @@ export const executeSendRichDirectMessage = async (
   });
 
   if (!channel?.id) {
-    throw new Error('Failed to open DM channel');
+    throw new Error("Failed to open DM channel");
   }
 
   await slackUtils.sendRichMessage(channel.id, blocks, text || undefined);
@@ -373,11 +373,11 @@ export async function executeCreateFormattedSlackMessage(
     actions: Array<{
       text: string;
       action_id: string;
-      style: 'primary' | 'danger';
+      style: "primary" | "danger";
     }>;
     thread_ts: string;
   },
-  updateStatus?: (status: string) => void
+  updateStatus?: (status: string) => void,
 ): Promise<string> {
   try {
     const { channel, title, content, fields, context, actions, thread_ts } =
@@ -388,11 +388,11 @@ export async function executeCreateFormattedSlackMessage(
     const blocks: any[] = [];
 
     // Add header if title provided
-    if (title && title.trim()) {
+    if (title?.trim()) {
       blocks.push({
-        type: 'header',
+        type: "header",
         text: {
-          type: 'plain_text',
+          type: "plain_text",
           text: title,
         },
       });
@@ -400,9 +400,9 @@ export async function executeCreateFormattedSlackMessage(
 
     // Add main content
     blocks.push({
-      type: 'section',
+      type: "section",
       text: {
-        type: 'mrkdwn',
+        type: "mrkdwn",
         text: content,
       },
     });
@@ -410,26 +410,26 @@ export async function executeCreateFormattedSlackMessage(
     // Add fields if provided
     if (fields && fields.length > 0) {
       blocks.push({
-        type: 'section',
+        type: "section",
         fields: fields.map((field) => ({
-          type: 'mrkdwn',
+          type: "mrkdwn",
           text: `*${field.label}:*\n${field.value}`,
         })),
       });
     }
 
     // Add divider if we have context or actions
-    if ((context && context.trim()) || (actions && actions.length > 0)) {
-      blocks.push({ type: 'divider' });
+    if (context?.trim() || (actions && actions.length > 0)) {
+      blocks.push({ type: "divider" });
     }
 
     // Add context if provided
-    if (context && context.trim()) {
+    if (context?.trim()) {
       blocks.push({
-        type: 'context',
+        type: "context",
         elements: [
           {
-            type: 'mrkdwn',
+            type: "mrkdwn",
             text: context,
           },
         ],
@@ -439,11 +439,11 @@ export async function executeCreateFormattedSlackMessage(
     // Add actions if provided
     if (actions && actions.length > 0) {
       blocks.push({
-        type: 'actions',
+        type: "actions",
         elements: actions.map((action) => ({
-          type: 'button',
+          type: "button",
           text: {
-            type: 'plain_text',
+            type: "plain_text",
             text: action.text,
           },
           action_id: action.action_id,
@@ -456,14 +456,14 @@ export async function executeCreateFormattedSlackMessage(
       channel,
       blocks,
       undefined,
-      thread_ts || undefined
+      thread_ts || undefined,
     );
 
     return `Formatted message sent successfully to ${channel}`;
   } catch (error) {
-    console.error('Error sending formatted Slack message:', error);
+    console.error("Error sending formatted Slack message:", error);
     return `Error sending formatted message: ${
-      error instanceof Error ? error.message : 'Unknown error'
+      error instanceof Error ? error.message : "Unknown error"
     }`;
   }
 }
@@ -482,12 +482,12 @@ export const executeRespondToSlackInteraction = async (
     blocks?: any[];
     replaceOriginal?: boolean;
     deleteOriginal?: boolean;
-    responseType?: 'ephemeral' | 'in_channel';
+    responseType?: "ephemeral" | "in_channel";
   },
-  updateStatus?: (status: string) => void
+  updateStatus?: (status: string) => void,
 ) => {
   try {
-    updateStatus?.('Responding to Slack interaction...');
+    updateStatus?.("Responding to Slack interaction...");
 
     const payload: any = {};
 
@@ -501,9 +501,9 @@ export const executeRespondToSlackInteraction = async (
     }
 
     const response = await fetch(responseUrl, {
-      method: 'POST',
+      method: "POST",
       headers: {
-        'Content-Type': 'application/json',
+        "Content-Type": "application/json",
       },
       body: JSON.stringify(payload),
     });
@@ -514,14 +514,14 @@ export const executeRespondToSlackInteraction = async (
 
     return {
       success: true,
-      message: 'Successfully responded to Slack interaction',
+      message: "Successfully responded to Slack interaction",
     };
   } catch (error) {
-    console.error('Error responding to Slack interaction:', error);
+    console.error("Error responding to Slack interaction:", error);
     return {
       success: false,
-      error: error instanceof Error ? error.message : 'Unknown error',
-      message: 'Failed to respond to Slack interaction',
+      error: error instanceof Error ? error.message : "Unknown error",
+      message: "Failed to respond to Slack interaction",
     };
   }
 };

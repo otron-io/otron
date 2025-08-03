@@ -1,8 +1,8 @@
-import { LinearClient } from '@linear/sdk';
+import type { LinearClient } from "@linear/sdk";
 import {
-  logToLinearIssue,
   agentActivity,
-} from './linear-agent-session-manager.js';
+  logToLinearIssue,
+} from "./linear-agent-session-manager.js";
 
 /**
  * Get the context for an issue including comments, child issues, and parent issue
@@ -10,7 +10,7 @@ import {
 export const getIssueContext = async (
   linearClient: LinearClient,
   issueIdOrIdentifier: string,
-  commentId?: string
+  commentId?: string,
 ): Promise<string> => {
   const issue = await linearClient.issue(issueIdOrIdentifier);
   if (!issue) {
@@ -20,34 +20,34 @@ export const getIssueContext = async (
   // Log that we're analyzing the issue
   await agentActivity.thought(
     issueIdOrIdentifier,
-    `📋 Analyzing issue context for ${issue.identifier} - ${issue.title}`
+    `📋 Analyzing issue context for ${issue.identifier} - ${issue.title}`,
   );
 
   // Mark this as the assigned issue
-  let context = `>>>>> ASSIGNED/TAGGED ISSUE <<<<<\n`;
+  let context = ">>>>> ASSIGNED/TAGGED ISSUE <<<<<\n";
   context += `ISSUE ${issue.identifier}: ${issue.title}\n`;
   context += `DESCRIPTION: ${
-    issue.description || 'No description provided'
+    issue.description || "No description provided"
   }\n\n`;
 
   // Add ALL comments for comprehensive context
   const comments = await issue.comments({ first: 50 }); // Increased from 10 to 50 for better context
   if (comments.nodes.length > 0) {
-    context += 'ALL COMMENTS:\n';
+    context += "ALL COMMENTS:\n";
 
     for (const comment of comments.nodes) {
       // If this is the triggering comment, highlight it
       const isTriggering = commentId && comment.id === commentId;
-      const prefix = isTriggering ? '► ' : '';
+      const prefix = isTriggering ? "► " : "";
 
       // Add user info if available
-      let userName = 'Unknown';
+      let userName = "Unknown";
       if (comment.user) {
         try {
           const user = await comment.user;
-          userName = user ? user.name || 'Unknown' : 'Unknown';
+          userName = user ? user.name || "Unknown" : "Unknown";
         } catch (e) {
-          console.error('Error getting user name:', e);
+          console.error("Error getting user name:", e);
         }
       }
 
@@ -58,7 +58,7 @@ export const getIssueContext = async (
   // Add labels if any
   const labels = await issue.labels();
   if (labels.nodes.length > 0) {
-    const labelNames = labels.nodes.map((l: any) => l.name).join(', ');
+    const labelNames = labels.nodes.map((l: any) => l.name).join(", ");
     context += `LABELS: ${labelNames}\n`;
   }
 
@@ -66,10 +66,10 @@ export const getIssueContext = async (
   try {
     const parent = await issue.parent;
     if (parent) {
-      context += `\n----- PARENT ISSUE (Context Only) -----\n`;
+      context += "\n----- PARENT ISSUE (Context Only) -----\n";
       context += `ISSUE ${parent.identifier}: ${parent.title}\n`;
       context += `DESCRIPTION: ${
-        parent.description || 'No description provided'
+        parent.description || "No description provided"
       }\n`;
 
       // Add parent issue labels
@@ -77,19 +77,19 @@ export const getIssueContext = async (
       if (parentLabels.nodes.length > 0) {
         const labelNames = parentLabels.nodes
           .map((l: any) => l.name)
-          .join(', ');
+          .join(", ");
         context += `LABELS: ${labelNames}\n`;
       }
     }
   } catch (error) {
-    console.error('Error getting parent issue:', error);
+    console.error("Error getting parent issue:", error);
   }
 
   // Get child issues if any
   try {
     const children = await issue.children();
     if (children.nodes.length > 0) {
-      context += `\n----- CHILD ISSUES (Context Only) -----\n`;
+      context += "\n----- CHILD ISSUES (Context Only) -----\n";
 
       for (const child of children.nodes) {
         context += `ISSUE ${child.identifier}: ${child.title}\n`;
@@ -109,11 +109,11 @@ export const getIssueContext = async (
           context += `BRIEF: ${briefDesc}\n`;
         }
 
-        context += `\n`;
+        context += "\n";
       }
     }
   } catch (error) {
-    console.error('Error getting child issues:', error);
+    console.error("Error getting child issues:", error);
   }
 
   return context;
@@ -125,14 +125,14 @@ export const getIssueContext = async (
 export const updateIssueStatus = async (
   linearClient: LinearClient,
   issueIdOrIdentifier: string,
-  statusName: string
+  statusName: string,
 ): Promise<void> => {
   try {
     // Log the status update attempt
     await agentActivity.action(
       issueIdOrIdentifier,
-      'Updating issue status',
-      `Changing to: ${statusName}`
+      "Updating issue status",
+      `Changing to: ${statusName}`,
     );
 
     // Get all workflow states for the issue's team
@@ -141,7 +141,7 @@ export const updateIssueStatus = async (
       console.error(`Issue ${issueIdOrIdentifier} not found`);
       await agentActivity.error(
         issueIdOrIdentifier,
-        `Failed to update status: Issue not found`
+        "Failed to update status: Issue not found",
       );
       return;
     }
@@ -162,14 +162,14 @@ export const updateIssueStatus = async (
 
     // Find the state with the matching name
     const state = states.nodes.find(
-      (s: any) => s.name.toLowerCase() === statusName.toLowerCase()
+      (s: any) => s.name.toLowerCase() === statusName.toLowerCase(),
     );
 
     if (!state) {
       console.error(
         `Status "${statusName}" not found for team ${
           team.name
-        }. Available states: ${states.nodes.map((s: any) => s.name).join(', ')}`
+        }. Available states: ${states.nodes.map((s: any) => s.name).join(", ")}`,
       );
       return;
     }
@@ -180,20 +180,20 @@ export const updateIssueStatus = async (
     console.log(`Updated issue ${issueIdOrIdentifier} status to ${statusName}`);
     await agentActivity.action(
       issueIdOrIdentifier,
-      'Updated issue status',
+      "Updated issue status",
       `Changed to: ${statusName}`,
-      `Successfully changed to ${state.name}`
+      `Successfully changed to ${state.name}`,
     );
   } catch (error: unknown) {
     console.error(
       `Error updating status for issue ${issueIdOrIdentifier}:`,
-      error instanceof Error ? error.message : String(error)
+      error instanceof Error ? error.message : String(error),
     );
     await agentActivity.error(
       issueIdOrIdentifier,
       `Failed to update status to ${statusName}: ${
         error instanceof Error ? error.message : String(error)
-      }`
+      }`,
     );
   }
 };
@@ -204,7 +204,7 @@ export const updateIssueStatus = async (
 export const addLabel = async (
   linearClient: LinearClient,
   issueIdOrIdentifier: string,
-  labelName: string
+  labelName: string,
 ): Promise<void> => {
   try {
     // Find the label by name
@@ -222,7 +222,7 @@ export const addLabel = async (
   } catch (error: unknown) {
     console.error(
       `Error adding label "${labelName}" to issue ${issueIdOrIdentifier}:`,
-      error instanceof Error ? error.message : String(error)
+      error instanceof Error ? error.message : String(error),
     );
   }
 };
@@ -233,7 +233,7 @@ export const addLabel = async (
 export const removeLabel = async (
   linearClient: LinearClient,
   issueIdOrIdentifier: string,
-  labelName: string
+  labelName: string,
 ): Promise<void> => {
   try {
     // Find the label by name
@@ -248,12 +248,12 @@ export const removeLabel = async (
     // Remove the label from the issue
     await linearClient.issueRemoveLabel(issueIdOrIdentifier, label.id);
     console.log(
-      `Removed label "${labelName}" from issue ${issueIdOrIdentifier}`
+      `Removed label "${labelName}" from issue ${issueIdOrIdentifier}`,
     );
   } catch (error: unknown) {
     console.error(
       `Error removing label "${labelName}" from issue ${issueIdOrIdentifier}:`,
-      error instanceof Error ? error.message : String(error)
+      error instanceof Error ? error.message : String(error),
     );
   }
 };
@@ -264,13 +264,13 @@ export const removeLabel = async (
 export const assignIssue = async (
   linearClient: LinearClient,
   issueIdOrIdentifier: string,
-  assigneeEmail: string
+  assigneeEmail: string,
 ): Promise<void> => {
   try {
     // Find the user by email
     const usersResponse = await linearClient.users();
     const user = usersResponse.nodes.find(
-      (user: any) => user.email === assigneeEmail
+      (user: any) => user.email === assigneeEmail,
     );
 
     if (!user) {
@@ -285,7 +285,7 @@ export const assignIssue = async (
   } catch (error: unknown) {
     console.error(
       `Error assigning issue ${issueIdOrIdentifier} to ${assigneeEmail}:`,
-      error instanceof Error ? error.message : String(error)
+      error instanceof Error ? error.message : String(error),
     );
   }
 };
@@ -301,7 +301,7 @@ export const createIssue = async (
   status?: string,
   priority?: number,
   parentIssueId?: string,
-  projectId?: string
+  projectId?: string,
 ): Promise<{
   success: boolean;
   message: string;
@@ -315,7 +315,7 @@ export const createIssue = async (
     // Check if the provided value is already a UUID (contains hyphens and is 36 chars)
     const isUUID =
       /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(
-        teamIdOrKeyOrName
+        teamIdOrKeyOrName,
       );
 
     if (!isUUID) {
@@ -324,13 +324,13 @@ export const createIssue = async (
       const team = teams.nodes.find(
         (t: any) =>
           t.key.toLowerCase() === teamIdOrKeyOrName.toLowerCase() ||
-          t.name.toLowerCase() === teamIdOrKeyOrName.toLowerCase()
+          t.name.toLowerCase() === teamIdOrKeyOrName.toLowerCase(),
       );
 
       if (!team) {
         const availableTeams = teams.nodes
           .map((t: any) => `${t.name} (${t.key})`)
-          .join(', ');
+          .join(", ");
         return {
           success: false,
           error: `Team "${teamIdOrKeyOrName}" not found. Available teams: ${availableTeams}`,
@@ -355,13 +355,13 @@ export const createIssue = async (
       });
 
       const state = states.nodes.find(
-        (state: any) => state.name.toLowerCase() === status.toLowerCase()
+        (state: any) => state.name.toLowerCase() === status.toLowerCase(),
       );
 
       if (state) {
         stateId = state.id;
       } else {
-        const availableStates = states.nodes.map((s: any) => s.name).join(', ');
+        const availableStates = states.nodes.map((s: any) => s.name).join(", ");
         return {
           success: false,
           error: `Status "${status}" not found for this team. Available statuses: ${availableStates}`,
@@ -403,16 +403,15 @@ export const createIssue = async (
         message: `Successfully created issue: ${createdIssue.identifier} - ${title}`,
         issueId: createdIssue.id,
       };
-    } else {
-      return {
-        success: false,
-        error: 'Issue creation returned no issue object',
-        message: 'Failed to create issue: Unknown error occurred',
-      };
     }
+    return {
+      success: false,
+      error: "Issue creation returned no issue object",
+      message: "Failed to create issue: Unknown error occurred",
+    };
   } catch (error: unknown) {
     const errorMessage = error instanceof Error ? error.message : String(error);
-    console.error('Error creating issue:', errorMessage);
+    console.error("Error creating issue:", errorMessage);
     return {
       success: false,
       error: errorMessage,
@@ -428,7 +427,7 @@ export const addIssueAttachment = async (
   linearClient: LinearClient,
   issueIdOrIdentifier: string,
   url: string,
-  title: string
+  title: string,
 ): Promise<void> => {
   try {
     // Get the issue to ensure we have the UUID for the attachment API
@@ -447,7 +446,7 @@ export const addIssueAttachment = async (
   } catch (error: unknown) {
     console.error(
       `Error adding attachment to issue ${issueIdOrIdentifier}:`,
-      error instanceof Error ? error.message : String(error)
+      error instanceof Error ? error.message : String(error),
     );
   }
 };
@@ -458,7 +457,7 @@ export const addIssueAttachment = async (
 export const updateIssuePriority = async (
   linearClient: LinearClient,
   issueIdOrIdentifier: string,
-  priority: number
+  priority: number,
 ): Promise<void> => {
   try {
     const issue = await linearClient.issue(issueIdOrIdentifier);
@@ -472,7 +471,7 @@ export const updateIssuePriority = async (
   } catch (error: unknown) {
     console.error(
       `Error updating priority for issue ${issueIdOrIdentifier}:`,
-      error instanceof Error ? error.message : String(error)
+      error instanceof Error ? error.message : String(error),
     );
   }
 };
@@ -483,7 +482,7 @@ export const updateIssuePriority = async (
 export const setPointEstimate = async (
   linearClient: LinearClient,
   issueIdOrIdentifier: string,
-  pointEstimate: number
+  pointEstimate: number,
 ): Promise<void> => {
   try {
     const issue = await linearClient.issue(issueIdOrIdentifier);
@@ -494,12 +493,12 @@ export const setPointEstimate = async (
 
     await issue.update({ estimate: pointEstimate });
     console.log(
-      `Set point estimate for issue ${issueIdOrIdentifier} to ${pointEstimate}`
+      `Set point estimate for issue ${issueIdOrIdentifier} to ${pointEstimate}`,
     );
   } catch (error: unknown) {
     console.error(
       `Error setting point estimate for issue ${issueIdOrIdentifier}:`,
-      error instanceof Error ? error.message : String(error)
+      error instanceof Error ? error.message : String(error),
     );
   }
 };
@@ -512,7 +511,7 @@ export const getTeams = async (linearClient: LinearClient): Promise<string> => {
     const teams = await linearClient.teams();
 
     if (teams.nodes.length === 0) {
-      return 'No teams found in the workspace.';
+      return "No teams found in the workspace.";
     }
 
     let result = `Found ${teams.nodes.length} teams:\n\n`;
@@ -532,7 +531,7 @@ export const getTeams = async (linearClient: LinearClient): Promise<string> => {
       const issues = await linearClient.issues({
         filter: {
           team: { id: { eq: team.id } },
-          state: { type: { neq: 'completed' } },
+          state: { type: { neq: "completed" } },
         },
         first: 1,
       });
@@ -542,10 +541,10 @@ export const getTeams = async (linearClient: LinearClient): Promise<string> => {
     return result;
   } catch (error: unknown) {
     console.error(
-      'Error getting teams:',
-      error instanceof Error ? error.message : String(error)
+      "Error getting teams:",
+      error instanceof Error ? error.message : String(error),
     );
-    return 'Error retrieving teams from Linear.';
+    return "Error retrieving teams from Linear.";
   }
 };
 
@@ -553,13 +552,13 @@ export const getTeams = async (linearClient: LinearClient): Promise<string> => {
  * Get all projects in the workspace
  */
 export const getProjects = async (
-  linearClient: LinearClient
+  linearClient: LinearClient,
 ): Promise<string> => {
   try {
     const projects = await linearClient.projects();
 
     if (projects.nodes.length === 0) {
-      return 'No projects found in the workspace.';
+      return "No projects found in the workspace.";
     }
 
     let result = `Found ${projects.nodes.length} projects:\n\n`;
@@ -573,10 +572,10 @@ export const getProjects = async (
 
       // Get project status
       const state = await project.state;
-      if (state && typeof state === 'object' && 'name' in state) {
+      if (state && typeof state === "object" && "name" in state) {
         result += `  Status: ${(state as any).name}\n`;
       } else {
-        result += `  Status: Unknown\n`;
+        result += "  Status: Unknown\n";
       }
 
       // Get progress
@@ -585,27 +584,27 @@ export const getProjects = async (
       // Get target date if available
       if (project.targetDate) {
         result += `  Target Date: ${new Date(
-          project.targetDate
+          project.targetDate,
         ).toLocaleDateString()}\n`;
       }
 
       // Get team info
       const teams = await project.teams();
       if (teams.nodes.length > 0) {
-        const teamNames = teams.nodes.map((t) => t.name).join(', ');
+        const teamNames = teams.nodes.map((t) => t.name).join(", ");
         result += `  Teams: ${teamNames}\n`;
       }
 
-      result += '\n';
+      result += "\n";
     }
 
     return result;
   } catch (error: unknown) {
     console.error(
-      'Error getting projects:',
-      error instanceof Error ? error.message : String(error)
+      "Error getting projects:",
+      error instanceof Error ? error.message : String(error),
     );
-    return 'Error retrieving projects from Linear.';
+    return "Error retrieving projects from Linear.";
   }
 };
 
@@ -613,13 +612,13 @@ export const getProjects = async (
  * Get all initiatives in the workspace
  */
 export const getInitiatives = async (
-  linearClient: LinearClient
+  linearClient: LinearClient,
 ): Promise<string> => {
   try {
     const initiatives = await linearClient.initiatives();
 
     if (initiatives.nodes.length === 0) {
-      return 'No initiatives found in the workspace.';
+      return "No initiatives found in the workspace.";
     }
 
     let result = `Found ${initiatives.nodes.length} initiatives:\n\n`;
@@ -634,7 +633,7 @@ export const getInitiatives = async (
       // Get target date if available
       if (initiative.targetDate) {
         result += `  Target Date: ${new Date(
-          initiative.targetDate
+          initiative.targetDate,
         ).toLocaleDateString()}\n`;
       }
 
@@ -647,16 +646,16 @@ export const getInitiatives = async (
         }
       }
 
-      result += '\n';
+      result += "\n";
     }
 
     return result;
   } catch (error: unknown) {
     console.error(
-      'Error getting initiatives:',
-      error instanceof Error ? error.message : String(error)
+      "Error getting initiatives:",
+      error instanceof Error ? error.message : String(error),
     );
-    return 'Error retrieving initiatives from Linear.';
+    return "Error retrieving initiatives from Linear.";
   }
 };
 
@@ -668,7 +667,7 @@ export const getUsers = async (linearClient: LinearClient): Promise<string> => {
     const users = await linearClient.users();
 
     if (users.nodes.length === 0) {
-      return 'No users found in the workspace.';
+      return "No users found in the workspace.";
     }
 
     let result = `Found ${users.nodes.length} users:\n\n`;
@@ -680,17 +679,17 @@ export const getUsers = async (linearClient: LinearClient): Promise<string> => {
       if (user.displayName && user.displayName !== user.name) {
         result += `  Display Name: ${user.displayName}\n`;
       }
-      result += `  Active: ${user.active ? 'Yes' : 'No'}\n`;
-      result += `  Admin: ${user.admin ? 'Yes' : 'No'}\n\n`;
+      result += `  Active: ${user.active ? "Yes" : "No"}\n`;
+      result += `  Admin: ${user.admin ? "Yes" : "No"}\n\n`;
     }
 
     return result;
   } catch (error: unknown) {
     console.error(
-      'Error getting users:',
-      error instanceof Error ? error.message : String(error)
+      "Error getting users:",
+      error instanceof Error ? error.message : String(error),
     );
-    return 'Error retrieving users from Linear.';
+    return "Error retrieving users from Linear.";
   }
 };
 
@@ -699,8 +698,8 @@ export const getUsers = async (linearClient: LinearClient): Promise<string> => {
  */
 export const getRecentIssues = async (
   linearClient: LinearClient,
-  limit: number = 20,
-  teamId?: string
+  limit = 20,
+  teamId?: string,
 ): Promise<string> => {
   try {
     const filter: any = {};
@@ -716,12 +715,12 @@ export const getRecentIssues = async (
 
     if (issues.nodes.length === 0) {
       return teamId
-        ? `No recent issues found for the specified team.`
-        : 'No recent issues found in the workspace.';
+        ? "No recent issues found for the specified team."
+        : "No recent issues found in the workspace.";
     }
 
     let result = `Found ${issues.nodes.length} recent issues${
-      teamId ? ' for the specified team' : ''
+      teamId ? " for the specified team" : ""
     }:\n\n`;
 
     for (const issue of issues.nodes) {
@@ -729,32 +728,32 @@ export const getRecentIssues = async (
 
       // Get state
       const state = await issue.state;
-      result += `  Status: ${state?.name || 'Unknown'}\n`;
+      result += `  Status: ${state?.name || "Unknown"}\n`;
 
       // Get assignee
       const assignee = await issue.assignee;
-      result += `  Assignee: ${assignee?.name || 'Unassigned'}\n`;
+      result += `  Assignee: ${assignee?.name || "Unassigned"}\n`;
 
       // Get team
       const team = await issue.team;
-      result += `  Team: ${team?.name || 'Unknown'}\n`;
+      result += `  Team: ${team?.name || "Unknown"}\n`;
 
       // Get priority
       if (issue.priority) {
         const priorityNames = [
-          'No Priority',
-          'Low',
-          'Medium',
-          'High',
-          'Urgent',
+          "No Priority",
+          "Low",
+          "Medium",
+          "High",
+          "Urgent",
         ];
-        result += `  Priority: ${priorityNames[issue.priority] || 'Unknown'}\n`;
+        result += `  Priority: ${priorityNames[issue.priority] || "Unknown"}\n`;
       }
 
       // Get labels
       const labels = await issue.labels();
       if (labels.nodes.length > 0) {
-        const labelNames = labels.nodes.map((l: any) => l.name).join(', ');
+        const labelNames = labels.nodes.map((l: any) => l.name).join(", ");
         result += `  Labels: ${labelNames}\n`;
       }
 
@@ -768,17 +767,17 @@ export const getRecentIssues = async (
       }
 
       result += `  Updated: ${new Date(
-        issue.updatedAt
+        issue.updatedAt,
       ).toLocaleDateString()}\n\n`;
     }
 
     return result;
   } catch (error: unknown) {
     console.error(
-      'Error getting recent issues:',
-      error instanceof Error ? error.message : String(error)
+      "Error getting recent issues:",
+      error instanceof Error ? error.message : String(error),
     );
-    return 'Error retrieving recent issues from Linear.';
+    return "Error retrieving recent issues from Linear.";
   }
 };
 
@@ -788,7 +787,7 @@ export const getRecentIssues = async (
 export const searchIssues = async (
   linearClient: LinearClient,
   query: string,
-  limit: number = 10
+  limit = 10,
 ): Promise<string> => {
   try {
     const issues = await linearClient.issues({
@@ -812,15 +811,15 @@ export const searchIssues = async (
 
       // Get state
       const state = await issue.state;
-      result += `  Status: ${state?.name || 'Unknown'}\n`;
+      result += `  Status: ${state?.name || "Unknown"}\n`;
 
       // Get assignee
       const assignee = await issue.assignee;
-      result += `  Assignee: ${assignee?.name || 'Unassigned'}\n`;
+      result += `  Assignee: ${assignee?.name || "Unassigned"}\n`;
 
       // Get team
       const team = await issue.team;
-      result += `  Team: ${team?.name || 'Unknown'}\n`;
+      result += `  Team: ${team?.name || "Unknown"}\n`;
 
       // Get brief description with highlighted query
       if (issue.description) {
@@ -831,14 +830,14 @@ export const searchIssues = async (
         result += `  Description: ${briefDesc}\n`;
       }
 
-      result += '\n';
+      result += "\n";
     }
 
     return result;
   } catch (error: unknown) {
     console.error(
-      'Error searching issues:',
-      error instanceof Error ? error.message : String(error)
+      "Error searching issues:",
+      error instanceof Error ? error.message : String(error),
     );
     return `Error searching for issues matching "${query}".`;
   }
@@ -849,7 +848,7 @@ export const searchIssues = async (
  */
 export const getWorkflowStates = async (
   linearClient: LinearClient,
-  teamId?: string
+  teamId?: string,
 ): Promise<string> => {
   try {
     const filter: any = {};
@@ -861,12 +860,12 @@ export const getWorkflowStates = async (
 
     if (states.nodes.length === 0) {
       return teamId
-        ? 'No workflow states found for the specified team.'
-        : 'No workflow states found.';
+        ? "No workflow states found for the specified team."
+        : "No workflow states found.";
     }
 
     let result = `Found ${states.nodes.length} workflow states${
-      teamId ? ' for the specified team' : ''
+      teamId ? " for the specified team" : ""
     }:\n\n`;
 
     // Group by team
@@ -874,7 +873,7 @@ export const getWorkflowStates = async (
 
     for (const state of states.nodes) {
       const team = await state.team;
-      const teamName = team?.name || 'Unknown Team';
+      const teamName = team?.name || "Unknown Team";
 
       if (!statesByTeam[teamName]) {
         statesByTeam[teamName] = [];
@@ -890,16 +889,16 @@ export const getWorkflowStates = async (
           result += `    Description: ${state.description}\n`;
         }
       }
-      result += '\n';
+      result += "\n";
     }
 
     return result;
   } catch (error: unknown) {
     console.error(
-      'Error getting workflow states:',
-      error instanceof Error ? error.message : String(error)
+      "Error getting workflow states:",
+      error instanceof Error ? error.message : String(error),
     );
-    return 'Error retrieving workflow states from Linear.';
+    return "Error retrieving workflow states from Linear.";
   }
 };
 
@@ -909,14 +908,14 @@ export const getWorkflowStates = async (
 export const createComment = async (
   linearClient: LinearClient,
   issueIdOrIdentifier: string,
-  body: string
+  body: string,
 ): Promise<void> => {
   try {
     // Log the comment creation attempt
     await agentActivity.action(
       issueIdOrIdentifier,
-      'Creating comment',
-      `${body.length} characters`
+      "Creating comment",
+      `${body.length} characters`,
     );
 
     const issue = await linearClient.issue(issueIdOrIdentifier);
@@ -924,7 +923,7 @@ export const createComment = async (
       console.error(`Issue ${issueIdOrIdentifier} not found`);
       await agentActivity.thought(
         issueIdOrIdentifier,
-        `❌ Comment creation failed: Issue not found`
+        "❌ Comment creation failed: Issue not found",
       );
       return;
     }
@@ -936,20 +935,20 @@ export const createComment = async (
     console.log(`Created comment on issue ${issueIdOrIdentifier}`);
     await agentActivity.action(
       issueIdOrIdentifier,
-      'Created comment',
+      "Created comment",
       `${body.length} characters`,
-      `Comment: ${body.substring(0, 100)}${body.length > 100 ? '...' : ''}`
+      `Comment: ${body.substring(0, 100)}${body.length > 100 ? "..." : ""}`,
     );
   } catch (error: unknown) {
     console.error(
       `Error creating comment on issue ${issueIdOrIdentifier}:`,
-      error instanceof Error ? error.message : String(error)
+      error instanceof Error ? error.message : String(error),
     );
     await agentActivity.thought(
       issueIdOrIdentifier,
       `❌ Comment creation failed: ${
         error instanceof Error ? error.message : String(error)
-      }`
+      }`,
     );
   }
 };
@@ -960,7 +959,7 @@ export const createComment = async (
 export const setIssueParent = async (
   linearClient: LinearClient,
   issueIdOrIdentifier: string,
-  parentIssueIdOrIdentifier: string
+  parentIssueIdOrIdentifier: string,
 ): Promise<{
   success: boolean;
   message: string;
@@ -973,7 +972,7 @@ export const setIssueParent = async (
       return {
         success: false,
         error: `Child issue ${issueIdOrIdentifier} not found`,
-        message: `Failed to set parent: Child issue not found`,
+        message: "Failed to set parent: Child issue not found",
       };
     }
 
@@ -982,15 +981,15 @@ export const setIssueParent = async (
       return {
         success: false,
         error: `Parent issue ${parentIssueIdOrIdentifier} not found`,
-        message: `Failed to set parent: Parent issue not found`,
+        message: "Failed to set parent: Parent issue not found",
       };
     }
 
     // Log the relationship creation
     await agentActivity.action(
       issueIdOrIdentifier,
-      'Setting issue parent',
-      `Making ${issue.identifier} a child of ${parentIssue.identifier}`
+      "Setting issue parent",
+      `Making ${issue.identifier} a child of ${parentIssue.identifier}`,
     );
 
     // Update the issue with the parent relationship
@@ -1001,8 +1000,8 @@ export const setIssueParent = async (
 
     await agentActivity.action(
       issueIdOrIdentifier,
-      'Parent relationship created',
-      successMessage
+      "Parent relationship created",
+      successMessage,
     );
 
     return {
@@ -1013,12 +1012,12 @@ export const setIssueParent = async (
     const errorMessage = error instanceof Error ? error.message : String(error);
     console.error(
       `Error setting parent for issue ${issueIdOrIdentifier}:`,
-      errorMessage
+      errorMessage,
     );
 
     await agentActivity.error(
       issueIdOrIdentifier,
-      `Failed to set parent: ${errorMessage}`
+      `Failed to set parent: ${errorMessage}`,
     );
 
     return {
@@ -1035,7 +1034,7 @@ export const setIssueParent = async (
 export const addIssueToProject = async (
   linearClient: LinearClient,
   issueIdOrIdentifier: string,
-  projectId: string
+  projectId: string,
 ): Promise<{
   success: boolean;
   message: string;
@@ -1048,7 +1047,7 @@ export const addIssueToProject = async (
       return {
         success: false,
         error: `Issue ${issueIdOrIdentifier} not found`,
-        message: `Failed to add to project: Issue not found`,
+        message: "Failed to add to project: Issue not found",
       };
     }
 
@@ -1058,15 +1057,15 @@ export const addIssueToProject = async (
       return {
         success: false,
         error: `Project ${projectId} not found`,
-        message: `Failed to add to project: Project not found`,
+        message: "Failed to add to project: Project not found",
       };
     }
 
     // Log the project assignment
     await agentActivity.action(
       issueIdOrIdentifier,
-      'Adding issue to project',
-      `Adding ${issue.identifier} to project ${project.name}`
+      "Adding issue to project",
+      `Adding ${issue.identifier} to project ${project.name}`,
     );
 
     // Update the issue with the project assignment
@@ -1077,8 +1076,8 @@ export const addIssueToProject = async (
 
     await agentActivity.action(
       issueIdOrIdentifier,
-      'Added to project',
-      successMessage
+      "Added to project",
+      successMessage,
     );
 
     return {
@@ -1089,12 +1088,12 @@ export const addIssueToProject = async (
     const errorMessage = error instanceof Error ? error.message : String(error);
     console.error(
       `Error adding issue ${issueIdOrIdentifier} to project:`,
-      errorMessage
+      errorMessage,
     );
 
     await agentActivity.error(
       issueIdOrIdentifier,
-      `Failed to add to project: ${errorMessage}`
+      `Failed to add to project: ${errorMessage}`,
     );
 
     return {

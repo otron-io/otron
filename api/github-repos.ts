@@ -1,8 +1,8 @@
-import type { VercelRequest, VercelResponse } from '@vercel/node';
-import { env } from '../lib/env.js';
-import { withInternalAccess } from '../lib/auth.js';
-import { addCorsHeaders } from '../lib/cors.js';
-import { GitHubAppService } from '../lib/github/github-app.js';
+import type { VercelRequest, VercelResponse } from "@vercel/node";
+import { withInternalAccess } from "../lib/core/auth.js";
+import { addCorsHeaders } from "../lib/core/cors.js";
+import { env } from "../lib/core/env.js";
+import { GitHubAppService } from "../lib/github/github-app.js";
 
 // Initialize GitHub App service
 const githubAppService = GitHubAppService.getInstance();
@@ -53,8 +53,9 @@ async function handler(req: VercelRequest, res: VercelResponse) {
     return;
   }
 
-  if (req.method !== 'GET') {
-    return res.status(405).json({ error: 'Method not allowed' });
+  if (req.method !== "GET") {
+    res.status(405).json({ error: "Method not allowed" });
+    return;
   }
 
   try {
@@ -62,28 +63,28 @@ async function handler(req: VercelRequest, res: VercelResponse) {
       installation_id,
       per_page = 30,
       page = 1,
-      sort = 'updated',
-      direction = 'desc',
+      sort = "updated",
+      direction = "desc",
     } = req.query;
 
-    if (installation_id && typeof installation_id === 'string') {
+    if (installation_id && typeof installation_id === "string") {
       // Get repositories for a specific installation
-      return await getInstallationRepos(
+      await getInstallationRepos(
         res,
-        parseInt(installation_id),
-        parseInt(per_page as string),
-        parseInt(page as string),
+        Number.parseInt(installation_id),
+        Number.parseInt(per_page as string),
+        Number.parseInt(page as string),
         sort as string,
-        direction as string
+        direction as string,
       );
-    } else {
-      // Get all installations
-      return await getInstallations(res);
+      return;
     }
+    // Get all installations
+    await getInstallations(res);
   } catch (error) {
-    console.error('Error in github-repos endpoint:', error);
-    return res.status(500).json({
-      error: 'Internal server error',
+    console.error("Error in github-repos endpoint:", error);
+    res.status(500).json({
+      error: "Internal server error",
       message: error instanceof Error ? error.message : String(error),
     });
   }
@@ -97,26 +98,26 @@ async function getInstallations(res: VercelResponse) {
       (installation: any) => ({
         id: installation.id,
         account: {
-          login: installation.account?.login || '',
-          avatar_url: installation.account?.avatar_url || '',
-          type: installation.account?.type || 'User',
+          login: installation.account?.login || "",
+          avatar_url: installation.account?.avatar_url || "",
+          type: installation.account?.type || "User",
         },
-        repository_selection: installation.repository_selection || 'all',
-        html_url: installation.html_url || '',
-        created_at: installation.created_at || '',
-        updated_at: installation.updated_at || '',
-      })
+        repository_selection: installation.repository_selection || "all",
+        html_url: installation.html_url || "",
+        created_at: installation.created_at || "",
+        updated_at: installation.updated_at || "",
+      }),
     );
 
-    return res.status(200).json({
+    res.status(200).json({
       installations: formattedInstallations,
       totalCount: formattedInstallations.length,
       timestamp: Date.now(),
     });
   } catch (error) {
-    console.error('Error fetching GitHub installations:', error);
-    return res.status(500).json({
-      error: 'Failed to fetch GitHub installations',
+    console.error("Error fetching GitHub installations:", error);
+    res.status(500).json({
+      error: "Failed to fetch GitHub installations",
       message: error instanceof Error ? error.message : String(error),
     });
   }
@@ -128,13 +129,12 @@ async function getInstallationRepos(
   perPage: number,
   page: number,
   sort: string,
-  direction: string
+  direction: string,
 ) {
   try {
     // Get Octokit client for this installation
-    const octokit = await githubAppService.getOctokitForInstallation(
-      installationId
-    );
+    const octokit =
+      await githubAppService.getOctokitForInstallation(installationId);
 
     // Fetch repositories for this installation
     const { data } = await octokit.apps.listReposAccessibleToInstallation({
@@ -157,9 +157,9 @@ async function getInstallationRepos(
       forks_count: repo.forks_count,
       open_issues_count: repo.open_issues_count,
       default_branch: repo.default_branch,
-      created_at: repo.created_at || '',
-      updated_at: repo.updated_at || '',
-      pushed_at: repo.pushed_at || repo.updated_at || '',
+      created_at: repo.created_at || "",
+      updated_at: repo.updated_at || "",
+      pushed_at: repo.pushed_at || repo.updated_at || "",
       size: repo.size,
       owner: {
         login: repo.owner.login,
@@ -172,35 +172,36 @@ async function getInstallationRepos(
     // Sort repositories if requested
     if (
       sort &&
-      ['name', 'updated', 'created', 'pushed', 'size', 'stargazers'].includes(
-        sort
+      ["name", "updated", "created", "pushed", "size", "stargazers"].includes(
+        sort,
       )
     ) {
       formattedRepos.sort((a, b) => {
-        let aValue: any, bValue: any;
+        let aValue: any;
+        let bValue: any;
 
         switch (sort) {
-          case 'name':
+          case "name":
             aValue = a.name.toLowerCase();
             bValue = b.name.toLowerCase();
             break;
-          case 'updated':
+          case "updated":
             aValue = new Date(a.updated_at).getTime();
             bValue = new Date(b.updated_at).getTime();
             break;
-          case 'created':
+          case "created":
             aValue = new Date(a.created_at).getTime();
             bValue = new Date(b.created_at).getTime();
             break;
-          case 'pushed':
+          case "pushed":
             aValue = new Date(a.pushed_at).getTime();
             bValue = new Date(b.pushed_at).getTime();
             break;
-          case 'size':
+          case "size":
             aValue = a.size;
             bValue = b.size;
             break;
-          case 'stargazers':
+          case "stargazers":
             aValue = a.stargazers_count;
             bValue = b.stargazers_count;
             break;
@@ -208,15 +209,14 @@ async function getInstallationRepos(
             return 0;
         }
 
-        if (direction === 'desc') {
+        if (direction === "desc") {
           return aValue > bValue ? -1 : aValue < bValue ? 1 : 0;
-        } else {
-          return aValue < bValue ? -1 : aValue > bValue ? 1 : 0;
         }
+        return aValue < bValue ? -1 : aValue > bValue ? 1 : 0;
       });
     }
 
-    return res.status(200).json({
+    res.status(200).json({
       repositories: formattedRepos,
       totalCount: data.total_count,
       page: page,
@@ -228,10 +228,10 @@ async function getInstallationRepos(
   } catch (error) {
     console.error(
       `Error fetching repositories for installation ${installationId}:`,
-      error
+      error,
     );
-    return res.status(500).json({
-      error: 'Failed to fetch repositories',
+    res.status(500).json({
+      error: "Failed to fetch repositories",
       message: error instanceof Error ? error.message : String(error),
     });
   }

@@ -1,36 +1,36 @@
-import { LinearClient } from '@linear/sdk';
+import type { LinearClient } from "@linear/sdk";
 
 /**
  * Agent Activity Types as defined by Linear Agents SDK
  */
 export interface AgentActivityContent {
-  type: 'thought' | 'elicitation' | 'action' | 'response' | 'error';
+  type: "thought" | "elicitation" | "action" | "response" | "error";
 }
 
 export interface ThoughtActivity extends AgentActivityContent {
-  type: 'thought';
+  type: "thought";
   body: string;
 }
 
 export interface ElicitationActivity extends AgentActivityContent {
-  type: 'elicitation';
+  type: "elicitation";
   body: string;
 }
 
 export interface ActionActivity extends AgentActivityContent {
-  type: 'action';
+  type: "action";
   action: string;
   parameter: string;
   result?: string;
 }
 
 export interface ResponseActivity extends AgentActivityContent {
-  type: 'response';
+  type: "response";
   body: string;
 }
 
 export interface ErrorActivity extends AgentActivityContent {
-  type: 'error';
+  type: "error";
   body: string;
 }
 
@@ -45,11 +45,11 @@ export type ActivityContent =
  * Agent Session States as defined by Linear Agents SDK
  */
 export type AgentSessionState =
-  | 'pending'
-  | 'active'
-  | 'error'
-  | 'awaitingInput'
-  | 'complete';
+  | "pending"
+  | "active"
+  | "error"
+  | "awaitingInput"
+  | "complete";
 
 /**
  * Interface for agent session data
@@ -89,10 +89,10 @@ class LinearAgentSessionManager {
    * Create or get an existing agent session for an issue
    */
   async getOrCreateSession(
-    issueIdOrIdentifier: string
+    issueIdOrIdentifier: string,
   ): Promise<string | null> {
     if (!this.linearClient) {
-      console.warn('LinearAgentSessionManager: No Linear client available');
+      console.warn("LinearAgentSessionManager: No Linear client available");
       return null;
     }
 
@@ -101,7 +101,7 @@ class LinearAgentSessionManager {
       const issue = await this.linearClient.issue(issueIdOrIdentifier);
       if (!issue) {
         console.error(
-          `LinearAgentSessionManager: Issue ${issueIdOrIdentifier} not found`
+          `LinearAgentSessionManager: Issue ${issueIdOrIdentifier} not found`,
         );
         return null;
       }
@@ -109,7 +109,7 @@ class LinearAgentSessionManager {
       // Check if we already have an active session for this issue
       const existingSession = Array.from(this.activeSessions.values()).find(
         (session) =>
-          session.issueId === issue.id && session.state !== 'complete'
+          session.issueId === issue.id && session.state !== "complete",
       );
 
       if (existingSession) {
@@ -124,7 +124,7 @@ class LinearAgentSessionManager {
       const sessionData: AgentSessionData = {
         sessionId,
         issueId: issue.id,
-        state: 'pending',
+        state: "pending",
         activities: [],
         startTime: Date.now(),
       };
@@ -134,8 +134,8 @@ class LinearAgentSessionManager {
       return sessionId;
     } catch (error) {
       console.error(
-        'LinearAgentSessionManager: Error creating session:',
-        error
+        "LinearAgentSessionManager: Error creating session:",
+        error,
       );
       return null;
     }
@@ -146,7 +146,7 @@ class LinearAgentSessionManager {
    */
   async emitThought(sessionId: string, message: string): Promise<void> {
     const activity: ThoughtActivity = {
-      type: 'thought',
+      type: "thought",
       body: message,
     };
 
@@ -158,7 +158,7 @@ class LinearAgentSessionManager {
    */
   async emitElicitation(sessionId: string, message: string): Promise<void> {
     const activity: ElicitationActivity = {
-      type: 'elicitation',
+      type: "elicitation",
       body: message,
     };
 
@@ -172,10 +172,10 @@ class LinearAgentSessionManager {
     sessionId: string,
     action: string,
     parameter: string,
-    result?: string
+    result?: string,
   ): Promise<void> {
     const activity: ActionActivity = {
-      type: 'action',
+      type: "action",
       action,
       parameter,
       result,
@@ -189,7 +189,7 @@ class LinearAgentSessionManager {
    */
   async emitResponse(sessionId: string, message: string): Promise<void> {
     const activity: ResponseActivity = {
-      type: 'response',
+      type: "response",
       body: message,
     };
 
@@ -201,7 +201,7 @@ class LinearAgentSessionManager {
    */
   async emitError(sessionId: string, message: string): Promise<void> {
     const activity: ErrorActivity = {
-      type: 'error',
+      type: "error",
       body: message,
     };
 
@@ -213,11 +213,11 @@ class LinearAgentSessionManager {
    */
   private async emitActivity(
     sessionId: string,
-    content: ActivityContent
+    content: ActivityContent,
   ): Promise<void> {
     if (!this.linearClient) {
       console.warn(
-        'LinearAgentSessionManager: No Linear client available, skipping activity'
+        "LinearAgentSessionManager: No Linear client available, skipping activity",
       );
       return;
     }
@@ -226,7 +226,7 @@ class LinearAgentSessionManager {
       const session = this.activeSessions.get(sessionId);
       if (!session) {
         console.error(
-          `LinearAgentSessionManager: Session ${sessionId} not found`
+          `LinearAgentSessionManager: Session ${sessionId} not found`,
         );
         return;
       }
@@ -236,27 +236,27 @@ class LinearAgentSessionManager {
       session.lastActivity = Date.now();
 
       // Update session state based on activity type
-      if (content.type === 'error') {
-        session.state = 'error';
-      } else if (content.type === 'elicitation') {
-        session.state = 'awaitingInput';
-      } else if (content.type === 'response') {
-        session.state = 'complete';
+      if (content.type === "error") {
+        session.state = "error";
+      } else if (content.type === "elicitation") {
+        session.state = "awaitingInput";
+      } else if (content.type === "response") {
+        session.state = "complete";
       } else {
-        session.state = 'active';
+        session.state = "active";
       }
 
       // Log to console for debugging
       const logMessage = this.formatActivityForConsole(
         content,
-        session.issueId
+        session.issueId,
       );
       console.log(logMessage);
 
       // Emit to Linear using the Agents SDK
       try {
         // Try to use the new createAgentActivity method if available
-        if ('createAgentActivity' in this.linearClient) {
+        if ("createAgentActivity" in this.linearClient) {
           await (this.linearClient as any).createAgentActivity({
             agentSessionId: sessionId,
             content: content,
@@ -283,25 +283,25 @@ class LinearAgentSessionManager {
 
           const response = await (this.linearClient as any).client.request(
             mutation,
-            variables
+            variables,
           );
 
           if (!response.agentActivityCreate?.success) {
-            throw new Error('Failed to create agent activity via GraphQL');
+            throw new Error("Failed to create agent activity via GraphQL");
           }
         }
       } catch (linearError) {
         // If we can't emit to Linear, log the error and fail
         console.error(
-          'LinearAgentSessionManager: Failed to emit activity to Linear:',
-          linearError
+          "LinearAgentSessionManager: Failed to emit activity to Linear:",
+          linearError,
         );
         throw linearError;
       }
     } catch (error) {
       console.error(
-        'LinearAgentSessionManager: Error emitting activity:',
-        error
+        "LinearAgentSessionManager: Error emitting activity:",
+        error,
       );
     }
   }
@@ -313,7 +313,7 @@ class LinearAgentSessionManager {
     const sessionData: AgentSessionData = {
       sessionId,
       issueId,
-      state: 'pending',
+      state: "pending",
       activities: [],
       startTime: Date.now(),
     };
@@ -326,22 +326,23 @@ class LinearAgentSessionManager {
    */
   private formatActivityForConsole(
     content: ActivityContent,
-    issueId: string
+    issueId: string,
   ): string {
     const timestamp = new Date().toLocaleString();
     const prefix = `[Linear Agent ${issueId}]`;
 
     switch (content.type) {
-      case 'thought':
+      case "thought":
         return `${prefix} THOUGHT: ${content.body}`;
-      case 'elicitation':
+      case "elicitation":
         return `${prefix} ELICITATION: ${content.body}`;
-      case 'action':
-        const result = content.result ? ` → ${content.result}` : '';
+      case "action": {
+        const result = content.result ? ` → ${content.result}` : "";
         return `${prefix} ACTION: ${content.action}(${content.parameter})${result}`;
-      case 'response':
+      }
+      case "response":
         return `${prefix} RESPONSE: ${content.body}`;
-      case 'error':
+      case "error":
         return `${prefix} ERROR: ${content.body}`;
       default:
         return `${prefix} ACTIVITY: ${JSON.stringify(content)}`;
@@ -354,11 +355,14 @@ class LinearAgentSessionManager {
   async completeSession(sessionId: string): Promise<void> {
     const session = this.activeSessions.get(sessionId);
     if (session) {
-      session.state = 'complete';
+      session.state = "complete";
       // Optionally remove from active sessions after some time
-      setTimeout(() => {
-        this.activeSessions.delete(sessionId);
-      }, 30 * 60 * 1000); // Remove after 30 minutes
+      setTimeout(
+        () => {
+          this.activeSessions.delete(sessionId);
+        },
+        30 * 60 * 1000,
+      ); // Remove after 30 minutes
     }
   }
 
@@ -383,7 +387,7 @@ export const linearAgentSessionManager =
 
 // Helper function to parse action messages into action/parameter format
 const parseActionMessage = (
-  message: string
+  message: string,
 ): { action: string; parameter: string } => {
   // Look for patterns like "toolName: details" or "doing something..."
   const colonMatch = message.match(/^([^:]+):\s*(.+)$/);
@@ -393,22 +397,21 @@ const parseActionMessage = (
 
   // Look for patterns like "getting something..." or "searching for..."
   const verbMatch = message.match(
-    /^(getting|searching|reading|creating|updating|deleting|analyzing|processing)\s+(.+)$/i
+    /^(getting|searching|reading|creating|updating|deleting|analyzing|processing)\s+(.+)$/i,
   );
   if (verbMatch) {
     return { action: verbMatch[1], parameter: verbMatch[2] };
   }
 
   // Default: treat whole message as action with empty parameter
-  return { action: message, parameter: '' };
+  return { action: message, parameter: "" };
 };
 
 // Convenience functions that replace the old logToLinearIssue functions
 export const agentActivity = {
   thought: async (issueIdOrIdentifier: string, message: string) => {
-    const sessionId = await linearAgentSessionManager.getOrCreateSession(
-      issueIdOrIdentifier
-    );
+    const sessionId =
+      await linearAgentSessionManager.getOrCreateSession(issueIdOrIdentifier);
     if (sessionId) {
       // Convert thought to action for better Linear display
       const { action, parameter } = parseActionMessage(message);
@@ -417,9 +420,8 @@ export const agentActivity = {
   },
 
   elicitation: async (issueIdOrIdentifier: string, message: string) => {
-    const sessionId = await linearAgentSessionManager.getOrCreateSession(
-      issueIdOrIdentifier
-    );
+    const sessionId =
+      await linearAgentSessionManager.getOrCreateSession(issueIdOrIdentifier);
     if (sessionId) {
       await linearAgentSessionManager.emitElicitation(sessionId, message);
     }
@@ -429,40 +431,37 @@ export const agentActivity = {
     issueIdOrIdentifier: string,
     action: string,
     parameter: string,
-    result?: string
+    result?: string,
   ) => {
-    const sessionId = await linearAgentSessionManager.getOrCreateSession(
-      issueIdOrIdentifier
-    );
+    const sessionId =
+      await linearAgentSessionManager.getOrCreateSession(issueIdOrIdentifier);
     if (sessionId) {
       await linearAgentSessionManager.emitAction(
         sessionId,
         action,
         parameter,
-        result
+        result,
       );
     }
   },
 
   response: async (issueIdOrIdentifier: string, message: string) => {
-    const sessionId = await linearAgentSessionManager.getOrCreateSession(
-      issueIdOrIdentifier
-    );
+    const sessionId =
+      await linearAgentSessionManager.getOrCreateSession(issueIdOrIdentifier);
     if (sessionId) {
       await linearAgentSessionManager.emitResponse(sessionId, message);
     }
   },
 
   error: async (issueIdOrIdentifier: string, message: string) => {
-    const sessionId = await linearAgentSessionManager.getOrCreateSession(
-      issueIdOrIdentifier
-    );
+    const sessionId =
+      await linearAgentSessionManager.getOrCreateSession(issueIdOrIdentifier);
     if (sessionId) {
       // Convert error to action for consistency
       await linearAgentSessionManager.emitAction(
         sessionId,
-        '❌ Error',
-        message
+        "❌ Error",
+        message,
       );
     }
   },
@@ -484,13 +483,13 @@ export const agentActivityDirect = {
     sessionId: string,
     action: string,
     parameter: string,
-    result?: string
+    result?: string,
   ) => {
     await linearAgentSessionManager.emitAction(
       sessionId,
       action,
       parameter,
-      result
+      result,
     );
   },
 
@@ -500,7 +499,7 @@ export const agentActivityDirect = {
 
   error: async (sessionId: string, message: string) => {
     // Convert error to action for consistency
-    await linearAgentSessionManager.emitAction(sessionId, '❌ Error', message);
+    await linearAgentSessionManager.emitAction(sessionId, "❌ Error", message);
   },
 };
 
@@ -509,13 +508,13 @@ export const logToLinearIssue = {
   info: (issueId: string, message: string, context?: string) =>
     agentActivity.thought(
       issueId,
-      context ? `${message} (${context})` : message
+      context ? `${message} (${context})` : message,
     ),
 
   warn: (issueId: string, message: string, context?: string) =>
     agentActivity.thought(
       issueId,
-      `⚠️ ${context ? `${message} (${context})` : message}`
+      `⚠️ ${context ? `${message} (${context})` : message}`,
     ),
 
   error: (issueId: string, message: string, context?: string) =>
@@ -524,6 +523,6 @@ export const logToLinearIssue = {
   debug: (issueId: string, message: string, context?: string) =>
     agentActivity.thought(
       issueId,
-      `🔍 ${context ? `${message} (${context})` : message}`
+      `🔍 ${context ? `${message} (${context})` : message}`,
     ),
 };

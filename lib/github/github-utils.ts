@@ -1,5 +1,5 @@
-import { Octokit } from '@octokit/rest';
-import { GitHubAppService } from './github-app.js';
+import type { Octokit } from "@octokit/rest";
+import { GitHubAppService } from "./github-app.js";
 
 // Get GitHub App service instance
 const githubAppService = GitHubAppService.getInstance();
@@ -48,7 +48,7 @@ export const cleanupSessionCaches = () => {
 
   if (cleanedSessions > 0 || cleanedFiles > 0) {
     console.log(
-      `🧹 Cleaned up ${cleanedFiles} expired files from ${cleanedSessions} sessions`
+      `🧹 Cleaned up ${cleanedFiles} expired files from ${cleanedSessions} sessions`,
     );
   }
 };
@@ -69,10 +69,10 @@ const getOctokitForRepo = async (repository: string): Promise<Octokit> => {
 export const getFileContent = async (
   path: string,
   repository: string,
-  startLine: number = 1,
-  maxLines: number = 200,
+  startLine = 1,
+  maxLines = 200,
   branch?: string,
-  sessionId?: string
+  sessionId?: string,
 ): Promise<string> => {
   try {
     // Validate line ranges
@@ -82,8 +82,8 @@ export const getFileContent = async (
     if (maxLines > 10000) maxLines = 10000;
 
     // Generate cache keys (use 'main' as default to match tool-executors.ts)
-    const fileCacheKey = `${repository}:${path}:${branch || 'main'}`;
-    const sessionCacheKey = sessionId || 'no-session';
+    const fileCacheKey = `${repository}:${path}:${branch || "main"}`;
+    const sessionCacheKey = sessionId || "no-session";
 
     // Check session cache first (higher priority, longer TTL)
     if (sessionId) {
@@ -95,14 +95,14 @@ export const getFileContent = async (
           Date.now() - sessionCached.timestamp < SESSION_CACHE_TTL
         ) {
           console.log(
-            `🎯 Using session cache for ${path} in ${repository} (session: ${sessionId})`
+            `🎯 Using session cache for ${path} in ${repository} (session: ${sessionId})`,
           );
-          const allLines = sessionCached.content.split('\n');
+          const allLines = sessionCached.content.split("\n");
           const totalLines = allLines.length;
           const endLine = Math.min(startLine + maxLines - 1, totalLines);
           const requestedLines = allLines.slice(startLine - 1, endLine);
           const lineInfo = `// Lines ${startLine}-${endLine} of ${totalLines}\n`;
-          return lineInfo + requestedLines.join('\n');
+          return lineInfo + requestedLines.join("\n");
         }
       }
     }
@@ -111,20 +111,20 @@ export const getFileContent = async (
     const cached = fileCache.get(fileCacheKey);
     if (cached && Date.now() - cached.timestamp < CACHE_TTL) {
       console.log(`📦 Using global cache for ${path} in ${repository}`);
-      const allLines = cached.content.split('\n');
+      const allLines = cached.content.split("\n");
       const totalLines = allLines.length;
       const endLine = Math.min(startLine + maxLines - 1, totalLines);
       const requestedLines = allLines.slice(startLine - 1, endLine);
       const lineInfo = `// Lines ${startLine}-${endLine} of ${totalLines}\n`;
-      return lineInfo + requestedLines.join('\n');
+      return lineInfo + requestedLines.join("\n");
     }
 
     console.log(
       `🌐 Fetching content of ${path} from ${repository}${
-        branch ? ` (branch: ${branch})` : ''
-      }${sessionId ? ` (session: ${sessionId})` : ''}`
+        branch ? ` (branch: ${branch})` : ""
+      }${sessionId ? ` (session: ${sessionId})` : ""}`,
     );
-    const [owner, repo] = repository.split('/');
+    const [owner, repo] = repository.split("/");
     const octokit = await getOctokitForRepo(repository);
 
     const { data } = await octokit.repos.getContent({
@@ -134,12 +134,12 @@ export const getFileContent = async (
       ref: branch,
     });
 
-    if (!('content' in data) || typeof data.content !== 'string') {
+    if (!("content" in data) || typeof data.content !== "string") {
       throw new Error(`Unexpected response format for ${path}`);
     }
 
     // Decode base64 content
-    const content = Buffer.from(data.content, 'base64').toString('utf-8');
+    const content = Buffer.from(data.content, "base64").toString("utf-8");
 
     // Cache the full content in global cache
     fileCache.set(fileCacheKey, {
@@ -162,22 +162,22 @@ export const getFileContent = async (
     }
 
     // Split into lines and extract the requested range
-    const allLines = content.split('\n');
+    const allLines = content.split("\n");
     const totalLines = allLines.length;
     const endLine = Math.min(startLine + maxLines - 1, totalLines);
     const requestedLines = allLines.slice(startLine - 1, endLine);
     const lineInfo = `// Lines ${startLine}-${endLine} of ${totalLines}\n`;
-    return lineInfo + requestedLines.join('\n');
+    return lineInfo + requestedLines.join("\n");
   } catch (error: any) {
     console.error(
       `Error getting file content for ${path} from ${repository}:`,
-      error
+      error,
     );
     if (error.status === 404) {
-      return `# File not found: ${path}${branch ? ` (branch: ${branch})` : ''}`;
+      return `# File not found: ${path}${branch ? ` (branch: ${branch})` : ""}`;
     }
     return `# Error retrieving content for ${path}${
-      branch ? ` (branch: ${branch})` : ''
+      branch ? ` (branch: ${branch})` : ""
     }`;
   }
 };
@@ -186,14 +186,14 @@ export const getFileContent = async (
  * Get the default branch of a repository
  */
 export const getDefaultBranch = async (repository: string): Promise<string> => {
-  const [owner, repo] = repository.split('/');
+  const [owner, repo] = repository.split("/");
   try {
     const octokit = await getOctokitForRepo(repository);
     const { data } = await octokit.repos.get({ owner, repo });
     return data.default_branch;
   } catch (error) {
     console.error(`Error getting default branch for ${repository}:`, error);
-    return 'main'; // Fallback to main
+    return "main"; // Fallback to main
   }
 };
 
@@ -203,9 +203,9 @@ export const getDefaultBranch = async (repository: string): Promise<string> => {
 export const createBranch = async (
   branch: string,
   repository: string,
-  baseBranch?: string
+  baseBranch?: string,
 ): Promise<void> => {
-  const [owner, repo] = repository.split('/');
+  const [owner, repo] = repository.split("/");
 
   try {
     // Get base branch if not provided
@@ -233,10 +233,10 @@ export const createBranch = async (
       // If branch already exists (422 error), check if it needs to be updated
       if (
         createError.status === 422 &&
-        createError.message?.includes('already exists')
+        createError.message?.includes("already exists")
       ) {
         console.log(
-          `Branch ${branch} already exists, checking if it needs to be updated...`
+          `Branch ${branch} already exists, checking if it needs to be updated...`,
         );
 
         try {
@@ -250,7 +250,7 @@ export const createBranch = async (
           // If the existing branch is not at the same SHA as the base, update it
           if (existingBranchData.object.sha !== refData.object.sha) {
             console.log(
-              `Updating existing branch ${branch} to match ${baseRef}...`
+              `Updating existing branch ${branch} to match ${baseRef}...`,
             );
             await octokit.git.updateRef({
               owner,
@@ -260,17 +260,17 @@ export const createBranch = async (
               force: true,
             });
             console.log(
-              `Updated branch ${branch} to head of ${baseRef} in ${repository}`
+              `Updated branch ${branch} to head of ${baseRef} in ${repository}`,
             );
           } else {
             console.log(
-              `Branch ${branch} already exists and is up-to-date with ${baseRef}`
+              `Branch ${branch} already exists and is up-to-date with ${baseRef}`,
             );
           }
         } catch (checkError) {
           console.error(
             `Error checking/updating existing branch ${branch}:`,
-            checkError
+            checkError,
           );
           throw checkError;
         }
@@ -291,9 +291,9 @@ export const createBranch = async (
 export const resetBranchToHead = async (
   repository: string,
   branch: string,
-  baseBranch?: string
+  baseBranch?: string,
 ): Promise<void> => {
-  const [owner, repo] = repository.split('/');
+  const [owner, repo] = repository.split("/");
 
   try {
     // Get base branch if not provided
@@ -318,7 +318,7 @@ export const resetBranchToHead = async (
       });
 
       console.log(
-        `Reset branch ${branch} to head of ${baseRef} in ${repository}`
+        `Reset branch ${branch} to head of ${baseRef} in ${repository}`,
       );
     } catch (updateError: any) {
       // If the branch doesn't exist (422 error), create it instead
@@ -333,7 +333,7 @@ export const resetBranchToHead = async (
         });
 
         console.log(
-          `Created branch ${branch} from head of ${baseRef} in ${repository}`
+          `Created branch ${branch} from head of ${baseRef} in ${repository}`,
         );
       } else {
         // Re-throw other errors
@@ -354,10 +354,10 @@ export const createOrUpdateFile = async (
   content: string,
   message: string,
   repository: string,
-  branch: string
+  branch: string,
 ): Promise<void> => {
-  console.log('🔧 createOrUpdateFile CALLED');
-  console.log('Parameters:', {
+  console.log("🔧 createOrUpdateFile CALLED");
+  console.log("Parameters:", {
     path,
     contentLength: content.length,
     message,
@@ -365,17 +365,17 @@ export const createOrUpdateFile = async (
     branch,
   });
 
-  const [owner, repo] = repository.split('/');
+  const [owner, repo] = repository.split("/");
 
   try {
-    console.log('🔑 Getting Octokit client for repository...');
+    console.log("🔑 Getting Octokit client for repository...");
     const octokit = await getOctokitForRepo(repository);
-    console.log('✅ Got Octokit client');
+    console.log("✅ Got Octokit client");
 
     // Check if file exists to get SHA
     let sha: string | undefined;
     try {
-      console.log('📖 Checking if file exists to get SHA...');
+      console.log("📖 Checking if file exists to get SHA...");
       const { data } = await octokit.repos.getContent({
         owner,
         repo,
@@ -383,23 +383,23 @@ export const createOrUpdateFile = async (
         ref: branch,
       });
 
-      if ('sha' in data) {
+      if ("sha" in data) {
         sha = data.sha;
-        console.log('✅ File exists, got SHA:', sha.substring(0, 8) + '...');
+        console.log("✅ File exists, got SHA:", `${sha.substring(0, 8)}...`);
       }
     } catch (error) {
       // File doesn't exist yet, which is fine
       console.log("📝 File doesn't exist yet, will create new file");
     }
 
-    console.log('💾 Creating/updating file via GitHub API...');
+    console.log("💾 Creating/updating file via GitHub API...");
     // Create or update file
     await octokit.repos.createOrUpdateFileContents({
       owner,
       repo,
       path,
       message,
-      content: Buffer.from(content).toString('base64'),
+      content: Buffer.from(content).toString("base64"),
       branch,
       sha,
     });
@@ -417,11 +417,11 @@ export const createOrUpdateFile = async (
       sessionCache.delete(fileCacheKey);
       sessionCache.delete(defaultCacheKey);
     }
-    console.log('🗑️ Cleared file cache (global and session)');
+    console.log("🗑️ Cleared file cache (global and session)");
   } catch (error) {
     console.error(
       `❌ Error updating file ${path} in ${repository}/${branch}:`,
-      error
+      error,
     );
     throw error;
   }
@@ -434,25 +434,25 @@ export const deleteFile = async (
   path: string,
   message: string,
   repository: string,
-  branch: string
+  branch: string,
 ): Promise<void> => {
-  console.log('🗑️ deleteFile CALLED');
-  console.log('Parameters:', {
+  console.log("🗑️ deleteFile CALLED");
+  console.log("Parameters:", {
     path,
     message,
     repository,
     branch,
   });
 
-  const [owner, repo] = repository.split('/');
+  const [owner, repo] = repository.split("/");
 
   try {
-    console.log('🔑 Getting Octokit client for repository...');
+    console.log("🔑 Getting Octokit client for repository...");
     const octokit = await getOctokitForRepo(repository);
-    console.log('✅ Got Octokit client');
+    console.log("✅ Got Octokit client");
 
     // Get file SHA (required for deletion)
-    console.log('📖 Getting file SHA for deletion...');
+    console.log("📖 Getting file SHA for deletion...");
     const { data } = await octokit.repos.getContent({
       owner,
       repo,
@@ -460,14 +460,14 @@ export const deleteFile = async (
       ref: branch,
     });
 
-    if (!('sha' in data)) {
+    if (!("sha" in data)) {
       throw new Error(`Cannot delete ${path}: not a file or file not found`);
     }
 
     const sha = data.sha;
-    console.log('✅ Got file SHA:', sha.substring(0, 8) + '...');
+    console.log("✅ Got file SHA:", `${sha.substring(0, 8)}...`);
 
-    console.log('🗑️ Deleting file via GitHub API...');
+    console.log("🗑️ Deleting file via GitHub API...");
     // Delete the file
     await octokit.repos.deleteFile({
       owner,
@@ -485,11 +485,11 @@ export const deleteFile = async (
     fileCache.delete(cacheKey);
     const defaultCacheKey = `${repository}:${path}:default`;
     fileCache.delete(defaultCacheKey);
-    console.log('🗑️ Cleared file cache');
+    console.log("🗑️ Cleared file cache");
   } catch (error) {
     console.error(
       `❌ Error deleting file ${path} from ${repository}/${branch}:`,
-      error
+      error,
     );
     throw error;
   }
@@ -503,7 +503,7 @@ export const createPullRequest = async (
   body: string,
   head: string,
   base: string,
-  repository: string
+  repository: string,
 ): Promise<{
   url: string;
   number: number;
@@ -512,7 +512,7 @@ export const createPullRequest = async (
   mergeable: boolean | null;
   draft: boolean;
 }> => {
-  const [owner, repo] = repository.split('/');
+  const [owner, repo] = repository.split("/");
 
   try {
     const octokit = await getOctokitForRepo(repository);
@@ -528,7 +528,7 @@ export const createPullRequest = async (
     } catch (error: any) {
       if (error.status === 404) {
         throw new Error(
-          `Branch ${head} does not exist. Create it before making a PR.`
+          `Branch ${head} does not exist. Create it before making a PR.`,
         );
       }
       console.warn(`Warning when checking branch ${head}: ${error.message}`);
@@ -545,15 +545,15 @@ export const createPullRequest = async (
 
       if (comparison.data.commits.length === 0) {
         throw new Error(
-          `No commits found between ${base} and ${head}. You need to make commits to the ${head} branch before creating a pull request. This usually means the code changes failed to be committed properly.`
+          `No commits found between ${base} and ${head}. You need to make commits to the ${head} branch before creating a pull request. This usually means the code changes failed to be committed properly.`,
         );
       }
 
       console.log(
-        `Found ${comparison.data.commits.length} commits between ${base} and ${head}`
+        `Found ${comparison.data.commits.length} commits between ${base} and ${head}`,
       );
     } catch (error: any) {
-      if (error.message.includes('No commits found')) {
+      if (error.message.includes("No commits found")) {
         throw error; // Re-throw our custom error
       }
       console.warn(`Warning when comparing commits: ${error.message}`);
@@ -594,12 +594,12 @@ export const updatePullRequest = async (
   updates: {
     title?: string;
     body?: string;
-    state?: 'open' | 'closed';
+    state?: "open" | "closed";
     base?: string;
-  }
+  },
 ): Promise<void> => {
   try {
-    const [owner, repo] = repository.split('/');
+    const [owner, repo] = repository.split("/");
     const octokit = await getOctokitForRepo(repository);
 
     await octokit.pulls.update({
@@ -613,7 +613,7 @@ export const updatePullRequest = async (
   } catch (error) {
     console.error(
       `Error updating pull request #${pullNumber} in ${repository}:`,
-      error
+      error,
     );
     throw error;
   }
@@ -625,10 +625,10 @@ export const updatePullRequest = async (
 export const addPullRequestComment = async (
   repository: string,
   pullNumber: number,
-  body: string
+  body: string,
 ): Promise<{ id: number; url: string }> => {
   try {
-    const [owner, repo] = repository.split('/');
+    const [owner, repo] = repository.split("/");
     const octokit = await getOctokitForRepo(repository);
 
     const { data } = await octokit.issues.createComment({
@@ -639,13 +639,13 @@ export const addPullRequestComment = async (
     });
 
     console.log(
-      `Added comment to pull request #${pullNumber} in ${repository}`
+      `Added comment to pull request #${pullNumber} in ${repository}`,
     );
     return { id: data.id, url: data.html_url };
   } catch (error) {
     console.error(
       `Error adding comment to pull request #${pullNumber} in ${repository}:`,
-      error
+      error,
     );
     throw error;
   }
@@ -660,10 +660,10 @@ export const addPullRequestReviewComment = async (
   body: string,
   commitSha: string,
   path: string,
-  line: number
+  line: number,
 ): Promise<{ id: number; url: string }> => {
   try {
-    const [owner, repo] = repository.split('/');
+    const [owner, repo] = repository.split("/");
     const octokit = await getOctokitForRepo(repository);
 
     const { data } = await octokit.pulls.createReviewComment({
@@ -677,13 +677,13 @@ export const addPullRequestReviewComment = async (
     });
 
     console.log(
-      `Added review comment to pull request #${pullNumber} in ${repository}`
+      `Added review comment to pull request #${pullNumber} in ${repository}`,
     );
     return { id: data.id, url: data.html_url };
   } catch (error) {
     console.error(
       `Error adding review comment to pull request #${pullNumber} in ${repository}:`,
-      error
+      error,
     );
     throw error;
   }
@@ -695,10 +695,10 @@ export const addPullRequestReviewComment = async (
 export const replyToComment = async (
   repository: string,
   commentId: number,
-  body: string
+  body: string,
 ): Promise<{ id: number; url: string }> => {
   try {
-    const [owner, repo] = repository.split('/');
+    const [owner, repo] = repository.split("/");
     const octokit = await getOctokitForRepo(repository);
 
     // Get the original comment to find the issue/PR number
@@ -709,8 +709,8 @@ export const replyToComment = async (
     });
 
     // Extract issue number from the issue URL
-    const issueNumber = parseInt(
-      originalComment.issue_url.split('/').pop() || '0'
+    const issueNumber = Number.parseInt(
+      originalComment.issue_url.split("/").pop() || "0",
     );
 
     const { data } = await octokit.issues.createComment({
@@ -725,7 +725,7 @@ export const replyToComment = async (
   } catch (error) {
     console.error(
       `Error replying to comment #${commentId} in ${repository}:`,
-      error
+      error,
     );
     throw error;
   }
@@ -736,7 +736,7 @@ export const replyToComment = async (
  */
 export const getPullRequestFiles = async (
   repository: string,
-  pullNumber: number
+  pullNumber: number,
 ): Promise<
   Array<{
     filename: string;
@@ -748,7 +748,7 @@ export const getPullRequestFiles = async (
   }>
 > => {
   try {
-    const [owner, repo] = repository.split('/');
+    const [owner, repo] = repository.split("/");
     const octokit = await getOctokitForRepo(repository);
 
     const { data } = await octokit.pulls.listFiles({
@@ -768,7 +768,7 @@ export const getPullRequestFiles = async (
   } catch (error) {
     console.error(
       `Error getting files for pull request #${pullNumber} in ${repository}:`,
-      error
+      error,
     );
     throw error;
   }
@@ -779,7 +779,7 @@ export const getPullRequestFiles = async (
  */
 export const getPullRequestCommits = async (
   repository: string,
-  pullNumber: number
+  pullNumber: number,
 ): Promise<
   Array<{
     sha: string;
@@ -789,7 +789,7 @@ export const getPullRequestCommits = async (
   }>
 > => {
   try {
-    const [owner, repo] = repository.split('/');
+    const [owner, repo] = repository.split("/");
     const octokit = await getOctokitForRepo(repository);
 
     const { data } = await octokit.pulls.listCommits({
@@ -801,13 +801,13 @@ export const getPullRequestCommits = async (
     return data.map((commit: any) => ({
       sha: commit.sha,
       message: commit.commit.message,
-      author: commit.commit.author?.name || 'Unknown',
-      date: commit.commit.author?.date || '',
+      author: commit.commit.author?.name || "Unknown",
+      date: commit.commit.author?.date || "",
     }));
   } catch (error) {
     console.error(
       `Error getting commits for pull request #${pullNumber} in ${repository}:`,
-      error
+      error,
     );
     throw error;
   }
@@ -822,11 +822,11 @@ export const mergePullRequest = async (
   options: {
     commitTitle?: string;
     commitMessage?: string;
-    mergeMethod?: 'merge' | 'squash' | 'rebase';
-  } = {}
+    mergeMethod?: "merge" | "squash" | "rebase";
+  } = {},
 ): Promise<{ merged: boolean; sha: string }> => {
   try {
-    const [owner, repo] = repository.split('/');
+    const [owner, repo] = repository.split("/");
     const octokit = await getOctokitForRepo(repository);
 
     const { data } = await octokit.pulls.merge({
@@ -835,7 +835,7 @@ export const mergePullRequest = async (
       pull_number: pullNumber,
       commit_title: options.commitTitle,
       commit_message: options.commitMessage,
-      merge_method: options.mergeMethod || 'merge',
+      merge_method: options.mergeMethod || "merge",
     });
 
     console.log(`Merged pull request #${pullNumber} in ${repository}`);
@@ -843,7 +843,7 @@ export const mergePullRequest = async (
   } catch (error) {
     console.error(
       `Error merging pull request #${pullNumber} in ${repository}:`,
-      error
+      error,
     );
     throw error;
   }
@@ -856,10 +856,10 @@ export const requestPullRequestReviewers = async (
   repository: string,
   pullNumber: number,
   reviewers: string[],
-  teamReviewers: string[] = []
+  teamReviewers: string[] = [],
 ): Promise<void> => {
   try {
-    const [owner, repo] = repository.split('/');
+    const [owner, repo] = repository.split("/");
     const octokit = await getOctokitForRepo(repository);
 
     await octokit.pulls.requestReviewers({
@@ -871,12 +871,12 @@ export const requestPullRequestReviewers = async (
     });
 
     console.log(
-      `Requested reviewers for pull request #${pullNumber} in ${repository}`
+      `Requested reviewers for pull request #${pullNumber} in ${repository}`,
     );
   } catch (error) {
     console.error(
       `Error requesting reviewers for pull request #${pullNumber} in ${repository}:`,
-      error
+      error,
     );
     throw error;
   }
@@ -888,16 +888,16 @@ export const requestPullRequestReviewers = async (
 export const submitPullRequestReview = async (
   repository: string,
   pullNumber: number,
-  event: 'APPROVE' | 'REQUEST_CHANGES' | 'COMMENT',
+  event: "APPROVE" | "REQUEST_CHANGES" | "COMMENT",
   body?: string,
   comments: Array<{
     path: string;
     line: number;
     body: string;
-  }> = []
+  }> = [],
 ): Promise<{ id: number }> => {
   try {
-    const [owner, repo] = repository.split('/');
+    const [owner, repo] = repository.split("/");
     const octokit = await getOctokitForRepo(repository);
 
     const { data } = await octokit.pulls.createReview({
@@ -914,13 +914,13 @@ export const submitPullRequestReview = async (
     });
 
     console.log(
-      `Submitted ${event} review for pull request #${pullNumber} in ${repository}`
+      `Submitted ${event} review for pull request #${pullNumber} in ${repository}`,
     );
     return { id: data.id };
   } catch (error) {
     console.error(
       `Error submitting review for pull request #${pullNumber} in ${repository}:`,
-      error
+      error,
     );
     throw error;
   }
@@ -931,16 +931,16 @@ export const submitPullRequestReview = async (
  */
 export const getDirectoryStructure = async (
   repository: string,
-  directoryPath: string = ''
+  directoryPath = "",
 ): Promise<
-  Array<{ name: string; path: string; type: 'file' | 'dir'; size?: number }>
+  Array<{ name: string; path: string; type: "file" | "dir"; size?: number }>
 > => {
   try {
     console.log(
-      `Getting directory structure for ${directoryPath || '/'} in ${repository}`
+      `Getting directory structure for ${directoryPath || "/"} in ${repository}`,
     );
 
-    const [owner, repo] = repository.split('/');
+    const [owner, repo] = repository.split("/");
     const octokit = await getOctokitForRepo(repository);
 
     // Set a timeout for the API request
@@ -951,7 +951,7 @@ export const getDirectoryStructure = async (
     });
 
     const timeoutPromise = new Promise((_, reject) => {
-      setTimeout(() => reject(new Error('Directory listing timed out')), 5000);
+      setTimeout(() => reject(new Error("Directory listing timed out")), 5000);
     });
 
     // Race between content fetch and timeout
@@ -963,7 +963,7 @@ export const getDirectoryStructure = async (
     let result: Array<{
       name: string;
       path: string;
-      type: 'file' | 'dir';
+      type: "file" | "dir";
       size?: number;
     }> = [];
 
@@ -972,23 +972,23 @@ export const getDirectoryStructure = async (
       result = data.map((item: any) => ({
         name: item.name,
         path: item.path,
-        type: item.type as 'file' | 'dir',
+        type: item.type as "file" | "dir",
         size: item.size,
       }));
 
       // Sort directories first, then files
       result.sort((a, b) => {
-        if (a.type === 'dir' && b.type === 'file') return -1;
-        if (a.type === 'file' && b.type === 'dir') return 1;
+        if (a.type === "dir" && b.type === "file") return -1;
+        if (a.type === "file" && b.type === "dir") return 1;
         return a.name.localeCompare(b.name);
       });
-    } else if (data.type === 'file') {
+    } else if (data.type === "file") {
       // It's a single file
       result = [
         {
           name: data.name,
           path: data.path,
-          type: 'file',
+          type: "file",
           size: data.size,
         },
       ];
@@ -998,7 +998,7 @@ export const getDirectoryStructure = async (
   } catch (error: any) {
     console.error(
       `Error getting directory structure for ${directoryPath} in ${repository}:`,
-      error
+      error,
     );
 
     if (error.status === 404) {
@@ -1006,16 +1006,16 @@ export const getDirectoryStructure = async (
         {
           name: `Path not found: ${directoryPath}`,
           path: directoryPath,
-          type: 'file',
+          type: "file",
         },
       ];
     }
 
     return [
       {
-        name: 'Error retrieving directory structure',
+        name: "Error retrieving directory structure",
         path: directoryPath,
-        type: 'file',
+        type: "file",
       },
     ];
   }
@@ -1026,7 +1026,7 @@ export const getDirectoryStructure = async (
  */
 export const getPullRequest = async (
   repository: string,
-  pullNumber: number
+  pullNumber: number,
 ): Promise<{
   title: string;
   body: string;
@@ -1046,7 +1046,7 @@ export const getPullRequest = async (
   }>;
 }> => {
   try {
-    const [owner, repo] = repository.split('/');
+    const [owner, repo] = repository.split("/");
     const octokit = await getOctokitForRepo(repository);
 
     // Get the PR details
@@ -1072,18 +1072,18 @@ export const getPullRequest = async (
 
     return {
       title: pullRequest.title,
-      body: pullRequest.body || '',
+      body: pullRequest.body || "",
       state: pullRequest.state,
-      user: pullRequest.user?.login || 'Unknown',
+      user: pullRequest.user?.login || "Unknown",
       comments: issueComments.map((comment: any) => ({
-        user: comment.user?.login || 'Unknown',
-        body: comment.body || '',
+        user: comment.user?.login || "Unknown",
+        body: comment.body || "",
         createdAt: comment.created_at,
       })),
       reviewComments: reviewComments.map((comment: any) => ({
-        user: comment.user?.login || 'Unknown',
-        body: comment.body || '',
-        path: comment.path || '',
+        user: comment.user?.login || "Unknown",
+        body: comment.body || "",
+        path: comment.path || "",
         position: comment.position === undefined ? null : comment.position,
         createdAt: comment.created_at,
       })),
@@ -1091,7 +1091,7 @@ export const getPullRequest = async (
   } catch (error) {
     console.error(
       `Error getting pull request details for PR #${pullNumber} in ${repository}:`,
-      error
+      error,
     );
     throw error;
   }
@@ -1106,7 +1106,7 @@ export const searchCode = async (
   options: {
     fileFilter?: string;
     maxResults?: number;
-  } = {}
+  } = {},
 ): Promise<
   Array<{ path: string; line: number; content: string; context?: string }>
 > => {
@@ -1128,7 +1128,7 @@ export const searchCode = async (
     return data.items.map((item: any) => ({
       path: item.path,
       line: 1, // GitHub search doesn't provide line numbers directly
-      content: item.text_matches?.[0]?.fragment || 'No preview available',
+      content: item.text_matches?.[0]?.fragment || "No preview available",
       context: `Repository: ${item.repository.full_name}, Score: ${item.score}`,
     }));
   } catch (error: any) {
@@ -1138,17 +1138,17 @@ export const searchCode = async (
     if (error.status === 403) {
       return [
         {
-          path: 'rate-limit.txt',
+          path: "rate-limit.txt",
           line: 1,
           content:
-            'GitHub search API rate limit exceeded. Please try again later.',
+            "GitHub search API rate limit exceeded. Please try again later.",
         },
       ];
     }
 
     return [
       {
-        path: 'search-error.txt',
+        path: "search-error.txt",
         line: 1,
         content: `Search could not be completed: ${
           error.message || String(error)
@@ -1163,5 +1163,5 @@ export const searchCode = async (
  */
 export const clearCache = (): void => {
   fileCache.clear();
-  console.log('Cleared GitHub file cache');
+  console.log("Cleared GitHub file cache");
 };

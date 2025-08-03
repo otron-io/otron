@@ -1,6 +1,6 @@
-import { openai } from '@ai-sdk/openai';
-import { generateText } from 'ai';
-import { CoreMessage } from 'ai';
+import { openai } from "@ai-sdk/openai";
+import { generateText } from "ai";
+import type { CoreMessage } from "ai";
 
 interface GoalEvaluationResult {
   isComplete: boolean;
@@ -19,15 +19,15 @@ interface AgentExecutionSummary {
 
 interface RequestAnalysis {
   type:
-    | 'casual_conversation'
-    | 'information_request'
-    | 'task_execution'
-    | 'issue_management'
-    | 'code_development';
-  complexity: 'simple' | 'moderate' | 'complex';
+    | "casual_conversation"
+    | "information_request"
+    | "task_execution"
+    | "issue_management"
+    | "code_development";
+  complexity: "simple" | "moderate" | "complex";
   requiresTools: boolean;
-  platform: 'slack' | 'linear' | 'github' | 'unknown';
-  urgency: 'low' | 'medium' | 'high';
+  platform: "slack" | "linear" | "github" | "unknown";
+  urgency: "low" | "medium" | "high";
 }
 
 /**
@@ -39,14 +39,14 @@ export class GoalEvaluator {
    */
   private async analyzeRequest(
     messages: CoreMessage[],
-    executionSummary: AgentExecutionSummary
+    executionSummary: AgentExecutionSummary,
   ): Promise<RequestAnalysis> {
     const userRequest = this.extractUserRequest(messages);
     const fullContext = this.extractFullContext(messages);
 
     try {
       const { text } = await generateText({
-        model: openai('o3'),
+        model: openai("o3"),
         system: `You are an AI agent request analyzer. Analyze the user's request to understand its type and requirements.
 
 Categorize this request and respond with a JSON object:
@@ -80,12 +80,12 @@ USER'S REQUEST:
 ${userRequest}
 
 AGENT'S EXECUTION:
-- Tools used: ${executionSummary.toolsUsed.join(', ')}
-- Actions performed: ${executionSummary.actionsPerformed.join('; ')}`,
+- Tools used: ${executionSummary.toolsUsed.join(", ")}
+- Actions performed: ${executionSummary.actionsPerformed.join("; ")}`,
         messages: [
           {
-            role: 'user',
-            content: 'Analyze this request.',
+            role: "user",
+            content: "Analyze this request.",
           },
         ],
         temperature: 0,
@@ -93,19 +93,19 @@ AGENT'S EXECUTION:
 
       return JSON.parse(text) as RequestAnalysis;
     } catch (error) {
-      console.error('Error analyzing request:', error);
+      console.error("Error analyzing request:", error);
       // Fallback analysis
       return {
         type:
           userRequest.length < 20 && /^(hi|hello|hey|sup)/i.test(userRequest)
-            ? 'casual_conversation'
-            : 'task_execution',
-        complexity: 'simple',
+            ? "casual_conversation"
+            : "task_execution",
+        complexity: "simple",
         requiresTools: !/^(hi|hello|hey|sup|thanks|thank you)$/i.test(
-          userRequest.trim()
+          userRequest.trim(),
         ),
-        platform: 'unknown',
-        urgency: 'medium',
+        platform: "unknown",
+        urgency: "medium",
       };
     }
   }
@@ -116,12 +116,12 @@ AGENT'S EXECUTION:
   async evaluateGoalCompletion(
     initialContext: CoreMessage[],
     executionSummary: AgentExecutionSummary,
-    attemptNumber: number = 1
+    attemptNumber = 1,
   ): Promise<GoalEvaluationResult> {
     // First, analyze the request to understand what type of interaction this is
     const requestAnalysis = await this.analyzeRequest(
       initialContext,
-      executionSummary
+      executionSummary,
     );
 
     // Extract the user's request/goal from the initial context
@@ -129,18 +129,18 @@ AGENT'S EXECUTION:
     const fullContext = this.extractFullContext(initialContext);
 
     // For casual conversations, be very lenient
-    if (requestAnalysis.type === 'casual_conversation') {
+    if (requestAnalysis.type === "casual_conversation") {
       return {
         isComplete: true,
         confidence: 0.95,
         reasoning:
-          'This is a casual conversation. The agent appropriately responded to the greeting/casual message.',
+          "This is a casual conversation. The agent appropriately responded to the greeting/casual message.",
       };
     }
 
     // For simple information requests that don't require tools, check if agent provided a response
     if (
-      requestAnalysis.type === 'information_request' &&
+      requestAnalysis.type === "information_request" &&
       !requestAnalysis.requiresTools
     ) {
       return {
@@ -148,8 +148,8 @@ AGENT'S EXECUTION:
         confidence: 0.9,
         reasoning:
           executionSummary.finalResponse.length > 0
-            ? 'Information request answered with appropriate response.'
-            : 'Information request not answered - no response provided.',
+            ? "Information request answered with appropriate response."
+            : "Information request not answered - no response provided.",
       };
     }
 
@@ -159,7 +159,7 @@ AGENT'S EXECUTION:
       fullContext,
       executionSummary,
       requestAnalysis,
-      attemptNumber
+      attemptNumber,
     );
   }
 
@@ -171,7 +171,7 @@ AGENT'S EXECUTION:
     fullContext: string,
     executionSummary: AgentExecutionSummary,
     requestAnalysis: RequestAnalysis,
-    attemptNumber: number
+    attemptNumber: number,
   ): Promise<GoalEvaluationResult> {
     const evaluationPrompt = `
 FULL CONVERSATION CONTEXT:
@@ -189,12 +189,12 @@ REQUEST ANALYSIS:
 
     try {
       const { text } = await generateText({
-        model: openai('o3'),
+        model: openai("o3"),
         system: `You are an AI goal completion evaluator. Your job is to determine if an AI agent has successfully completed the user's request.
 
 AGENT'S EXECUTION SUMMARY:
-- Tools used: ${executionSummary.toolsUsed.join(', ')}
-- Actions performed: ${executionSummary.actionsPerformed.join('; ')}
+- Tools used: ${executionSummary.toolsUsed.join(", ")}
+- Actions performed: ${executionSummary.actionsPerformed.join("; ")}
 - Final response: ${executionSummary.finalResponse}
 - Ended explicitly: ${executionSummary.endedExplicitly}
 - Attempt number: ${attemptNumber}
@@ -253,7 +253,7 @@ Respond with a JSON object containing:
 }`,
         messages: [
           {
-            role: 'user',
+            role: "user",
             content: evaluationPrompt,
           },
         ],
@@ -265,11 +265,11 @@ Respond with a JSON object containing:
 
       // Validate the result
       if (
-        typeof result.isComplete !== 'boolean' ||
-        typeof result.confidence !== 'number' ||
-        typeof result.reasoning !== 'string'
+        typeof result.isComplete !== "boolean" ||
+        typeof result.confidence !== "number" ||
+        typeof result.reasoning !== "string"
       ) {
-        throw new Error('Invalid evaluation result format');
+        throw new Error("Invalid evaluation result format");
       }
 
       // Apply additional heuristics to prevent false negatives
@@ -277,18 +277,18 @@ Respond with a JSON object containing:
         result,
         requestAnalysis,
         executionSummary,
-        attemptNumber
+        attemptNumber,
       );
 
       return result;
     } catch (error) {
-      console.error('Error evaluating goal completion:', error);
+      console.error("Error evaluating goal completion:", error);
 
       // Improved fallback evaluation
       return this.createFallbackEvaluation(
         requestAnalysis,
         executionSummary,
-        attemptNumber
+        attemptNumber,
       );
     }
   }
@@ -300,12 +300,12 @@ Respond with a JSON object containing:
     result: GoalEvaluationResult,
     requestAnalysis: RequestAnalysis,
     executionSummary: AgentExecutionSummary,
-    attemptNumber: number
+    attemptNumber: number,
   ): number {
     let adjustedConfidence = result.confidence;
 
     // Boost confidence for casual conversations
-    if (requestAnalysis.type === 'casual_conversation' && result.isComplete) {
+    if (requestAnalysis.type === "casual_conversation" && result.isComplete) {
       adjustedConfidence = Math.max(adjustedConfidence, 0.95);
     }
 
@@ -325,31 +325,31 @@ Respond with a JSON object containing:
     // Boost confidence if agent shows good action-to-analysis ratio
     const searchTools = executionSummary.toolsUsed.filter((tool) =>
       [
-        'searchEmbeddedCode',
-        'searchLinearIssues',
-        'searchSlackMessages',
-      ].includes(tool)
+        "searchEmbeddedCode",
+        "searchLinearIssues",
+        "searchSlackMessages",
+      ].includes(tool),
     ).length;
     const actionTools = executionSummary.toolsUsed.filter((tool) =>
       [
-        'createOrUpdateFile',
-        'insertAtLine',
-        'replaceLines',
-        'deleteLines',
-        'appendToFile',
-        'prependToFile',
-        'findAndReplace',
-        'insertAfterPattern',
-        'insertBeforePattern',
-        'applyMultipleEdits',
-        'createBranch',
-        'createPullRequest',
-        'updateIssueStatus',
-        'createLinearComment',
-        'sendSlackMessage',
-        'sendChannelMessage',
-        'sendDirectMessage',
-      ].includes(tool)
+        "createOrUpdateFile",
+        "insertAtLine",
+        "replaceLines",
+        "deleteLines",
+        "appendToFile",
+        "prependToFile",
+        "findAndReplace",
+        "insertAfterPattern",
+        "insertBeforePattern",
+        "applyMultipleEdits",
+        "createBranch",
+        "createPullRequest",
+        "updateIssueStatus",
+        "createLinearComment",
+        "sendSlackMessage",
+        "sendChannelMessage",
+        "sendDirectMessage",
+      ].includes(tool),
     ).length;
 
     if (actionTools > 0 && searchTools <= 5) {
@@ -368,7 +368,7 @@ Respond with a JSON object containing:
     if (
       searchTools > 6 &&
       actionTools === 0 &&
-      requestAnalysis.type === 'code_development'
+      requestAnalysis.type === "code_development"
     ) {
       adjustedConfidence -= 0.15;
     }
@@ -382,15 +382,15 @@ Respond with a JSON object containing:
   private createFallbackEvaluation(
     requestAnalysis: RequestAnalysis,
     executionSummary: AgentExecutionSummary,
-    attemptNumber: number
+    attemptNumber: number,
   ): GoalEvaluationResult {
     // For casual conversations, assume success
-    if (requestAnalysis.type === 'casual_conversation') {
+    if (requestAnalysis.type === "casual_conversation") {
       return {
         isComplete: true,
         confidence: 0.9,
         reasoning:
-          'Fallback evaluation: Casual conversation detected, assuming successful interaction.',
+          "Fallback evaluation: Casual conversation detected, assuming successful interaction.",
       };
     }
 
@@ -405,15 +405,15 @@ Respond with a JSON object containing:
       confidence: isComplete ? 0.7 : 0.3,
       reasoning: `Fallback evaluation: ${
         isComplete
-          ? 'Agent appears to have addressed the request appropriately.'
-          : 'Agent may not have fully completed the requested task.'
+          ? "Agent appears to have addressed the request appropriately."
+          : "Agent may not have fully completed the requested task."
       } Tools used: ${hasUsedTools}, Tools needed: ${toolsWereNeeded}`,
       missingActions: isComplete
         ? []
-        : ['Review and complete the original request'],
+        : ["Review and complete the original request"],
       nextSteps: isComplete
         ? undefined
-        : 'Retry with focus on using appropriate tools for the task.',
+        : "Retry with focus on using appropriate tools for the task.",
     };
   }
 
@@ -424,18 +424,19 @@ Respond with a JSON object containing:
     // Find the last user message (most recent request)
     for (let i = messages.length - 1; i >= 0; i--) {
       const message = messages[i];
-      if (message.role === 'user') {
-        if (typeof message.content === 'string') {
+      if (message.role === "user") {
+        if (typeof message.content === "string") {
           return message.content;
-        } else if (Array.isArray(message.content)) {
+        }
+        if (Array.isArray(message.content)) {
           return message.content
-            .map((part) => ('text' in part ? part.text : ''))
-            .join(' ');
+            .map((part) => ("text" in part ? part.text : ""))
+            .join(" ");
         }
       }
     }
 
-    return 'No clear user request found';
+    return "No clear user request found";
   }
 
   /**
@@ -445,16 +446,16 @@ Respond with a JSON object containing:
     return messages
       .map((message) => {
         const content =
-          typeof message.content === 'string'
+          typeof message.content === "string"
             ? message.content
             : Array.isArray(message.content)
-            ? message.content
-                .map((part) => ('text' in part ? part.text : ''))
-                .join(' ')
-            : '';
+              ? message.content
+                  .map((part) => ("text" in part ? part.text : ""))
+                  .join(" ")
+              : "";
         return `${message.role}: ${content}`;
       })
-      .join('\n');
+      .join("\n");
   }
 
   /**
@@ -462,7 +463,7 @@ Respond with a JSON object containing:
    */
   generateRetryFeedback(
     evaluation: GoalEvaluationResult,
-    attemptNumber: number
+    attemptNumber: number,
   ): string {
     const feedback = `🔄 **Goal Completion Review - Attempt ${attemptNumber}**
 
@@ -475,11 +476,11 @@ Respond with a JSON object containing:
 ${
   evaluation.missingActions && evaluation.missingActions.length > 0
     ? `**Missing Actions:**
-${evaluation.missingActions.map((action) => `- ${action}`).join('\n')}`
-    : ''
+${evaluation.missingActions.map((action) => `- ${action}`).join("\n")}`
+    : ""
 }
 
-${evaluation.nextSteps ? `**Next Steps:** ${evaluation.nextSteps}` : ''}
+${evaluation.nextSteps ? `**Next Steps:** ${evaluation.nextSteps}` : ""}
 
 **Instructions for this retry:**
 1. Review what was accomplished in the previous attempt
