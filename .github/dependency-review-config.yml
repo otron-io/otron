@@ -10,15 +10,6 @@ allow-licenses:
   - CC0-1.0
   - Unlicense
 
-deny-licenses:
-  - GPL-2.0
-  - GPL-3.0
-  - AGPL-1.0
-  - AGPL-3.0
-  - LGPL-2.0
-  - LGPL-2.1
-  - LGPL-3.0
-
 fail-on-scopes:
   - runtime
 
