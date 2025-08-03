@@ -18,12 +18,12 @@ const redis = new Redis({
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   if (req.method !== "GET") {
-    return res.status(405).json({ error: "Method not allowed" });
+    res.status(405).json({ error: "Method not allowed" });
   }
 
   const code = req.query.code as string;
   if (!code) {
-    return res.status(400).json({ error: "Missing code parameter" });
+    res.status(400).json({ error: "Missing code parameter" });
   }
 
   try {
@@ -40,7 +40,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     await redis.set("linearAppUserId", appUserId);
 
     // Success page with Tailwind
-    return res.status(200).send(`
+    res.status(200).send(`
       <!DOCTYPE html>
       <html>
         <head>
@@ -67,7 +67,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     console.error("OAuth error:", error);
 
     // Error page with Tailwind
-    return res.status(500).send(`
+    res.status(500).send(`
       <!DOCTYPE html>
       <html>
         <head>

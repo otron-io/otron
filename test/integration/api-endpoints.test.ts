@@ -48,7 +48,7 @@ describe('API Endpoints Integration', () => {
       );
       const app = require('express')();
       app.use(require('express').json());
-      app.post('/issue-actions', createTestServer(issueActionsHandler));
+      app.post('/issue-actions', createTestServer(issueActionsHandler as any));
 
       const response = await request(app)
         .post('/issue-actions')
@@ -75,7 +75,7 @@ describe('API Endpoints Integration', () => {
       );
       const app = require('express')();
       app.use(require('express').json());
-      app.post('/issue-actions', createTestServer(issueActionsHandler));
+      app.post('/issue-actions', createTestServer(issueActionsHandler as any));
 
       const response = await request(app).post('/issue-actions').send({
         action: 'update_status',
@@ -95,7 +95,7 @@ describe('API Endpoints Integration', () => {
       );
       const app = require('express')();
       app.use(require('express').json());
-      app.post('/code-search', createTestServer(codeSearchHandler));
+      app.post('/code-search', createTestServer(codeSearchHandler as any));
 
       const response = await request(app)
         .post('/code-search')
@@ -118,7 +118,7 @@ describe('API Endpoints Integration', () => {
       const { default: webhookHandler } = await import('../../api/webhook.js');
       const app = require('express')();
       app.use(require('express').json());
-      app.post('/webhook', createTestServer(webhookHandler));
+      app.post('/webhook', createTestServer(webhookHandler as any));
 
       const mockPayload = {
         type: 'AgentSessionEvent',

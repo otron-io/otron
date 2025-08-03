@@ -37,13 +37,13 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   );
 
   if (req.method === "OPTIONS") {
-    return res.status(200).end();
+    res.status(200).end();
   }
 
   // Verify internal token
   const internalToken = req.headers["x-internal-token"];
   if (!internalToken || internalToken !== env.INTERNAL_API_TOKEN) {
-    return res.status(401).json({ error: "Unauthorized" });
+    res.status(401).json({ error: "Unauthorized" });
   }
 
   try {
@@ -55,11 +55,11 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       case "POST":
         return await bulkMemoryOperations(req, res);
       default:
-        return res.status(405).json({ error: "Method not allowed" });
+        res.status(405).json({ error: "Method not allowed" });
     }
   } catch (error) {
     console.error("Memory browser API error:", error);
-    return res.status(500).json({
+    res.status(500).json({
       error: "Internal server error",
       details: error instanceof Error ? error.message : "Unknown error",
     });
@@ -524,7 +524,7 @@ async function deleteMemories(req: VercelRequest, res: VercelResponse) {
     const parts = memoryIdStr.split(":");
 
     if (parts.length < 6) {
-      return res.status(400).json({ error: "Invalid memory ID format" });
+      res.status(400).json({ error: "Invalid memory ID format" });
     }
 
     // Extract the index (last part) and reconstruct the Redis key (all parts except last 2)
@@ -562,7 +562,7 @@ async function deleteMemories(req: VercelRequest, res: VercelResponse) {
       });
     } catch (error) {
       console.error("Error deleting specific memory:", error);
-      return res.status(500).json({ error: "Failed to delete memory" });
+      res.status(500).json({ error: "Failed to delete memory" });
     }
   } else if (issueId && memoryType) {
     // Delete all memories of a specific type for an issue
@@ -576,7 +576,7 @@ async function deleteMemories(req: VercelRequest, res: VercelResponse) {
       });
     } catch (error) {
       console.error("Error deleting memories by type:", error);
-      return res.status(500).json({ error: "Failed to delete memories" });
+      res.status(500).json({ error: "Failed to delete memories" });
     }
   } else if (issueId) {
     // Delete all memories for an issue
@@ -594,10 +594,10 @@ async function deleteMemories(req: VercelRequest, res: VercelResponse) {
       });
     } catch (error) {
       console.error("Error deleting all memories for issue:", error);
-      return res.status(500).json({ error: "Failed to delete memories" });
+      res.status(500).json({ error: "Failed to delete memories" });
     }
   } else {
-    return res.status(400).json({
+    res.status(400).json({
       error: "Must specify memoryId, or issueId with optional memoryType",
     });
   }
@@ -607,7 +607,7 @@ async function bulkMemoryOperations(req: VercelRequest, res: VercelResponse) {
   const { operation, filters, memoryIds } = req.body;
 
   if (!operation) {
-    return res.status(400).json({ error: "Operation is required" });
+    res.status(400).json({ error: "Operation is required" });
   }
 
   try {
@@ -619,11 +619,11 @@ async function bulkMemoryOperations(req: VercelRequest, res: VercelResponse) {
       case "cleanup_old":
         return await cleanupOldMemories(filters, res);
       default:
-        return res.status(400).json({ error: "Unknown operation" });
+        res.status(400).json({ error: "Unknown operation" });
     }
   } catch (error) {
     console.error("Bulk operation error:", error);
-    return res.status(500).json({ error: "Bulk operation failed" });
+    res.status(500).json({ error: "Bulk operation failed" });
   }
 }
 
@@ -678,7 +678,7 @@ async function bulkDeleteByFilters(
 
 async function bulkDeleteByIds(memoryIds: string[], res: VercelResponse) {
   if (!Array.isArray(memoryIds)) {
-    return res.status(400).json({ error: "memoryIds must be an array" });
+    res.status(400).json({ error: "memoryIds must be an array" });
   }
 
   let deletedCount = 0;

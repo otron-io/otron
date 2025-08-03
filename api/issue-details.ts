@@ -12,13 +12,13 @@ const redis = new Redis({
 async function handler(req: VercelRequest, res: VercelResponse) {
   // Only accept GET requests
   if (req.method !== "GET") {
-    return res.status(405).json({ error: "Method not allowed" });
+    res.status(405).json({ error: "Method not allowed" });
   }
 
   const { issueId, type = "all", skip = "0", limit = "50" } = req.query;
 
   if (!issueId || typeof issueId !== "string") {
-    return res.status(400).json({ error: "Issue ID is required" });
+    res.status(400).json({ error: "Issue ID is required" });
   }
 
   try {
@@ -117,10 +117,10 @@ async function handler(req: VercelRequest, res: VercelResponse) {
     result.limit = limitNum;
     result.timestamp = Date.now();
 
-    return res.status(200).json(result);
+    res.status(200).json(result);
   } catch (error) {
     console.error(`Error retrieving details for issue ${issueId}:`, error);
-    return res.status(500).json({ error: "Failed to retrieve issue details" });
+    res.status(500).json({ error: "Failed to retrieve issue details" });
   }
 }
 

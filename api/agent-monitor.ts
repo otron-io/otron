@@ -12,7 +12,7 @@ const redis = new Redis({
 async function handler(req: VercelRequest, res: VercelResponse) {
   // Only accept GET requests
   if (req.method !== "GET") {
-    return res.status(405).json({ error: "Method not allowed" });
+    res.status(405).json({ error: "Method not allowed" });
   }
 
   try {
@@ -66,7 +66,7 @@ async function handler(req: VercelRequest, res: VercelResponse) {
       0,
     );
 
-    return res.status(200).json({
+    res.status(200).json({
       // Empty arrays for compatibility with the UI
       activeIssues: [],
       completedIssues: [],
@@ -85,7 +85,7 @@ async function handler(req: VercelRequest, res: VercelResponse) {
     });
   } catch (error) {
     console.error("Error retrieving agent status:", error);
-    return res.status(500).json({ error: "Failed to retrieve agent status" });
+    res.status(500).json({ error: "Failed to retrieve agent status" });
   }
 }
 

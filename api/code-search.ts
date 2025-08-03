@@ -1,7 +1,7 @@
-import { Redis } from "@upstash/redis";
-import type { VercelRequest, VercelResponse } from "@vercel/node";
-import { withInternalAccess } from "../lib/core/auth.js";
-import { env } from "../lib/core/env.js";
+import { Redis } from '@upstash/redis';
+import type { VercelRequest, VercelResponse } from '@vercel/node';
+import { withInternalAccess } from '../lib/core/auth.js';
+import { env } from '../lib/core/env.js';
 
 // Initialize Redis
 const redis = new Redis({
@@ -27,7 +27,7 @@ interface CodeChunk {
   embedding: number[];
   metadata: {
     language: string;
-    type: "function" | "class" | "method" | "block" | "file";
+    type: 'function' | 'class' | 'method' | 'block' | 'file';
     name?: string;
     startLine: number;
     endLine: number;
@@ -54,14 +54,14 @@ interface SearchResult {
  */
 async function getQueryEmbedding(query: string): Promise<number[]> {
   try {
-    const response = await fetch("https://api.openai.com/v1/embeddings", {
-      method: "POST",
+    const response = await fetch('https://api.openai.com/v1/embeddings', {
+      method: 'POST',
       headers: {
-        "Content-Type": "application/json",
+        'Content-Type': 'application/json',
         Authorization: `Bearer ${env.OPENAI_API_KEY}`,
       },
       body: JSON.stringify({
-        model: "text-embedding-3-small",
+        model: 'text-embedding-3-small',
         input: query,
         dimensions: 256, // Must match the dimension used for code embeddings
       }),
@@ -75,7 +75,7 @@ async function getQueryEmbedding(query: string): Promise<number[]> {
     const result = await response.json();
     return result.data[0].embedding;
   } catch (error) {
-    console.error("Error creating query embedding:", error);
+    console.error('Error creating query embedding:', error);
     throw error;
   }
 }
@@ -85,7 +85,7 @@ async function getQueryEmbedding(query: string): Promise<number[]> {
  */
 function cosineSimilarity(vecA: number[], vecB: number[]): number {
   if (vecA.length !== vecB.length) {
-    throw new Error("Vectors must have the same dimensions");
+    throw new Error('Vectors must have the same dimensions');
   }
 
   let dotProduct = 0;
@@ -113,12 +113,12 @@ async function searchCodeChunks(
   repository: string,
   queryEmbedding: number[],
   limit: number = MAX_RESULTS,
-  fileFilter?: string,
+  fileFilter?: string
 ): Promise<SearchResult[]> {
   console.log(
     `Searching code chunks in ${repository} with limit ${limit}${
-      fileFilter ? ` and filter ${fileFilter}` : ""
-    }`,
+      fileFilter ? ` and filter ${fileFilter}` : ''
+    }`
   );
 
   try {
@@ -138,7 +138,7 @@ async function searchCodeChunks(
     const totalPages = Math.ceil(chunkCount / CHUNK_PAGE_SIZE);
 
     console.log(
-      `Processing ${chunkCount} chunks in ${totalPages} pages of ${CHUNK_PAGE_SIZE} items each`,
+      `Processing ${chunkCount} chunks in ${totalPages} pages of ${CHUNK_PAGE_SIZE} items each`
     );
 
     const results: SearchResult[] = [];
@@ -155,7 +155,7 @@ async function searchCodeChunks(
       console.log(
         `Processing page ${
           page + 1
-        }/${totalPages} (chunks ${startIdx} to ${endIdx})`,
+        }/${totalPages} (chunks ${startIdx} to ${endIdx})`
       );
 
       // Get this page of chunks
@@ -177,20 +177,20 @@ async function searchCodeChunks(
         let parsedChunk: CodeChunk;
         try {
           // Check if chunk is already an object
-          if (typeof chunk === "object" && chunk !== null) {
+          if (typeof chunk === 'object' && chunk !== null) {
             parsedChunk = chunk as unknown as CodeChunk;
-          } else if (typeof chunk === "string") {
+          } else if (typeof chunk === 'string') {
             // Handle string representation of an object
-            if (chunk === "[object Object]") {
+            if (chunk === '[object Object]') {
               console.error(
-                `Chunk ${chunkIndex} is corrupted with '[object Object]' string representation`,
+                `Chunk ${chunkIndex} is corrupted with '[object Object]' string representation`
               );
               continue;
             }
             parsedChunk = JSON.parse(chunk);
           } else {
             console.error(
-              `Chunk ${chunkIndex} has unexpected type: ${typeof chunk}`,
+              `Chunk ${chunkIndex} has unexpected type: ${typeof chunk}`
             );
             continue;
           }
@@ -205,7 +205,7 @@ async function searchCodeChunks(
               `Chunk ${chunkIndex} is missing required fields:`,
               `repository: ${!!parsedChunk.repository}, `,
               `path: ${!!parsedChunk.path}, `,
-              `embedding: ${!!parsedChunk.embedding}`,
+              `embedding: ${!!parsedChunk.embedding}`
             );
             continue;
           }
@@ -222,7 +222,7 @@ async function searchCodeChunks(
         // Calculate similarity score
         const similarity = cosineSimilarity(
           queryEmbedding,
-          parsedChunk.embedding,
+          parsedChunk.embedding
         );
 
         // Track all scores for debugging
@@ -235,8 +235,8 @@ async function searchCodeChunks(
             path: parsedChunk.path,
             content: parsedChunk.content,
             score: similarity,
-            language: parsedChunk.metadata?.language || "unknown",
-            type: parsedChunk.metadata?.type || "block",
+            language: parsedChunk.metadata?.language || 'unknown',
+            type: parsedChunk.metadata?.type || 'block',
             name: parsedChunk.metadata?.name,
             startLine: parsedChunk.metadata?.startLine || 0,
             endLine: parsedChunk.metadata?.endLine || 0,
@@ -259,7 +259,7 @@ async function searchCodeChunks(
       // wait for the current batch to complete before continuing
       if (pagePromises.length === CONCURRENT_PAGES || page === totalPages - 1) {
         console.log(
-          `Waiting for batch of ${pagePromises.length} pages to complete...`,
+          `Waiting for batch of ${pagePromises.length} pages to complete...`
         );
         const batchResults = await Promise.all(pagePromises);
 
@@ -284,7 +284,7 @@ async function searchCodeChunks(
     // Log top 5 scores for debugging
     if (allScores.length > 0) {
       console.log(
-        `Top 5 similarity scores (threshold is ${SIMILARITY_THRESHOLD}):`,
+        `Top 5 similarity scores (threshold is ${SIMILARITY_THRESHOLD}):`
       );
       allScores.slice(0, 5).forEach((item, idx) => {
         console.log(`  ${idx + 1}. ${item.path}: ${item.score.toFixed(4)}`);
@@ -292,7 +292,7 @@ async function searchCodeChunks(
     }
 
     console.log(
-      `Found ${results.length} results above threshold ${SIMILARITY_THRESHOLD}`,
+      `Found ${results.length} results above threshold ${SIMILARITY_THRESHOLD}`
     );
 
     // Return top results based on limit
@@ -309,9 +309,9 @@ async function searchCodeChunks(
 function matchesFileFilter(path: string, filter: string): boolean {
   // Convert glob pattern to regex
   const pattern = filter
-    .replace(/\./g, "\\.")
-    .replace(/\*/g, ".*")
-    .replace(/\?/g, ".");
+    .replace(/\./g, '\\.')
+    .replace(/\*/g, '.*')
+    .replace(/\?/g, '.');
 
   const regex = new RegExp(`^${pattern}$`);
   return regex.test(path);
@@ -333,19 +333,19 @@ async function isRepositoryEmbedded(repository: string): Promise<boolean> {
     console.log(
       `Repository status raw for ${repository}: ${
         repoStatus === null
-          ? "null"
-          : typeof repoStatus === "string"
-            ? repoStatus
-            : JSON.stringify(repoStatus)
-      }`,
+          ? 'null'
+          : typeof repoStatus === 'string'
+          ? repoStatus
+          : JSON.stringify(repoStatus)
+      }`
     );
 
     // Special case debugging for 3DHubs repository
-    if (repository.includes("3DHubs")) {
-      console.log("🔍 Found 3DHubs repository query");
+    if (repository.includes('3DHubs')) {
+      console.log('🔍 Found 3DHubs repository query');
 
       // List all keys that might match this repository
-      const allKeys = await redis.keys("embedding:repo:*3DHubs*");
+      const allKeys = await redis.keys('embedding:repo:*3DHubs*');
       console.log(`All 3DHubs related keys (${allKeys.length}):`, allKeys);
 
       // Check for chunks directly
@@ -361,7 +361,7 @@ async function isRepositoryEmbedded(repository: string): Promise<boolean> {
         // If we have chunks but status is missing, let's consider it embedded
         if (!repoStatus && chunkCount > 0) {
           console.log(
-            `No status found but ${chunkCount} chunks exist - considering repository as embedded`,
+            `No status found but ${chunkCount} chunks exist - considering repository as embedded`
           );
           return true;
         }
@@ -376,12 +376,12 @@ async function isRepositoryEmbedded(repository: string): Promise<boolean> {
     // Try to parse the status
     try {
       const status =
-        typeof repoStatus === "object"
+        typeof repoStatus === 'object'
           ? repoStatus
           : JSON.parse(repoStatus as string);
 
       console.log(
-        `Repository status parsed: ${JSON.stringify(status, null, 2)}`,
+        `Repository status parsed: ${JSON.stringify(status, null, 2)}`
       );
 
       // Check for chunks to verify the repository actually has content
@@ -389,11 +389,11 @@ async function isRepositoryEmbedded(repository: string): Promise<boolean> {
       console.log(`Repository chunk count: ${chunkCount}`);
 
       // More lenient check - either status is completed or we have chunks
-      const isComplete = status.status === "completed";
+      const isComplete = status.status === 'completed';
       const hasChunks = chunkCount > 0;
 
       console.log(
-        `Repository ${repository} status check: isComplete=${isComplete}, hasChunks=${hasChunks}`,
+        `Repository ${repository} status check: isComplete=${isComplete}, hasChunks=${hasChunks}`
       );
 
       // If we have chunks, consider it embedded even if status isn't "completed"
@@ -401,14 +401,14 @@ async function isRepositoryEmbedded(repository: string): Promise<boolean> {
     } catch (parseError) {
       console.error(
         `Error parsing status for repository ${repository}:`,
-        parseError,
+        parseError
       );
 
       // Check if we have chunks anyway
       const chunkCount = await redis.llen(getChunkKey(repository));
       if (chunkCount > 0) {
         console.log(
-          `Status parsing failed but found ${chunkCount} chunks - considering repository as embedded`,
+          `Status parsing failed but found ${chunkCount} chunks - considering repository as embedded`
         );
         return true;
       }
@@ -418,7 +418,7 @@ async function isRepositoryEmbedded(repository: string): Promise<boolean> {
   } catch (error) {
     console.error(
       `Error checking repository embedding status for ${repository}:`,
-      error,
+      error
     );
     return false;
   }
@@ -429,15 +429,16 @@ async function isRepositoryEmbedded(repository: string): Promise<boolean> {
  */
 async function handler(req: VercelRequest, res: VercelResponse) {
   // Accept both GET and POST requests
-  if (req.method !== "GET" && req.method !== "POST") {
-    return res.status(405).json({ error: "Method not allowed" });
+  if (req.method !== 'GET' && req.method !== 'POST') {
+    res.status(405).json({ error: 'Method not allowed' });
+    return;
   }
 
   // Extract parameters from the request - support both query params and body
-  const params = req.method === "GET" ? req.query : req.body || {};
+  const params = req.method === 'GET' ? req.query : req.body || {};
 
   // Log raw request details for debugging
-  console.log("Request details:", {
+  console.log('Request details:', {
     method: req.method,
     url: req.url,
     headers: req.headers,
@@ -445,10 +446,10 @@ async function handler(req: VercelRequest, res: VercelResponse) {
     body: req.body,
   });
 
-  console.log("Raw params received:", params);
+  console.log('Raw params received:', params);
 
   const {
-    method = "vector",
+    method = 'vector',
     repository,
     rawRepository,
     query,
@@ -457,41 +458,41 @@ async function handler(req: VercelRequest, res: VercelResponse) {
   } = params;
 
   // Add detailed logging of all incoming parameters
-  console.log("Search request received:", {
+  console.log('Search request received:', {
     requestMethod: req.method,
     searchMethod: method,
     repository: repository || rawRepository,
     query,
     fileFilter,
     limit,
-    headers: req.headers["x-vercel-id"]
-      ? `trace: ${req.headers["x-vercel-id"]}`
+    headers: req.headers['x-vercel-id']
+      ? `trace: ${req.headers['x-vercel-id']}`
       : undefined,
   });
 
   // Input validation - support both repository and rawRepository parameter names
   const repoParam = rawRepository || repository;
-  if (!repoParam || typeof repoParam !== "string") {
-    return res.status(400).json({
-      error: "Repository parameter is required",
+  if (!repoParam || typeof repoParam !== 'string') {
+    res.status(400).json({
+      error: 'Repository parameter is required',
       providedParams: Object.keys(params),
     });
   }
 
-  if (!query || typeof query !== "string") {
-    return res.status(400).json({ error: "Search query is required" });
+  if (!query || typeof query !== 'string') {
+    res.status(400).json({ error: 'Search query is required' });
+    return;
   }
 
-  if (method !== "vector") {
-    return res
-      .status(400)
-      .json({ error: "Only vector search method is supported" });
+  if (method !== 'vector') {
+    res.status(400).json({ error: 'Only vector search method is supported' });
+    return;
   }
 
   // Normalize repository name (trim whitespace, remove status suffix if present)
-  const repositoryName = repoParam.trim().replace(/\s*\(.*\)$/, "");
+  const repositoryName = repoParam.trim().replace(/\s*\(.*\)$/, '');
   console.log(
-    `Original repository: '${repoParam}', normalized to: '${repositoryName}'`,
+    `Original repository: '${repoParam}', normalized to: '${repositoryName}'`
   );
 
   try {
@@ -502,25 +503,27 @@ async function handler(req: VercelRequest, res: VercelResponse) {
     if (!isEmbedded) {
       // For debugging, let's list what repositories we do have
       try {
-        const allRepoKeys = await redis.keys("embedding:repo:*:status");
+        const allRepoKeys = await redis.keys('embedding:repo:*:status');
         const availableRepos = allRepoKeys
           .map((key) =>
-            key.replace("embedding:repo:", "").replace(":status", ""),
+            key.replace('embedding:repo:', '').replace(':status', '')
           )
           .filter(Boolean);
 
         console.log(
           `Repository ${repositoryName} not embedded. Available repositories:`,
-          availableRepos,
+          availableRepos
         );
 
-        return res.status(404).json({
-          error: "Repository not embedded",
+        res.status(404).json({
+          error: 'Repository not embedded',
           available: availableRepos,
         });
+        return;
       } catch (keysError) {
-        console.error("Error getting available repositories:", keysError);
-        return res.status(404).json({ error: "Repository not embedded" });
+        console.error('Error getting available repositories:', keysError);
+        res.status(404).json({ error: 'Repository not embedded' });
+        return;
       }
     }
 
@@ -532,22 +535,24 @@ async function handler(req: VercelRequest, res: VercelResponse) {
       repositoryName,
       queryEmbedding,
       Number(limit),
-      typeof fileFilter === "string" ? fileFilter : undefined,
+      typeof fileFilter === 'string' ? fileFilter : undefined
     );
 
-    return res.status(200).json({
+    res.status(200).json({
       repository: repositoryName,
       query,
       results,
       totalResults: results.length,
       searchTime: new Date().toISOString(),
     });
+    return;
   } catch (error) {
-    console.error("Error in search:", error);
-    return res.status(500).json({
-      error: "Search failed",
+    console.error('Error in search:', error);
+    res.status(500).json({
+      error: 'Search failed',
       message: error instanceof Error ? error.message : String(error),
     });
+    return;
   }
 }
 

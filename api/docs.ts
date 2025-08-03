@@ -9,7 +9,7 @@ import { env } from "../lib/core/env.js";
 async function handler(req: VercelRequest, res: VercelResponse) {
   // Only accept GET requests
   if (req.method !== "GET") {
-    return res.status(405).json({ error: "Method not allowed" });
+    res.status(405).json({ error: "Method not allowed" });
   }
 
   const openApiSpec = {
@@ -1921,7 +1921,7 @@ async function handler(req: VercelRequest, res: VercelResponse) {
     ],
   };
 
-  return res.status(200).json(openApiSpec);
+  res.status(200).json(openApiSpec);
 }
 
 // Export with CORS protection

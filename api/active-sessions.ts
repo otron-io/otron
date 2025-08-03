@@ -150,7 +150,7 @@ async function handler(req: VercelRequest, res: VercelResponse) {
       activeSessions.sort((a, b) => b.startTime - a.startTime);
       completedSessions.sort((a, b) => b.startTime - a.startTime);
 
-      return res.status(200).json({
+      res.status(200).json({
         activeSessions,
         completedSessions,
         // Legacy field for backward compatibility
@@ -176,7 +176,7 @@ async function handler(req: VercelRequest, res: VercelResponse) {
       const { sessionId } = req.query;
 
       if (!sessionId || typeof sessionId !== "string") {
-        return res.status(400).json({ error: "Session ID is required" });
+        res.status(400).json({ error: "Session ID is required" });
       }
 
       try {
@@ -184,7 +184,7 @@ async function handler(req: VercelRequest, res: VercelResponse) {
         const sessionData = await redis.get(`active_session:${sessionId}`);
 
         if (!sessionData) {
-          return res.status(404).json({ error: "Session not found" });
+          res.status(404).json({ error: "Session not found" });
         }
 
         // Handle both string and object responses from Redis
@@ -202,7 +202,7 @@ async function handler(req: VercelRequest, res: VercelResponse) {
         await redis.del(`active_session:${sessionId}`);
         await redis.srem("active_sessions_list", sessionId);
 
-        return res.status(200).json({
+        res.status(200).json({
           message: "Session cancellation requested",
           sessionId,
           contextId: session.contextId,
@@ -210,7 +210,7 @@ async function handler(req: VercelRequest, res: VercelResponse) {
         });
       } catch (error) {
         console.error(`Error cancelling session ${sessionId}:`, error);
-        return res.status(500).json({ error: "Failed to cancel session" });
+        res.status(500).json({ error: "Failed to cancel session" });
       }
     } else if (req.method === "POST") {
       // Cancel all active sessions
@@ -228,21 +228,21 @@ async function handler(req: VercelRequest, res: VercelResponse) {
         // Clear the active sessions list
         await redis.del("active_sessions_list");
 
-        return res.status(200).json({
+        res.status(200).json({
           message: "All sessions cancellation requested",
           cancelledCount: activeSessionIds.length,
           cancelled: true,
         });
       } catch (error) {
         console.error("Error cancelling all sessions:", error);
-        return res.status(500).json({ error: "Failed to cancel all sessions" });
+        res.status(500).json({ error: "Failed to cancel all sessions" });
       }
     } else {
-      return res.status(405).json({ error: "Method not allowed" });
+      res.status(405).json({ error: "Method not allowed" });
     }
   } catch (error) {
     console.error("Error in active sessions handler:", error);
-    return res.status(500).json({ error: "Internal server error" });
+    res.status(500).json({ error: "Internal server error" });
   }
 }
 

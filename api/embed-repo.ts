@@ -907,13 +907,13 @@ async function handler(req: VercelRequest, res: VercelResponse) {
       await redis.del(getChunkKey(sanitizedRepo));
       await redis.del(getProcessedFilesKey(sanitizedRepo));
 
-      return res.status(200).json({
+      res.status(200).json({
         success: true,
         message: `Repository ${sanitizedRepo} has been completely deleted from the embedding system`,
       });
     } catch (error) {
       console.error(`Error deleting repository ${sanitizedRepo}:`, error);
-      return res.status(500).json({
+      res.status(500).json({
         error: `Failed to delete repository: ${
           error instanceof Error ? error.message : String(error)
         }`,
@@ -923,7 +923,7 @@ async function handler(req: VercelRequest, res: VercelResponse) {
 
   // Original POST handler for embedding
   if (req.method !== "POST") {
-    return res.status(405).json({ error: "Method not allowed" });
+    res.status(405).json({ error: "Method not allowed" });
   }
 
   const { repository: rawRepository, resume = false, mode = "full" } = req.body;

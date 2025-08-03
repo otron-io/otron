@@ -19,7 +19,7 @@ export const maxDuration = 300;
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   // Only handle POST requests
   if (req.method !== "POST") {
-    return res.status(405).json({ error: "Method not allowed" });
+    res.status(405).json({ error: "Method not allowed" });
   }
 
   const rawBody = JSON.stringify(req.body);
@@ -28,7 +28,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   // Verify webhook signature
   if (!signature || !verifyLinearWebhook(signature, rawBody)) {
     console.error("Invalid webhook signature");
-    return res.status(401).json({ error: "Invalid signature" });
+    res.status(401).json({ error: "Invalid signature" });
   }
 
   const payload = req.body;
@@ -44,7 +44,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
     if (!accessToken) {
       console.error(`No access token found for organization ${orgId}`);
-      return res.status(500).json({ error: "Authentication missing" });
+      res.status(500).json({ error: "Authentication missing" });
     }
 
     // Initialize Linear client with stored credentials
@@ -62,9 +62,9 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       console.log(`Unsupported webhook type: ${payload.type}`);
     }
 
-    return res.status(200).json({ success: true });
+    res.status(200).json({ success: true });
   } catch (error) {
     console.error("Error processing webhook:", error);
-    return res.status(500).json({ error: "Failed to process webhook" });
+    res.status(500).json({ error: "Failed to process webhook" });
   }
 }
