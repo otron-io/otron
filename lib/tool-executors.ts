@@ -369,13 +369,48 @@ export const executeSearchEmbeddedCode = async (
     }
 
     const data = await response.json();
-    debugInfo += `Response data: ${JSON.stringify(data, null, 2)}\n`;
     console.log('  Response data:', JSON.stringify(data, null, 2));
+
+    // Format results for better readability
+    const formattedResults =
+      data.results?.map((result: any, index: number) => {
+        const filePath = result.path || 'Unknown file';
+        const score = result.score ? (result.score * 100).toFixed(1) : 'N/A';
+        const type = result.type || 'code';
+        const name = result.name || 'Unknown';
+
+        // Truncate content to first 150 characters for readability
+        let content = result.content || '';
+        const lines = content.split('\n');
+        const truncatedContent =
+          lines.length > 3 ? lines.slice(0, 3).join('\n') + '\n...' : content;
+
+        if (truncatedContent.length > 200) {
+          content = truncatedContent.substring(0, 200) + '...';
+        } else {
+          content = truncatedContent;
+        }
+
+        return `**${index + 1}. ${filePath}** (${score}% match)
+${type === 'method' ? '🔧' : type === 'class' ? '📦' : '📄'} ${name}
+\`\`\`${result.language || 'text'}
+${content}
+\`\`\``;
+      }) || [];
+
+    const summary =
+      formattedResults.length > 0
+        ? `## 🔍 Code Search Results for "${query}"
+**Repository:** ${repository}
+**Found:** ${data.results.length} matches
+
+${formattedResults.join('\n\n---\n\n')}`
+        : `## 🔍 No code matches found for "${query}" in ${repository}`;
 
     return {
       success: true,
-      results: data.results,
-      message: `Found ${data.results.length} code matches for "${query}" in ${repository}\n\nDEBUG INFO:\n${debugInfo}`,
+      results: data.results, // Keep raw results for any further processing
+      message: summary,
     };
   } catch (error) {
     console.error('Error searching embedded code:', error);
