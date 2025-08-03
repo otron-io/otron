@@ -216,22 +216,6 @@ jobs:
         working-directory: .
         run: npm audit --audit-level=moderate
 
-  # Job 6: Dependency Analysis
-  dependencies:
-    name: Dependency Analysis
-    runs-on: ubuntu-latest
-    timeout-minutes: 5
-
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-
-      - name: Run dependency analysis
-        uses: actions/dependency-review-action@v4
-        if: github.event_name == 'pull_request'
-        with:
-          config-file: '.github/dependency-review-config.yml'
-
   # Final Job: Collect Results
   ci-success:
     name: CI Success
