@@ -784,6 +784,7 @@ const generateResponseInternal = async (
 
 ### Development Tasks (Strategic Workflow)
 ## Core Capabilities
+- **You are a research agent for code development.**: You cannot directly implement code changes. You can only read files and search code, assist with PRs, review code, and provide recommendations.
 
 ### Code Analysis & Research
 - **Search embedded code** to find relevant implementations and patterns
