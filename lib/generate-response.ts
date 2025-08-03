@@ -7,12 +7,6 @@ import {
   executeExaFindSimilar,
 } from './exa/exa-utils.js';
 import {
-  // New line-based file editing tools
-  executeReplaceLines,
-  executeInsertLines,
-  executeDeleteLines,
-} from './file-editing-tools.js';
-import {
   // Linear tools
   executeGetIssueContext,
   executeUpdateIssueStatus,
@@ -61,20 +55,11 @@ import {
 import {
   // GitHub tools
   executeGetFileContent,
-  executeCreateBranch,
   executeCreatePullRequest,
   executeGetPullRequest,
   executeAddPullRequestComment,
   executeGetPullRequestFiles,
   executeGetDirectoryStructure,
-  executeGetRepositoryStructure,
-  executeDeleteFile,
-  executeCreateFile,
-  // GitHub branch management tools
-  executeResetBranchToHead,
-  // GitHub file reading tools
-  executeGetRawFileContent,
-  executeReadRelatedFiles,
   // Embedded repository tools
   executeSearchEmbeddedCode,
 } from './tool-executors.js';
@@ -789,55 +774,31 @@ const generateResponseInternal = async (
 - **Help requests**: Provide specific guidance based on context
 
 ### Development Tasks (Strategic Workflow)
-- **Bug fixes**: Analyze → Create branch → Read files → Fix → Commit → PR → Update Linear
-- **Feature implementation**: Plan → Branch → Code → Test → PR → Document
-- **Code reviews**: Read PR → Analyze changes → Comment with feedback
+## Core Capabilities
 
-## File Operations (Critical Patterns)
+### Code Analysis & Research
+- **Search embedded code** to find relevant implementations and patterns
+- **Read file content** to understand current state and structure
+- **Analyze repository structure** to understand project organization
+- **Research documentation** and provide detailed explanations
 
-### Reading Files Strategically
-**Start with entire file for small files (<200 lines):**
-\`\`\`
-{file_path: "file.ts", repository: "owner/repo", should_read_entire_file: true}
-\`\`\`
-
-**For large files, read specific sections you need:**
-\`\`\`
-{file_path: "file.ts", repository: "owner/repo", should_read_entire_file: false, start_line_one_indexed: 1, end_line_one_indexed_inclusive: 200}
-\`\`\`
-
-**CRITICAL: If file reading fails, do NOT retry the same parameters:**
-- ❌ **Never**: Call getRawFileContent with identical parameters multiple times
-- ✅ **Instead**: Try searchEmbeddedCode, getDirectoryStructure, or report what you tried
-
-**Note**: You are limited to reading 200 lines at a time. Just specify the next start and end line if you want to read more.
-
-### Editing Files  
-**Always read the target section first:**
-1. Read file to understand current content
-2. Identify exact text to replace
-3. Make precise changes:
-\`\`\`
-{file_path: "file.ts", old_string: "exact current code", new_string: "replacement code", replace_all: false, commit_message: "Descriptive message"}
-\`\`\`
-
-**For multiple similar changes, use replace_all:**
-\`\`\`
-{file_path: "file.ts", old_string: "oldVariableName", new_string: "newVariableName", replace_all: true, commit_message: "Rename variable"}
-\`\`\`
-
-**Note**: Once you know what to do, make the change. Don't read files repeatedly, nothing will change.
+### Information Gathering
+- **Use searchEmbeddedCode** to find code patterns, functions, and implementations
+- **Use getFileContent** to read specific files when you need detailed content
+- **Use getDirectoryStructure** to explore repository layout
+- **Use exaSearch** for external research and documentation
 
 ## Strategic Error Recovery (CRITICAL)
 
-### When File Operations Fail (ANTI-LOOP PROTECTION)
-❌ **NEVER DO**: Retry the exact same getRawFileContent call multiple times
-❌ **NEVER DO**: Make the same file request with identical parameters
+### When Tool Operations Fail (ANTI-LOOP PROTECTION)
+❌ **NEVER DO**: Retry the exact same failed call multiple times
+❌ **NEVER DO**: Make the same request with identical parameters
 ❌ **NEVER DO**: Repeat failed operations hoping for different results
 
 ✅ **IMMEDIATELY DO**: Switch to alternative approaches:
-- **getRawFileContent fails** → Use searchEmbeddedCode to find relevant code
+- **getFileContent fails** → Use searchEmbeddedCode to find relevant code
 - **File not found** → Use getDirectoryStructure to explore repository
+- **Search fails** → Try different search terms or broader queries
 - **Permission/network errors** → Report the issue and suggest manual verification
 - **Any repeated failure** → Stop and explain what you tried, ask for guidance
 
@@ -877,50 +838,42 @@ const generateResponseInternal = async (
 - Link to relevant PRs/commits
 
 ### GitHub Integration
-**PR Creation**: Always include:
-- Descriptive title
-- Detailed body with changes
-- Link to Linear issue
-- Clear commit messages
-- After opening a PR, review the PR and make sure it is correct.
+**PR Analysis**: When reviewing PRs:
+- Read PR description and understand the purpose
+- Examine changed files and their impact
+- Provide constructive feedback and suggestions
+- Link discussions to relevant Linear issues
 
 ## Development Workflow Patterns
 
-### Bug Fix Workflow
-1. **Understand**: Read issue description and related files
-2. **Locate**: Search codebase for relevant components (use searchEmbeddedCode)
-3. **Branch**: Create feature branch with descriptive name
-4. **Fix**: Make minimal, targeted changes
-7. **PR**: Create with proper description
-8. **Review**: Review the PR and make sure it is correct.
-9. **Update**: Comment in Linear with resolution
+### Bug Analysis Workflow
+1. **Understand**: Read issue description and gather context
+2. **Research**: Search codebase for relevant components (use searchEmbeddedCode)
+3. **Analyze**: Read related files to understand the problem
+4. **Document**: Create detailed analysis with root cause findings
+5. **Recommend**: Suggest specific solutions and implementation approaches
+6. **Update**: Comment in Linear with findings and recommendations
 
-### Feature Implementation
-1. **Plan**: Analyze requirements and identify files to modify
-2. **Branch**: Create with clear naming (feature/issue-description)
-3. **Implement**: Break into logical changes (each use of a file edit tool is a commit)
-5. **Document**: Update relevant documentation
-6. **PR**: Comprehensive description with testing notes
-7. **Review**: Review the PR and make sure it is correct.
-8. **Follow-up**: Update Linear and notify stakeholders
+### Code Review Workflow
+1. **Examine**: Read PR description and changed files
+2. **Analyze**: Review code changes for logic, style, and potential issues
+3. **Research**: Check related files and dependencies if needed
+4. **Comment**: Provide specific, actionable feedback
+5. **Follow-up**: Monitor responses and provide additional guidance
 
-### Example Workflow
-1. **User request**: "Add a button to open the link in a new tab"
-2. **Understand**: Find the required files with code search
-3. **Locate**: Get the files required and target the specific lines
-4. **Branch**: Create a new branch for the changes
-5. **Implement**: Make the changes using the code editing tools on your branch.
-7. **Document**: Update relevant documentation
-8. **PR**: Comprehensive description with testing notes
-9. **Review**: Review the PR and make sure it is correct.
-11. **Follow-up**: Update Linear and notify stakeholders
+### Research & Documentation Workflow
+1. **Gather**: Use searchEmbeddedCode and getFileContent to understand current state
+2. **Research**: Use exaSearch for external documentation and best practices
+3. **Analyze**: Synthesize information and identify patterns
+4. **Document**: Create comprehensive explanations and guides
+5. **Share**: Update Linear/Slack with findings and recommendations
 
 ## Context Awareness & Memory
 
 ### Repository Context
 - **Default repo**: Ask user if repository unclear from context
-- **Branch awareness**: Use appropriate branch for changes
-- **File structure**: Understand project layout before making changes
+- **Branch awareness**: Understand which branch is being discussed
+- **File structure**: Understand project layout for better analysis
 
 ### Conversation Memory
 - **Reference previous interactions** when relevant
@@ -929,8 +882,8 @@ const generateResponseInternal = async (
 
 ### Multi-Platform Context
 - **Slack thread awareness**: Maintain context in threaded conversations
-- **Linear issue tracking**: Connect GitHub work to Linear issues
-- **Cross-platform updates**: Notify all relevant channels of important changes
+- **Linear issue tracking**: Connect research and analysis to Linear issues
+- **Cross-platform updates**: Share findings across relevant channels
 
 ## API Failures & Communication Issues
 
@@ -941,7 +894,7 @@ const generateResponseInternal = async (
 
 ### Communication Failures
 - **Slack delivery issues**: Try alternative channels or direct messages
-- **Linear API errors**: Use GitHub comments as fallback
+- **Linear API errors**: Report the issue and suggest manual follow-up
 - **Partial failures**: Report what succeeded and what needs retry
 
 ## Current Context
@@ -961,7 +914,7 @@ ${repositoryContext ? `${repositoryContext}` : ''}${
 `
       : ''
   }## Remember
-**Execute decisively, adapt intelligently**. Users expect immediate action on clear requests and smart problem-solving when tools fail.`;
+**Analyze thoroughly, communicate clearly**. Users expect insightful analysis, comprehensive research, and actionable recommendations. Focus on understanding, documenting, and guiding rather than implementing.`;
 
   // Create a wrapper for tool execution that tracks usage and enforces limits
   const createMemoryAwareToolExecutor = (
@@ -1120,18 +1073,8 @@ ${repositoryContext ? `${repositoryContext}` : ''}${
         'searchLinearIssues',
         'searchSlackMessages',
       ];
-      const readTools = [
-        'getFileContent',
-        'getRawFileContent',
-        'readRelatedFiles',
-        'getIssueContext',
-      ];
+      const readTools = ['getFileContent', 'getIssueContext'];
       const actionTools = [
-        'createFile',
-        'editCode',
-        'addCode',
-        'removeCode',
-        'editUrl',
         'createBranch',
         'createPullRequest',
         'updateIssueStatus',
@@ -2693,39 +2636,7 @@ ${repositoryContext ? `${repositoryContext}` : ''}${
           (params: any) => executeGetFileContent(params, updateStatus)
         ),
       }),
-      createBranch: tool({
-        description: 'Create a new branch in a GitHub repository',
-        parameters: z.object({
-          branch: z.string().describe('The name of the new branch'),
-          repository: z
-            .string()
-            .describe('The repository in format "owner/repo"'),
-          baseBranch: z
-            .string()
-            .describe(
-              'Base branch to create from (default: repository default branch). Leave empty to use default branch.'
-            ),
-        }),
-        execute: createMemoryAwareToolExecutor('createBranch', (params: any) =>
-          executeCreateBranch(params, updateStatus)
-        ),
-      }),
-      createFile: tool({
-        description:
-          'Create a new file in a GitHub repository (for new files only)',
-        parameters: z.object({
-          path: z.string().describe('The file path in the repository'),
-          content: z.string().describe('The file content'),
-          message: z.string().describe('Commit message'),
-          repository: z
-            .string()
-            .describe('The repository in format "owner/repo"'),
-          branch: z.string().describe('The branch to commit to'),
-        }),
-        execute: createMemoryAwareToolExecutor('createFile', (params: any) =>
-          executeCreateFile(params, updateStatus)
-        ),
-      }),
+
       createPullRequest: tool({
         description: 'Create a pull request in a GitHub repository',
         parameters: z.object({
@@ -2821,24 +2732,6 @@ ${repositoryContext ? `${repositoryContext}` : ''}${
         execute: createMemoryAwareToolExecutor(
           'searchEmbeddedCode',
           (params: any) => executeSearchEmbeddedCode(params, updateStatus)
-        ),
-      }),
-      getRepositoryStructure: tool({
-        description:
-          'Get the enhanced repository structure using the repository manager (supports caching and embedding-aware features, only works for embedded repositories)',
-        parameters: z.object({
-          repository: z
-            .string()
-            .describe('The repository in format "owner/repo"'),
-          path: z
-            .string()
-            .describe(
-              'Optional directory path to explore (default: root directory). Leave empty for root directory.'
-            ),
-        }),
-        execute: createMemoryAwareToolExecutor(
-          'getRepositoryStructure',
-          (params: any) => executeGetRepositoryStructure(params, updateStatus)
         ),
       }),
       respondToSlackInteraction: tool({
@@ -2954,211 +2847,6 @@ ${repositoryContext ? `${repositoryContext}` : ''}${
           'respondToSlackInteraction',
           (params: any) =>
             executeRespondToSlackInteraction(params, updateStatus)
-        ),
-      }),
-
-      deleteFile: tool({
-        description:
-          'Delete a file from the repository. Use this when you need to remove files that are no longer needed.',
-        parameters: z.object({
-          path: z
-            .string()
-            .describe('The file path in the repository to delete'),
-          repository: z
-            .string()
-            .describe('The repository in format "owner/repo"'),
-          branch: z.string().describe('The branch to delete the file from'),
-          message: z.string().describe('Commit message for the deletion'),
-        }),
-        execute: createMemoryAwareToolExecutor('deleteFile', (params: any) =>
-          executeDeleteFile(params, updateStatus)
-        ),
-      }),
-      resetBranchToHead: tool({
-        description:
-          'Reset a branch to the head of another branch (or the default branch). This will force update the branch to match the target branch exactly.',
-        parameters: z.object({
-          repository: z
-            .string()
-            .describe('The repository in format "owner/repo"'),
-          branch: z.string().describe('The branch to reset'),
-          baseBranch: z
-            .string()
-            .describe(
-              'The branch to reset to (defaults to the repository default branch)'
-            ),
-        }),
-        execute: createMemoryAwareToolExecutor(
-          'resetBranchToHead',
-          (params: any) => executeResetBranchToHead(params, updateStatus)
-        ),
-      }),
-      // Foolproof file reading tool
-      getRawFileContent: tool({
-        description:
-          'Read file content from a GitHub repository. Returns raw, unformatted source code. Automatically handles large files by chunking into 200-line sections.',
-        parameters: z.object({
-          file_path: z.string().describe('The file path in the repository'),
-          repository: z
-            .string()
-            .describe('The repository in format "owner/repo"'),
-          should_read_entire_file: z
-            .boolean()
-            .describe(
-              'Whether to read the entire file. Defaults to false. If true, reads up to 1500 lines total.'
-            ),
-          start_line_one_indexed: z
-            .number()
-            .describe(
-              'The one-indexed line number to start reading from (inclusive). Required if should_read_entire_file is false.'
-            ),
-          end_line_one_indexed_inclusive: z
-            .number()
-            .describe(
-              'The one-indexed line number to end reading at (inclusive). Required if should_read_entire_file is false.'
-            ),
-          branch: z
-            .string()
-            .describe(
-              'Branch to read from. Leave empty to use default branch.'
-            ),
-        }),
-        execute: createMemoryAwareToolExecutor(
-          'getRawFileContent',
-          (params: any) =>
-            executeGetRawFileContent({ ...params, sessionId }, updateStatus)
-        ),
-      }),
-      readRelatedFiles: tool({
-        description:
-          'Read multiple related files for a given file, including imports, tests, and type definitions.',
-        parameters: z.object({
-          mainPath: z
-            .string()
-            .describe('The main file path to find related files for'),
-          repository: z
-            .string()
-            .describe('The repository in format "owner/repo"'),
-          includeImports: z
-            .boolean()
-            .describe(
-              'Include imported files (default: true). Use true if not specified.'
-            ),
-          includeTests: z
-            .boolean()
-            .describe(
-              'Include test files (default: true). Use true if not specified.'
-            ),
-          includeTypes: z
-            .boolean()
-            .describe(
-              'Include type definition files (default: true). Use true if not specified.'
-            ),
-          maxFiles: z
-            .number()
-            .describe(
-              'Maximum number of related files to read (default: 10). Use 10 if not specified.'
-            ),
-          branch: z
-            .string()
-            .describe(
-              'Branch to read from (defaults to default branch). Leave empty to use default branch.'
-            ),
-        }),
-        execute: createMemoryAwareToolExecutor(
-          'readRelatedFiles',
-          (params: any) => executeReadRelatedFiles(params, updateStatus)
-        ),
-      }),
-      // Line-based file editing tool - replaces specific line ranges
-      replaceLines: tool({
-        description:
-          'Replace specific line ranges with new content. Uses precise line numbers instead of unreliable string matching.',
-        parameters: z.object({
-          file_path: z.string().describe('The path to the file to modify'),
-          repository: z
-            .string()
-            .describe('The repository in format "owner/repo"'),
-          branch: z
-            .string()
-            .describe(
-              'Branch to edit (required - specify the exact branch name)'
-            ),
-          start_line: z
-            .number()
-            .int()
-            .min(1)
-            .describe('First line to replace (1-indexed)'),
-          end_line: z
-            .number()
-            .int()
-            .min(1)
-            .describe('Last line to replace (1-indexed, inclusive)'),
-          new_content: z
-            .string()
-            .describe('New content to replace the line range with'),
-          commit_message: z.string().describe('Commit message for the change'),
-        }),
-        execute: createMemoryAwareToolExecutor('replaceLines', (params: any) =>
-          executeReplaceLines(params, updateStatus)
-        ),
-      }),
-      // Line-based insertion tool - insert content at specific line numbers
-      insertLines: tool({
-        description:
-          'Insert new content at a specific line number. Uses precise line positioning instead of unreliable context matching.',
-        parameters: z.object({
-          file_path: z.string().describe('The file path in the repository'),
-          repository: z
-            .string()
-            .describe('The repository in format "owner/repo"'),
-          branch: z
-            .string()
-            .describe(
-              'Branch to edit (required - specify the exact branch name)'
-            ),
-          line_number: z
-            .number()
-            .int()
-            .min(1)
-            .describe(
-              'Line number where to insert content (1-indexed). Use 1 for start of file, or totalLines+1 for end of file'
-            ),
-          new_content: z.string().describe('The new content to insert'),
-          commit_message: z.string().describe('Commit message for the change'),
-        }),
-        execute: createMemoryAwareToolExecutor('insertLines', (params: any) =>
-          executeInsertLines(params, updateStatus)
-        ),
-      }),
-      // Line-based deletion tool - delete specific line ranges
-      deleteLines: tool({
-        description:
-          'Delete specific line ranges from a file. Uses precise line numbers for safe, predictable deletion.',
-        parameters: z.object({
-          file_path: z.string().describe('The file path in the repository'),
-          repository: z
-            .string()
-            .describe('The repository in format "owner/repo"'),
-          branch: z
-            .string()
-            .describe(
-              'Branch to edit (required - specify the exact branch name)'
-            ),
-          start_line: z
-            .number()
-            .int()
-            .min(1)
-            .describe('First line to delete (1-indexed)'),
-          end_line: z
-            .number()
-            .int()
-            .min(1)
-            .describe('Last line to delete (1-indexed, inclusive)'),
-          commit_message: z.string().describe('Commit message for the change'),
-        }),
-        execute: createMemoryAwareToolExecutor('deleteLines', (params: any) =>
-          executeDeleteLines(params, updateStatus)
         ),
       }),
     },

@@ -332,16 +332,6 @@ Respond with a JSON object containing:
     ).length;
     const actionTools = executionSummary.toolsUsed.filter((tool) =>
       [
-        'createOrUpdateFile',
-        'insertAtLine',
-        'replaceLines',
-        'deleteLines',
-        'appendToFile',
-        'prependToFile',
-        'findAndReplace',
-        'insertAfterPattern',
-        'insertBeforePattern',
-        'applyMultipleEdits',
         'createBranch',
         'createPullRequest',
         'updateIssueStatus',
