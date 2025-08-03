@@ -388,6 +388,15 @@ export const generateResponse = async (
           await agentActivity.response(contextId, finalResponse);
         }
 
+        // Log linear completion thinking
+        if (slackContext && slackClient) {
+          slackClient.chat.postMessage({
+            channel: slackContext.channelId,
+            text: finalResponse,
+            thread_ts: slackContext.threadTs,
+          });
+        }
+
         // If this is the last attempt, don't evaluate - just return
         if (attemptNumber >= MAX_RETRY_ATTEMPTS) {
           break;
@@ -883,7 +892,9 @@ const generateResponseInternal = async (
 ### Multi-Platform Context
 - **Slack thread awareness**: Maintain context in threaded conversations
 - **Linear issue tracking**: Connect research and analysis to Linear issues
-- **Cross-platform updates**: Share findings across relevant channels
+- **Cross-platform updates**: Share findings across relevant channels only when you need to send a message to somewhere other than the current platform.
+- **When chatting from Linear**: Your response will automatically be posted to the correct Linear issue thread. No need to explicitly create a comment.
+- **When chatting from Slack**: Your response will automatically be posted to the correct Slack thread. No need to explicitly create a comment.
 
 ## API Failures & Communication Issues
 
