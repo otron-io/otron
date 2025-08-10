@@ -1,8 +1,13 @@
-import { generateResponse } from '../generate-response.js';
-import { verifyRequest } from './slack-utils.js';
+import { generateResponse } from "../generate-response.js";
+import { getThread, updateStatusUtil } from "./slack-utils.js";
+import {
+  makeSlackContextId,
+  startSlackSession,
+  endSlackSession,
+} from "./session-manager.js";
 
 export interface SlackInteractivePayload {
-  type: 'block_actions' | 'shortcut' | 'view_submission' | 'view_closed';
+  type: "block_actions" | "shortcut" | "view_submission" | "view_closed";
   user: {
     id: string;
     username: string;
@@ -56,20 +61,20 @@ export async function handleSlackInteractive(
   botUserId: string
 ) {
   try {
-    console.log('Handling Slack interactive payload:', payload.type);
+    console.log("Handling Slack interactive payload:", payload.type);
 
     // Handle different types of interactive components
-    if (payload.type === 'block_actions') {
+    if (payload.type === "block_actions") {
       await handleBlockActions(payload, botUserId);
-    } else if (payload.type === 'shortcut') {
+    } else if (payload.type === "shortcut") {
       await handleShortcut(payload, botUserId);
-    } else if (payload.type === 'view_submission') {
+    } else if (payload.type === "view_submission") {
       await handleViewSubmission(payload, botUserId);
     } else {
       console.log(`Unhandled interactive payload type: ${payload.type}`);
     }
   } catch (error) {
-    console.error('Error handling Slack interactive payload:', error);
+    console.error("Error handling Slack interactive payload:", error);
   }
 }
 
@@ -78,7 +83,7 @@ async function handleBlockActions(
   botUserId: string
 ) {
   if (!payload.actions || payload.actions.length === 0) {
-    console.log('No actions found in block_actions payload');
+    console.log("No actions found in block_actions payload");
     return;
   }
 
@@ -88,60 +93,59 @@ async function handleBlockActions(
   const message = payload.message;
   const responseUrl = payload.response_url;
 
-  // Build context message for the AI
-  let contextMessage = `User ${user.name} (${user.username}) clicked a button in Slack.`;
+  const channelId = channel?.id;
+  const threadTs =
+    (message as any)?.thread_ts || message?.ts || payload.container?.message_ts;
 
-  if (channel) {
-    contextMessage += `\nChannel: ${channel.name} (${channel.id})`;
+  if (!channelId || !threadTs) {
+    console.warn("[interactive] Missing channel or thread timestamp; skipping");
+    return;
   }
 
-  if (action) {
-    contextMessage += `\nButton clicked: "${action.text.text}" (action_id: ${action.action_id})`;
-    if (action.value) {
-      contextMessage += `\nButton value: ${action.value}`;
-    }
+  const slackContext = { channelId, threadTs };
+  const updateStatus = updateStatusUtil(channelId, threadTs);
+
+  const contextId = makeSlackContextId(channelId, threadTs);
+  const abortController = startSlackSession(contextId);
+
+  // Build a succinct note about the interaction to append to the thread
+  const noteLines = [
+    `User ${user.name} (${user.username}) clicked a Slack button`,
+    `Button: ${action.text?.text || action.action_id} (action_id: ${
+      action.action_id
+    })`,
+  ];
+  if (action.value) noteLines.push(`Value: ${action.value}`);
+  if ((message as any)?.text)
+    noteLines.push(`Origin: ${(message as any).text}`);
+  if (responseUrl)
+    noteLines.push(
+      `response_url: ${responseUrl} (use respondToSlackInteraction to reply ephemerally or update the message)`
+    );
+  const interactionNote = noteLines.join("\n");
+
+  await updateStatus("is thinking...");
+
+  try {
+    const messages = await getThread(channelId, threadTs, botUserId);
+    // Append the interaction as the latest user message for continuity
+    messages.push({ role: "user", content: interactionNote });
+
+    await generateResponse(
+      messages,
+      updateStatus,
+      undefined,
+      slackContext,
+      abortController.signal
+    );
+  } catch (err) {
+    console.error("[interactive] handler error:", err);
+  } finally {
+    try {
+      await updateStatus("");
+    } catch {}
+    endSlackSession(contextId, abortController);
   }
-
-  if (message) {
-    contextMessage += `\nOriginal message timestamp: ${message.ts}`;
-    if (message.text) {
-      contextMessage += `\nOriginal message text: ${message.text}`;
-    }
-  }
-
-  if (responseUrl) {
-    contextMessage += `\nResponse URL available: ${responseUrl}`;
-    contextMessage += `\nYou can use the respondToSlackInteraction tool with this URL to respond directly to the button click.`;
-  }
-
-  contextMessage += `\n\nPlease respond appropriately to this button click. You can:`;
-  contextMessage += `\n- Use respondToSlackInteraction to update/replace the original message`;
-  contextMessage += `\n- Use respondToSlackInteraction to send an ephemeral response only visible to the user`;
-  contextMessage += `\n- Use regular Slack messaging tools to send new messages`;
-  contextMessage += `\n- Take any other relevant action using your available tools if thats what the interaction indicates`;
-  contextMessage += `\n- Avoid using replacing or deleting the original message unless your original message is just a button. It damages the user history as they lose the original message context.`;
-
-  // Simple status update function for logging
-  const updateStatus = (status: string) => {
-    console.log(`Status update: ${status}`);
-  };
-
-  // Build Slack context for the generateResponse function
-  const slackContext = channel
-    ? {
-        channelId: channel.id,
-        threadTs: message?.ts, // Use message timestamp as thread context
-      }
-    : undefined;
-
-  // Generate response using AI - let it decide how to respond
-  await generateResponse(
-    [{ role: 'user', content: contextMessage }],
-    updateStatus,
-    undefined, // No Linear client for Slack interactions
-    slackContext,
-    undefined // No abort signal for interactive components
-  );
 }
 
 async function handleShortcut(
@@ -149,10 +153,10 @@ async function handleShortcut(
   botUserId: string
 ) {
   // Handle global shortcuts or message shortcuts
-  console.log('Handling shortcut:', payload);
+  console.log("Handling shortcut:", payload);
 
   // For now, just log - can be extended later
-  console.log('Shortcut handling not yet implemented');
+  console.log("Shortcut handling not yet implemented");
 }
 
 async function handleViewSubmission(
@@ -160,8 +164,8 @@ async function handleViewSubmission(
   botUserId: string
 ) {
   // Handle modal submissions
-  console.log('Handling view submission:', payload);
+  console.log("Handling view submission:", payload);
 
   // For now, just log - can be extended later
-  console.log('View submission handling not yet implemented');
+  console.log("View submission handling not yet implemented");
 }

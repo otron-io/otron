@@ -1,15 +1,20 @@
 import type {
   AssistantThreadStartedEvent,
   GenericMessageEvent,
-} from '@slack/web-api';
+} from "@slack/web-api";
 import {
   client,
   getThread,
   sendMessage,
   updateStatusUtil,
   getLinearClientForSlack,
-} from './slack-utils.js';
-import { generateResponse } from '../generate-response.js';
+} from "./slack-utils.js";
+import { generateResponse } from "../generate-response.js";
+import {
+  makeSlackContextId,
+  startSlackSession,
+  endSlackSession,
+} from "./session-manager.js";
 
 export async function assistantThreadMessage(
   event: AssistantThreadStartedEvent
@@ -24,16 +29,16 @@ export async function assistantThreadMessage(
     thread_ts: thread_ts,
     prompts: [
       {
-        title: 'Get the weather',
-        message: 'What is the current weather in London?',
+        title: "Get the weather",
+        message: "What is the current weather in London?",
       },
       {
-        title: 'Get the news',
-        message: 'What is the latest Premier League news from the BBC?',
+        title: "Get the news",
+        message: "What is the latest Premier League news from the BBC?",
       },
       {
-        title: 'Linear context',
-        message: 'Show me recent Linear issues',
+        title: "Linear context",
+        message: "Show me recent Linear issues",
       },
     ],
   });
@@ -63,18 +68,25 @@ export async function handleNewAssistantMessage(
   };
 
   const updateStatus = updateStatusUtil(channel, thread_ts);
-  await updateStatus('is thinking...');
+  await updateStatus("is thinking...");
+
+  const contextId = makeSlackContextId(channel, thread_ts);
+  const abortController = startSlackSession(contextId);
 
   const messages = await getThread(channel, thread_ts, botUserId);
 
-  // Let the AI decide whether and how to respond using its tools
-  await generateResponse(
-    messages,
-    updateStatus,
-    linearClient,
-    slackContext,
-    undefined // No abort signal for Slack messages
-  );
-
-  await updateStatus('');
+  try {
+    await generateResponse(
+      messages,
+      updateStatus,
+      linearClient,
+      slackContext,
+      abortController.signal
+    );
+  } finally {
+    try {
+      await updateStatus("");
+    } catch {}
+    endSlackSession(contextId, abortController);
+  }
 }
