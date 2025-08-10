@@ -1,4 +1,4 @@
-name: "💬 Gemini CLI"
+name: "💬 Otron Agent"
 
 on:
   pull_request_review_comment:
@@ -33,9 +33,9 @@ jobs:
       github.event_name == 'workflow_dispatch' ||
       (
         github.event_name == 'issues' && github.event.action == 'opened' &&
-        contains(github.event.issue.body, '@gemini-cli') &&
-        !contains(github.event.issue.body, '@gemini-cli /review') &&
-        !contains(github.event.issue.body, '@gemini-cli /triage') &&
+        contains(github.event.issue.body, '@otron-agent') &&
+        !contains(github.event.issue.body, '@otron-agent /review') &&
+        !contains(github.event.issue.body, '@otron-agent /triage') &&
         (
           contains(fromJSON('["OWNER", "MEMBER", "COLLABORATOR"]'), github.event.issue.author_association) ||
           github.event.sender.type == 'Bot'
@@ -46,9 +46,9 @@ jobs:
           github.event_name == 'issue_comment' ||
           github.event_name == 'pull_request_review_comment'
         ) &&
-        contains(github.event.comment.body, '@gemini-cli') &&
-        !contains(github.event.comment.body, '@gemini-cli /review') &&
-        !contains(github.event.comment.body, '@gemini-cli /triage') &&
+        contains(github.event.comment.body, '@otron-agent') &&
+        !contains(github.event.comment.body, '@otron-agent /review') &&
+        !contains(github.event.comment.body, '@otron-agent /triage') &&
         (
           contains(fromJSON('["OWNER", "MEMBER", "COLLABORATOR"]'), github.event.comment.author_association) ||
           github.event.sender.type == 'Bot'
@@ -56,9 +56,9 @@ jobs:
       ) ||
       (
         github.event_name == 'pull_request_review' &&
-        contains(github.event.review.body, '@gemini-cli') &&
-        !contains(github.event.review.body, '@gemini-cli /review') &&
-        !contains(github.event.review.body, '@gemini-cli /triage') &&
+        contains(github.event.review.body, '@otron-agent') &&
+        !contains(github.event.review.body, '@otron-agent /review') &&
+        !contains(github.event.review.body, '@otron-agent /triage') &&
         (
           contains(fromJSON('["OWNER", "MEMBER", "COLLABORATOR"]'), github.event.review.author_association) ||
           github.event.sender.type == 'Bot'
@@ -109,7 +109,7 @@ jobs:
           fi
 
           # Clean up user request
-          USER_REQUEST=$(echo "${USER_REQUEST}" | sed 's/.*@gemini-cli//' | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')
+          USER_REQUEST=$(echo "${USER_REQUEST}" | sed 's/.*@otron-agent//' | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')
           # Normalize line endings
           USER_REQUEST=$(echo "${USER_REQUEST}" | tr -d '\r')
 
@@ -124,8 +124,8 @@ jobs:
 
       - name: "Set up git user for commits"
         run: |-
-          git config --global user.name 'gemini-cli[bot]'
-          git config --global user.email 'gemini-cli[bot]@users.noreply.github.com'
+          git config --global user.name 'otron-agent[bot]'
+          git config --global user.email 'otron-agent[bot]@users.noreply.github.com'
 
       - name: "Checkout PR branch"
         if: |-
@@ -204,7 +204,7 @@ jobs:
             echo "${CDELIM}"
           } >> "${GITHUB_OUTPUT}"
 
-      - name: "Run Gemini"
+      - name: "Run Otron Agent"
         id: "run_gemini"
         uses: "google-github-actions/run-gemini-cli@v0"
         env:
