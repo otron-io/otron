@@ -241,7 +241,7 @@ jobs:
           EOF
           )
 
-          codex --approval-mode full-auto "${PROMPT}" | tee codex.out.md
+          codex "${PROMPT}" | tee codex.out.md
 
       - name: Post result
         if: always()
