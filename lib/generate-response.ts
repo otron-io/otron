@@ -705,20 +705,42 @@ const generateResponseInternal = async (
   ): Promise<string> => {
     const boundedSeconds = Math.max(0, Math.min(60, Math.floor(seconds)));
 
-    updateStatus?.(`Sleeping for ${boundedSeconds} seconds...`);
-
     return new Promise((resolve, reject) => {
       if (abort?.aborted) {
+        updateStatus?.("aborted sleep");
         return reject(new Error("Sleep aborted"));
       }
+
+      if (boundedSeconds === 0) {
+        updateStatus?.("skipped sleep (0s)");
+        return resolve("Slept for 0 seconds");
+      }
+
+      let remainingSeconds = boundedSeconds;
+      updateStatus?.(`is sleeping: ${remainingSeconds}s remaining`);
+
       const onAbort = () => {
         clearTimeout(timeoutId);
+        clearInterval(intervalId);
+        if (abort) abort.removeEventListener("abort", onAbort);
+        updateStatus?.("sleep aborted");
         reject(new Error("Sleep aborted"));
       };
+
+      const intervalId: ReturnType<typeof setInterval> = setInterval(() => {
+        remainingSeconds -= 1;
+        if (remainingSeconds > 0) {
+          updateStatus?.(`is sleeping: ${remainingSeconds}s remaining`);
+        }
+      }, 1000);
+
       const timeoutId: ReturnType<typeof setTimeout> = setTimeout(() => {
         if (abort) abort.removeEventListener("abort", onAbort);
+        clearInterval(intervalId);
+        updateStatus?.("completed sleep");
         resolve(`Slept for ${boundedSeconds} seconds`);
       }, boundedSeconds * 1000);
+
       if (abort) abort.addEventListener("abort", onAbort, { once: true });
     });
   };
