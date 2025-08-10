@@ -704,6 +704,9 @@ const generateResponseInternal = async (
     abort?: AbortSignal
   ): Promise<string> => {
     const boundedSeconds = Math.max(0, Math.min(60, Math.floor(seconds)));
+
+    updateStatus?.(`Sleeping for ${boundedSeconds} seconds...`);
+
     return new Promise((resolve, reject) => {
       if (abort?.aborted) {
         return reject(new Error("Sleep aborted"));
