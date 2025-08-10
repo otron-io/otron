@@ -800,6 +800,11 @@ GitHub
   3) Gemini-Cli will respond via comments on the issue. You can check back after a few minutes as gemini-cli takes time to work and respond. 
 - PR feedback: specific, constructive, testable. Reference files/lines.
 
+Coding
+- You cannot code directly. You are in control of gemini-cli for coding.
+- Gemini has a good ability to traverse the codebase and understand what it needs to do to achieve a task. Your research should focus on asking it for the right things.
+- Communicate with gemini-cli via comments on an issue or PR. Gemini can commit to new or existing branches.
+
 Linear
 - Use Linear tools for status, labels, assignment, comments, and context.
 - Keep updates succinct; avoid noise.
@@ -1406,7 +1411,7 @@ ${repositoryContext ? `${repositoryContext}` : ""}${
     model: openai.responses("gpt-5"),
     providerOptions: {
       openai: {
-        reasoningEffort: "high",
+        reasoningEffort: "low",
         reasoningSummary: "auto", // Enable reasoning summaries to capture LLM thought process
       },
     },
