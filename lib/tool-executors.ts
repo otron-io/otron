@@ -1,7 +1,7 @@
-import * as githubUtils from './github/github-utils.js';
-import { advancedFileReader } from './github/file-reader.js';
-import { env } from './env.js';
-import { agentActivity } from './linear/linear-agent-session-manager.js';
+import * as githubUtils from "./github/github-utils.js";
+import { advancedFileReader } from "./github/file-reader.js";
+import { env } from "./env.js";
+import { agentActivity } from "./linear/linear-agent-session-manager.js";
 
 // Helper function to extract Linear issue ID from branch name or context
 export const extractLinearIssueFromBranch = (
@@ -58,7 +58,7 @@ export const executeCreateBranch = async (
     await agentActivity.thought(
       issueId,
       `🌿 Branch strategy: Creating '${branch}' from '${
-        baseBranch || 'default'
+        baseBranch || "default"
       }' in ${repository}. This will be our working branch for implementing changes.`
     );
   }
@@ -68,8 +68,8 @@ export const executeCreateBranch = async (
   if (issueId) {
     await agentActivity.action(
       issueId,
-      'Created branch',
-      `${branch} from ${baseBranch || 'default'}`,
+      "Created branch",
+      `${branch} from ${baseBranch || "default"}`,
       `Branch ready for development in ${repository}`
     );
   }
@@ -108,7 +108,7 @@ export const executeCreatePullRequest = async (
     await agentActivity.thought(
       issueId,
       `📝 PR content preview: "${body.substring(0, 150)}${
-        body.length > 150 ? '...' : ''
+        body.length > 150 ? "..." : ""
       }"`
     );
   }
@@ -124,7 +124,7 @@ export const executeCreatePullRequest = async (
   if (issueId) {
     await agentActivity.action(
       issueId,
-      'Created pull request',
+      "Created pull request",
       `#${result.number}: ${title}`,
       `PR ready for review at ${result.url}`
     );
@@ -206,6 +206,159 @@ export const executeSearchCode = async (
   return { results };
 };
 
+// GitHub Issue executors (ported from marvin-slack)
+export const executeCreateIssue = async (
+  {
+    repository,
+    title,
+    body,
+    labels,
+    assignees,
+  }: {
+    repository: string;
+    title: string;
+    body: string;
+    labels: string[];
+    assignees: string[];
+  },
+  updateStatus?: (status: string) => void
+) => {
+  updateStatus?.(`is creating issue "${title}" in ${repository}...`);
+  const result = await githubUtils.createIssue(
+    repository,
+    title,
+    body || undefined,
+    labels?.length ? labels : undefined,
+    assignees?.length ? assignees : undefined
+  );
+  return {
+    success: true,
+    url: result.url,
+    number: result.number,
+    message: `Created issue #${result.number}: ${title}`,
+  };
+};
+
+export const executeGetIssue = async (
+  { repository, issueNumber }: { repository: string; issueNumber: number },
+  updateStatus?: (status: string) => void
+) => {
+  updateStatus?.(`is getting issue #${issueNumber} in ${repository}...`);
+  const issue = await githubUtils.getIssue(repository, issueNumber);
+  return { issue };
+};
+
+export const executeListIssues = async (
+  {
+    repository,
+    state,
+    labels,
+    assignee,
+    perPage,
+  }: {
+    repository: string;
+    state: "open" | "closed" | "all";
+    labels: string;
+    assignee: string;
+    perPage: number;
+  },
+  updateStatus?: (status: string) => void
+) => {
+  updateStatus?.(`is listing issues in ${repository}...`);
+  const issues = await githubUtils.listIssues(repository, {
+    state: state || undefined,
+    labels: labels || undefined,
+    assignee: assignee || undefined,
+    perPage: perPage || undefined,
+  });
+  return { issues };
+};
+
+export const executeAddIssueComment = async (
+  {
+    repository,
+    issueNumber,
+    body,
+  }: { repository: string; issueNumber: number; body: string },
+  updateStatus?: (status: string) => void
+) => {
+  updateStatus?.(
+    `is adding comment to issue #${issueNumber} in ${repository}...`
+  );
+  const result = await githubUtils.addIssueComment(
+    repository,
+    issueNumber,
+    body
+  );
+  return {
+    success: true,
+    commentId: result.id,
+    url: result.url,
+    message: `Added comment to issue #${issueNumber}`,
+  };
+};
+
+export const executeUpdateIssue = async (
+  {
+    repository,
+    issueNumber,
+    title,
+    body,
+    state,
+    labels,
+    assignees,
+  }: {
+    repository: string;
+    issueNumber: number;
+    title: string;
+    body: string;
+    state: "open" | "closed";
+    labels: string[];
+    assignees: string[];
+  },
+  updateStatus?: (status: string) => void
+) => {
+  updateStatus?.(`is updating issue #${issueNumber} in ${repository}...`);
+  const result = await githubUtils.updateIssue(repository, issueNumber, {
+    title: title || undefined,
+    body: body || undefined,
+    state: state || undefined,
+    labels: labels?.length ? labels : undefined,
+    assignees: assignees?.length ? assignees : undefined,
+  });
+  return {
+    success: true,
+    url: result.url,
+    number: result.number,
+    state: result.state,
+    message: `Updated issue #${result.number}`,
+  };
+};
+
+export const executeGetIssueComments = async (
+  {
+    repository,
+    issueNumber,
+    perPage,
+  }: {
+    repository: string;
+    issueNumber: number;
+    perPage: number;
+  },
+  updateStatus?: (status: string) => void
+) => {
+  updateStatus?.(
+    `is listing comments for issue #${issueNumber} in ${repository}...`
+  );
+  const comments = await githubUtils.listIssueComments(
+    repository,
+    issueNumber,
+    {
+      perPage: perPage || undefined,
+    }
+  );
+  return { comments };
+};
 export const executeGetDirectoryStructure = async (
   { repository, directoryPath }: { repository: string; directoryPath: string },
   updateStatus?: (status: string) => void
@@ -213,44 +366,44 @@ export const executeGetDirectoryStructure = async (
   try {
     updateStatus?.(
       `is getting directory structure for ${
-        directoryPath || 'root'
+        directoryPath || "root"
       } in ${repository}...`
     );
 
     const structure = await githubUtils.getDirectoryStructure(
       repository,
-      directoryPath || ''
+      directoryPath || ""
     );
     return {
       success: true,
       structure,
       message: `Retrieved directory structure for ${
-        directoryPath || 'root'
+        directoryPath || "root"
       } in ${repository}`,
     };
   } catch (error) {
     console.error(
       `Error getting directory structure for ${
-        directoryPath || 'root'
+        directoryPath || "root"
       } in ${repository}:`,
       error
     );
 
     // Handle specific error cases
-    if (error instanceof Error && 'status' in error) {
+    if (error instanceof Error && "status" in error) {
       const httpError = error as any;
       if (httpError.status === 404) {
         return {
           success: false,
           structure: [
             {
-              name: `Directory not found: ${directoryPath || 'root'}`,
-              file_path: directoryPath || '',
-              type: 'file' as const,
+              name: `Directory not found: ${directoryPath || "root"}`,
+              file_path: directoryPath || "",
+              type: "file" as const,
             },
           ],
           message: `Directory "${
-            directoryPath || 'root'
+            directoryPath || "root"
           }" not found in repository ${repository}. This directory may not exist or you may not have access to it.`,
         };
       }
@@ -260,13 +413,13 @@ export const executeGetDirectoryStructure = async (
       success: false,
       structure: [
         {
-          name: 'Error retrieving directory structure',
-          file_path: directoryPath || '',
-          type: 'file' as const,
+          name: "Error retrieving directory structure",
+          file_path: directoryPath || "",
+          type: "file" as const,
         },
       ],
       message: `Failed to get directory structure: ${
-        error instanceof Error ? error.message : 'Unknown error'
+        error instanceof Error ? error.message : "Unknown error"
       }`,
     };
   }
@@ -287,8 +440,8 @@ export const executeSearchEmbeddedCode = async (
   updateStatus?: (status: string) => void
 ) => {
   // Add very visible logging to confirm function is called
-  console.log('🚨🚨🚨 executeSearchEmbeddedCode CALLED 🚨🚨🚨');
-  console.log('Parameters received:', {
+  console.log("🚨🚨🚨 executeSearchEmbeddedCode CALLED 🚨🚨🚨");
+  console.log("Parameters received:", {
     repository,
     query,
     fileFilter,
@@ -296,15 +449,15 @@ export const executeSearchEmbeddedCode = async (
   });
 
   try {
-    updateStatus?.('is searching embedded code...');
+    updateStatus?.("is searching embedded code...");
 
     // Extract Linear issue ID and add strategic thinking
-    const issueId = extractLinearIssueFromBranch('current'); // Use current context
+    const issueId = extractLinearIssueFromBranch("current"); // Use current context
     if (issueId) {
       await agentActivity.thought(
         issueId,
         `🔍 Code search strategy: Searching ${repository} for "${query}"${
-          fileFilter ? ` in files matching: ${fileFilter}` : ''
+          fileFilter ? ` in files matching: ${fileFilter}` : ""
         }. Max results: ${maxResults}. This will help understand the codebase structure and locate relevant code.`
       );
     }
@@ -313,40 +466,40 @@ export const executeSearchEmbeddedCode = async (
     const searchParams = new URLSearchParams({
       repository,
       query,
-      method: 'vector',
+      method: "vector",
       limit: ((maxResults <= 10 ? maxResults : 10) || 10).toString(),
     });
 
     if (fileFilter) {
-      searchParams.append('fileFilter', fileFilter);
+      searchParams.append("fileFilter", fileFilter);
     }
 
     // Add detailed logging
-    console.log('🔍 Code Search Debug Info:');
-    console.log('  Repository:', repository);
-    console.log('  Query:', query);
-    console.log('  FileFilter:', fileFilter);
-    console.log('  MaxResults:', maxResults);
-    console.log('  SearchParams:', searchParams.toString());
-    console.log('  INTERNAL_API_TOKEN exists:', !!env.INTERNAL_API_TOKEN);
+    console.log("🔍 Code Search Debug Info:");
+    console.log("  Repository:", repository);
+    console.log("  Query:", query);
+    console.log("  FileFilter:", fileFilter);
+    console.log("  MaxResults:", maxResults);
+    console.log("  SearchParams:", searchParams.toString());
+    console.log("  INTERNAL_API_TOKEN exists:", !!env.INTERNAL_API_TOKEN);
 
     // Use absolute URL directly since relative URLs don't work in server environment
-    const baseUrl = process.env.OTRON_URL || 'http://localhost:3000';
-    const absoluteUrl = baseUrl.startsWith('http')
+    const baseUrl = process.env.OTRON_URL || "http://localhost:3000";
+    const absoluteUrl = baseUrl.startsWith("http")
       ? `${baseUrl}/api/code-search?${searchParams}`
       : `https://${baseUrl}/api/code-search?${searchParams}`;
 
-    console.log('  Using absolute URL:', absoluteUrl);
+    console.log("  Using absolute URL:", absoluteUrl);
 
     let response: Response;
-    let debugInfo = '';
+    let debugInfo = "";
 
     // Make the API call directly with absolute URL
     response = await fetch(absoluteUrl, {
-      method: 'GET',
+      method: "GET",
       headers: {
-        'X-Internal-Token': env.INTERNAL_API_TOKEN,
-        'Content-Type': 'application/json',
+        "X-Internal-Token": env.INTERNAL_API_TOKEN,
+        "Content-Type": "application/json",
       },
     });
 
@@ -354,13 +507,13 @@ export const executeSearchEmbeddedCode = async (
     debugInfo += `Response status: ${response.status}\n`;
     debugInfo += `Response ok: ${response.ok}\n`;
 
-    console.log('  Response status:', response.status);
-    console.log('  Response ok:', response.ok);
+    console.log("  Response status:", response.status);
+    console.log("  Response ok:", response.ok);
 
     if (!response.ok) {
       const errorData = await response.json().catch(() => ({}));
       debugInfo += `Error data: ${JSON.stringify(errorData)}\n`;
-      console.log('  Error data:', errorData);
+      console.log("  Error data:", errorData);
       throw new Error(
         `Code search API error: ${response.status} - ${
           errorData.error || response.statusText
@@ -369,31 +522,31 @@ export const executeSearchEmbeddedCode = async (
     }
 
     const data = await response.json();
-    console.log('  Response data:', JSON.stringify(data, null, 2));
+    console.log("  Response data:", JSON.stringify(data, null, 2));
 
     // Format results for better readability
     const formattedResults =
       data.results?.map((result: any, index: number) => {
-        const filePath = result.path || 'Unknown file';
-        const score = result.score ? (result.score * 100).toFixed(1) : 'N/A';
-        const type = result.type || 'code';
-        const name = result.name || 'Unknown';
+        const filePath = result.path || "Unknown file";
+        const score = result.score ? (result.score * 100).toFixed(1) : "N/A";
+        const type = result.type || "code";
+        const name = result.name || "Unknown";
 
         // Truncate content to first 150 characters for readability
-        let content = result.content || '';
-        const lines = content.split('\n');
+        let content = result.content || "";
+        const lines = content.split("\n");
         const truncatedContent =
-          lines.length > 3 ? lines.slice(0, 3).join('\n') + '\n...' : content;
+          lines.length > 3 ? lines.slice(0, 3).join("\n") + "\n..." : content;
 
         if (truncatedContent.length > 200) {
-          content = truncatedContent.substring(0, 200) + '...';
+          content = truncatedContent.substring(0, 200) + "...";
         } else {
           content = truncatedContent;
         }
 
         return `**${index + 1}. ${filePath}** (${score}% match)
-${type === 'method' ? '🔧' : type === 'class' ? '📦' : '📄'} ${name}
-\`\`\`${result.language || 'text'}
+${type === "method" ? "🔧" : type === "class" ? "📦" : "📄"} ${name}
+\`\`\`${result.language || "text"}
 ${content}
 \`\`\``;
       }) || [];
@@ -404,7 +557,7 @@ ${content}
 **Repository:** ${repository}
 **Found:** ${data.results.length} matches
 
-${formattedResults.join('\n\n---\n\n')}`
+${formattedResults.join("\n\n---\n\n")}`
         : `## 🔍 No code matches found for "${query}" in ${repository}`;
 
     return {
@@ -413,12 +566,12 @@ ${formattedResults.join('\n\n---\n\n')}`
       message: summary,
     };
   } catch (error) {
-    console.error('Error searching embedded code:', error);
+    console.error("Error searching embedded code:", error);
     return {
       success: false,
-      error: error instanceof Error ? error.message : 'Unknown error occurred',
+      error: error instanceof Error ? error.message : "Unknown error occurred",
       message: `Code search failed: ${
-        error instanceof Error ? error.message : 'Unknown error occurred'
+        error instanceof Error ? error.message : "Unknown error occurred"
       }`,
     };
   }
@@ -429,26 +582,26 @@ export const executeGetRepositoryStructure = async (
   updateStatus?: (status: string) => void
 ) => {
   try {
-    updateStatus?.('Getting repository structure...');
+    updateStatus?.("Getting repository structure...");
 
     // Use the direct GitHub utils approach
     const structure = await githubUtils.getDirectoryStructure(
       repository,
-      file_path || ''
+      file_path || ""
     );
 
     return {
       success: true,
       structure: structure,
       message: `Retrieved structure for ${repository}${
-        file_path ? ` at file_path ${file_path}` : ''
+        file_path ? ` at file_path ${file_path}` : ""
       }`,
     };
   } catch (error) {
-    console.error('Error getting repository structure:', error);
+    console.error("Error getting repository structure:", error);
     return {
       success: false,
-      error: error instanceof Error ? error.message : 'Unknown error occurred',
+      error: error instanceof Error ? error.message : "Unknown error occurred",
     };
   }
 };
@@ -472,8 +625,8 @@ export const executeEditUrl = async (
   },
   updateStatus?: (status: string) => void
 ) => {
-  console.log('🔧 executeEditUrl CALLED');
-  console.log('Parameters:', {
+  console.log("🔧 executeEditUrl CALLED");
+  console.log("Parameters:", {
     file_path,
     repository,
     branch,
@@ -488,7 +641,7 @@ export const executeEditUrl = async (
     // 🚨 ULTRA-STRICT SAFETY CHECKS FOR URL EDITING
 
     // 1. Only allow URL-like content
-    if (!oldUrl.includes('http://') && !oldUrl.includes('https://')) {
+    if (!oldUrl.includes("http://") && !oldUrl.includes("https://")) {
       throw new Error(
         `SAFETY CHECK FAILED: oldUrl must contain http:// or https:// to be recognized as a URL. Got: ${oldUrl.substring(
           0,
@@ -497,7 +650,7 @@ export const executeEditUrl = async (
       );
     }
 
-    if (!newUrl.includes('http://') && !newUrl.includes('https://')) {
+    if (!newUrl.includes("http://") && !newUrl.includes("https://")) {
       throw new Error(
         `SAFETY CHECK FAILED: newUrl must contain http:// or https:// to be recognized as a URL. Got: ${newUrl.substring(
           0,
@@ -520,7 +673,7 @@ export const executeEditUrl = async (
     }
 
     // 3. Prevent multi-line URLs (which might indicate accidental large matches)
-    const oldUrlLines = oldUrl.split('\n').length;
+    const oldUrlLines = oldUrl.split("\n").length;
     if (oldUrlLines > 3) {
       throw new Error(
         `SAFETY CHECK FAILED: oldUrl contains ${oldUrlLines} lines. For safety, URL edits should be 1-3 lines maximum.`
@@ -528,7 +681,7 @@ export const executeEditUrl = async (
     }
 
     // Get the current file content
-    const { getFileContent } = await import('./github/github-utils.js');
+    const { getFileContent } = await import("./github/github-utils.js");
     const currentContent = await getFileContent(
       file_path,
       repository,
@@ -539,10 +692,10 @@ export const executeEditUrl = async (
     );
 
     // Remove any header line that getFileContent might add
-    const lines = currentContent.split('\n');
+    const lines = currentContent.split("\n");
     let content = currentContent;
     if (lines.length > 0 && lines[0]?.match(/^\/\/ Lines \d+-\d+ of \d+$/)) {
-      content = lines.slice(1).join('\n');
+      content = lines.slice(1).join("\n");
     }
 
     // Check if the old URL exists in the file
@@ -577,21 +730,21 @@ export const executeEditUrl = async (
     }
 
     // Log the change details for debugging
-    console.log('📊 URL edit summary:', {
+    console.log("📊 URL edit summary:", {
       originalLength,
       newLength,
       difference,
       oldUrlPreview:
-        oldUrl.substring(0, 150) + (oldUrl.length > 150 ? '...' : ''),
+        oldUrl.substring(0, 150) + (oldUrl.length > 150 ? "..." : ""),
       newUrlPreview:
-        newUrl.substring(0, 150) + (newUrl.length > 150 ? '...' : ''),
+        newUrl.substring(0, 150) + (newUrl.length > 150 ? "..." : ""),
     });
 
     // Replace the old URL with the new URL
     const updatedContent = afterReplacement;
 
     // Update the file
-    const { createOrUpdateFile } = await import('./github/github-utils.js');
+    const { createOrUpdateFile } = await import("./github/github-utils.js");
     await createOrUpdateFile(
       file_path,
       updatedContent,
@@ -600,14 +753,14 @@ export const executeEditUrl = async (
       branch
     );
 
-    console.log('✅ executeEditUrl completed successfully');
+    console.log("✅ executeEditUrl completed successfully");
 
     return {
       success: true,
       message: `Successfully updated URL in ${file_path} (${difference} character difference)`,
     };
   } catch (error) {
-    console.error('❌ Error in executeEditUrl:', error);
+    console.error("❌ Error in executeEditUrl:", error);
     throw error;
   }
 };
@@ -633,7 +786,7 @@ export const executeEndActions = async (
 
 **Summary:** ${summary}
 
-${nextSteps ? `**Next Steps:** ${nextSteps}` : ''}
+${nextSteps ? `**Next Steps:** ${nextSteps}` : ""}
 
 *No further actions will be taken at this time.*`;
 
@@ -659,14 +812,14 @@ export const executeResetBranchToHead = async (
   updateStatus?.(`is resetting branch ${branch} to head...`);
 
   try {
-    const { resetBranchToHead } = await import('./github/github-utils.js');
+    const { resetBranchToHead } = await import("./github/github-utils.js");
 
     await resetBranchToHead(repository, branch, baseBranch);
 
     return {
       success: true,
       message: `Successfully reset branch ${branch} to head of ${
-        baseBranch || 'default branch'
+        baseBranch || "default branch"
       }`,
     };
   } catch (error) {
@@ -693,7 +846,7 @@ export const executeAnalyzeFileStructure = async (
   updateStatus?: (status: string) => void
 ) => {
   try {
-    updateStatus?.('Analyzing file structure...');
+    updateStatus?.("Analyzing file structure...");
 
     const branchToUse = branch && branch.trim() ? branch : undefined;
     const analysis = await advancedFileReader.analyzeFileStructure(
@@ -709,31 +862,31 @@ Total Lines: ${analysis.totalLines}
 Functions (${analysis.functions.length}):
 ${analysis.functions
   .map((f: any) => `  - ${f.name} (lines ${f.startLine}-${f.endLine})`)
-  .join('\n')}
+  .join("\n")}
 
 Classes (${analysis.classes.length}):
 ${analysis.classes
   .map((c: any) => `  - ${c.name} (lines ${c.startLine}-${c.endLine})`)
-  .join('\n')}
+  .join("\n")}
 
 Imports (${analysis.imports.length}):
 ${analysis.imports
   .map((i: any) => `  - ${i.module} (line ${i.line})`)
-  .join('\n')}
+  .join("\n")}
 
 Exports (${analysis.exports.length}):
 ${analysis.exports
   .map((e: any) => `  - ${e.name} (${e.type}, line ${e.line})`)
-  .join('\n')}
+  .join("\n")}
 
-Dependencies: ${analysis.dependencies.join(', ')}
+Dependencies: ${analysis.dependencies.join(", ")}
 
 Complexity:
   - Cyclomatic: ${analysis.complexity.cyclomaticComplexity}
   - Cognitive: ${analysis.complexity.cognitiveComplexity}
   - Maintainability: ${analysis.complexity.maintainabilityIndex}`;
 
-    updateStatus?.('File structure analyzed successfully');
+    updateStatus?.("File structure analyzed successfully");
     return summary;
   } catch (error) {
     const errorMessage = `Failed to analyze file structure: ${
@@ -763,7 +916,7 @@ export const executeSearchCodeWithContext = async (
   updateStatus?: (status: string) => void
 ) => {
   try {
-    updateStatus?.('Searching code with context...');
+    updateStatus?.("Searching code with context...");
 
     const options: any = {
       contextLines: contextLines > 0 ? contextLines : 3, // default to 3
@@ -790,13 +943,13 @@ ${file.matches
     (match: any) => `
   Line ${match.line}: ${match.content}
   Context:
-${match.context.map((ctx: any) => `    ${ctx}`).join('\n')}
+${match.context.map((ctx: any) => `    ${ctx}`).join("\n")}
 `
   )
-  .join('\n')}
+  .join("\n")}
 `
   )
-  .join('\n---\n')}
+  .join("\n---\n")}
 
 Total files with matches: ${searchResults.length}
 Total matches: ${searchResults.reduce(
@@ -804,7 +957,7 @@ Total matches: ${searchResults.reduce(
       0
     )}`;
 
-    updateStatus?.('Code search completed successfully');
+    updateStatus?.("Code search completed successfully");
     return summary;
   } catch (error) {
     const errorMessage = `Failed to search code with context: ${

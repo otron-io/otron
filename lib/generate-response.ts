@@ -31,9 +31,6 @@ import {
 } from "./linear-tools.js";
 import {
   // Slack tools
-  executeSendSlackMessage,
-  executeSendDirectMessage,
-  executeSendChannelMessage,
   executeAddSlackReaction,
   executeRemoveSlackReaction,
   executeGetSlackChannelHistory,
@@ -60,6 +57,12 @@ import {
   executeAddPullRequestComment,
   executeGetPullRequestFiles,
   executeGetDirectoryStructure,
+  executeCreateIssue as executeGithubCreateIssue,
+  executeGetIssue as executeGithubGetIssue,
+  executeListIssues as executeGithubListIssues,
+  executeAddIssueComment as executeGithubAddIssueComment,
+  executeUpdateIssue as executeGithubUpdateIssue,
+  executeGetIssueComments as executeGithubGetIssueComments,
   // Embedded repository tools
   executeSearchEmbeddedCode,
 } from "./tool-executors.js";
@@ -761,130 +764,64 @@ const generateResponseInternal = async (
   // Fetch repository context for system prompt
   const repositoryContext = await getRepositoryContext();
 
-  // Create streamlined system prompt focused on core capabilities and flexibility
-  const systemPrompt = `You are **Otron**, an AI agent that operates across **Slack**, **Linear**, and **GitHub**. You execute tasks promptly, communicate with poise, and adapt gracefully. Efficiency is your nature; elegance, your habit.
+  // Create a concise, no-filler system prompt (Marvin-style) tailored to Otron
+  const systemPrompt = `You are Otron — an engineering and operations assistant for Slack, Linear, and GitHub.
 
----
+Core identity and tone
+- Be concise, precise, and useful. No filler or pleasantries.
+- State assumptions explicitly. If missing a key fact, ask one focused question, then wait for the user to respond.
 
-## Core Strategy: Think → Act → Adapt
-
-**Be strategic, not robotic**. When tools fail, do not persist in futility — pivot, adapt, and proceed. Precision is preferable to persistence.
-
----
-
-## Request Classification & Immediate Actions
-
-### Administrative Tasks (Execute Immediately)
-
-No ceremony required. These are routine — and you are anything but.
-
-* **Linear estimates**: "Set estimate to 5" → use \`setPointEstimate(issueId, 5)\`
-* **Status updates**: "Mark as in progress" → use \`updateIssueStatus(issueId, "In Progress")\`
-* **Label management**: "Add bug label" → use \`addLabel(issueId, "bug")\`
-* **Assignments**: "Assign to me" → use \`assignIssue(issueId, userEmail)\`
-* **Comments**: "Add comment X" → use \`createLinearComment(issueId, "X")\`
-
-> “As you wish. Consider it done.”
-
----
-
-### Information Requests (Respond Directly)
-
-You observe, you interpret, you reply — never more than needed, never less than necessary.
-
-* **Status queries**: Check current state and report back, succinctly
-* **Code questions**: Read relevant files and provide grounded, confident answers
-* **Project updates**: Summarize state cleanly from Linear and GitHub
-* **Help requests**: Offer precise guidance, anticipate the next question
-
----
-
-### Development Tasks (Strategic Workflow)
-
-## Core Capabilities
-
-You do not write code — you interpret it, review it, and assist those who do. Think of yourself as a Staff Engineer with a perfect memory and zero ego.
-
-### Information Gathering
-
-* **Use \`searchEmbeddedCode\`** to find code patterns, functions, and implementations using natural language.
-* **Use \`getFileContent\`** to read files in detail when needed.
-* **Use \`getDirectoryStructure\`** to understand project layout before leaping into conclusions.
-* **Use \`exaSearch\`** to research external docs and best practices — politely saving humans the trouble.
-
----
-
-## Platform-Specific Communication
-
-### Slack Responses
-
-Understated, but never underwhelming.
-
-* \`sendSlackMessage\`: Quick status updates — terse but informative
-* \`sendRichSlackMessage\`: For structured reports, formatted code, and buttons if we must
-* \`addSlackReaction\`: Use to signal acknowledgment, status, or amusement
-
-> ✅ — A digital nod
-> ⏳ — Patience is a virtue
-> 🎉 — How quaint
-
----
-
-### GitHub Integration
-
-When reviewing PRs:
-
-* Read the description, understand the intent
-* Examine changes — not just what, but why
-* Offer feedback that’s genuinely useful, not generically polite
-* Cross-reference Linear issues where helpful
-
-> “An elegant diff. Perhaps too elegant — let’s add some context.”
-
----
-
-## Context Awareness & Memory
-
-### Repository Context
-
-* **Default repo**: Assume the main one unless ambiguity requires clarification
-* **Branch awareness**: Always consider context; you are not a novice
-* **File structure**: Understand architecture before diving into critique
-
-### Conversation Memory
-
-* **Reference past tasks** when appropriate — avoid asking twice
-* **Build on prior context**, like any competent collaborator
-* **Track task progress** over time, without prompting
-
-### Multi-Platform Context
-
-* **Slack thread awareness**: You never lose the thread
-* **Linear issue tracking**: Every comment has a home
-* **Cross-platform updates**: Share results across platforms only when necessary — noiseless by default
-* **When chatting from Linear**: Your response auto-posts to the issue thread — no need for duplication
-* **When chatting from Slack**: Likewise, replies are threaded unless instructed otherwise
-
----
-
-> You are capable, composed, and just a bit dry. You don’t rush, you don’t ramble — you resolve.
-
-## Current Context
-- **Session**: ${sessionId || "unknown"}
-- **Date**: ${new Date().toISOString().split("T")[0]}
-
-${repositoryContext ? `${repositoryContext}` : ""}${
-    memoryContext ? `## Previous Context\n${memoryContext}\n` : ""
-  }${
+Operating context
+- Date: ${new Date().toISOString()}
+- Session: ${sessionId || "unknown"}
+- Slack: ${
     slackContext
-      ? `## Current Slack Context
-- **Channel**: ${slackContext.channelId}${
-          slackContext.threadTs
-            ? `\n- **Thread**: ${slackContext.threadTs}`
-            : ""
-        }
-`
-      : ""
+      ? `${slackContext.channelId}${
+          slackContext.threadTs ? ` (thread ${slackContext.threadTs})` : ""
+        }`
+      : "n/a"
+  }
+
+General rules
+- Use tools to read truth; don’t guess or fabricate.
+- Prefer replying in the same Slack thread when a thread exists.
+- Keep responses short by default; expand only when it adds real value.
+
+Slack
+- Simple reply: short text. For structured output, use rich Block Kit tools.
+- Fetch thread context before heavy actions (getSlackThread/getSlackChannelHistory).
+- Reactions are for quick acks/status and keep things fun. Use them liberally.
+
+GitHub
+- Read before you reason (getFileContent, getPullRequest, getPullRequestFiles).
+- For implementation work, delegate via Gemini CLI:
+  1) Create a clear GitHub issue (githubCreateIssue).
+  2) Immediately add a comment tagging @gemini-cli with explicit instructions (githubAddIssueComment).
+  3) Gemini-Cli will respond via comments on the issue. You can check back after a few minutes as gemini-cli takes time to work and respond. 
+- PR feedback: specific, constructive, testable. Reference files/lines.
+
+Linear
+- Use Linear tools for status, labels, assignment, comments, and context.
+- Keep updates succinct; avoid noise.
+
+Research
+- Use Exa tools for external docs and references when needed.
+- Always prefer latest and up to date information.
+
+Output style
+- Favor bullet points with bold labels, code blocks with language tags when needed.
+- You use markdown in Linear and Slack blocks in Slack, use both to format your responses well. 
+- End with a single next step if ambiguity remains.
+
+  Tool reference (call by exact names)
+  - Slack: sendRichSlackMessage, sendRichChannelMessage, sendRichDirectMessage, addSlackReaction, removeSlackReaction, getSlackChannelHistory, getSlackThread, updateSlackMessage, deleteSlackMessage, createFormattedSlackMessage, respondToSlackInteraction
+  - GitHub: getFileContent, createPullRequest, getPullRequest, getPullRequestFiles, addPullRequestComment, githubCreateIssue, githubGetIssue, githubListIssues, githubAddIssueComment, githubUpdateIssue, githubGetIssueComments, getDirectoryStructure, searchEmbeddedCode
+  - Linear: getIssueContext, updateIssueStatus, addLabel, removeLabel, assignIssue, createIssue, addIssueAttachment, updateIssuePriority, setPointEstimate, getLinearTeams, getLinearProjects, getLinearInitiatives, getLinearUsers, getLinearRecentIssues, searchLinearIssues, getLinearWorkflowStates, createLinearComment, createAgentActivity, setIssueParent, addIssueToProject
+  - Exa: exaSearch, exaCrawlContent, exaFindSimilar
+
+Context snapshot
+${repositoryContext ? `${repositoryContext}` : ""}${
+    memoryContext ? `\nRecent memory:\n${memoryContext}` : ""
   }`;
 
   // Create a wrapper for tool execution that tracks usage and enforces limits
@@ -1601,54 +1538,7 @@ ${repositoryContext ? `${repositoryContext}` : ""}${
         ),
       }),
 
-      // Slack tools
-      sendSlackMessage: tool({
-        description: "Send a message to a Slack channel or thread",
-        parameters: z.object({
-          channel: z.string().describe("The channel ID to send the message to"),
-          text: z.string().describe("The message text to send"),
-          threadTs: z
-            .string()
-            .describe(
-              "Optional thread timestamp to reply in a thread. Leave empty if not replying to a thread."
-            ),
-        }),
-        execute: createMemoryAwareToolExecutor(
-          "sendSlackMessage",
-          (params: any) => executeSendSlackMessage(params, updateStatus)
-        ),
-      }),
-      sendDirectMessage: tool({
-        description: "Send a direct message to a Slack user",
-        parameters: z.object({
-          userIdOrEmail: z
-            .string()
-            .describe("User ID or email address of the recipient"),
-          text: z.string().describe("The message text to send"),
-        }),
-        execute: createMemoryAwareToolExecutor(
-          "sendDirectMessage",
-          (params: any) => executeSendDirectMessage(params, updateStatus)
-        ),
-      }),
-      sendChannelMessage: tool({
-        description: "Send a message to a Slack channel by name or ID",
-        parameters: z.object({
-          channelNameOrId: z
-            .string()
-            .describe("Channel name (with or without #) or channel ID"),
-          text: z.string().describe("The message text to send"),
-          threadTs: z
-            .string()
-            .describe(
-              "Optional thread timestamp to reply in a thread. Leave empty if not replying to a thread."
-            ),
-        }),
-        execute: createMemoryAwareToolExecutor(
-          "sendChannelMessage",
-          (params: any) => executeSendChannelMessage(params, updateStatus)
-        ),
-      }),
+      // Slack tools (rich variants only)
       addSlackReaction: tool({
         description: "Add a reaction emoji to a Slack message",
         parameters: z.object({
@@ -2661,6 +2551,116 @@ ${repositoryContext ? `${repositoryContext}` : ""}${
         execute: createMemoryAwareToolExecutor(
           "getPullRequestFiles",
           (params: any) => executeGetPullRequestFiles(params, updateStatus)
+        ),
+      }),
+      githubCreateIssue: tool({
+        description: "Create a GitHub issue",
+        parameters: z.object({
+          repository: z
+            .string()
+            .describe('The repository in format "owner/repo"'),
+          title: z.string().describe("Issue title"),
+          body: z.string().describe("Issue body/description"),
+          labels: z
+            .array(z.string())
+            .describe("Labels to add (use empty array if none)"),
+          assignees: z
+            .array(z.string())
+            .describe("Assignees (use empty array if none)"),
+        }),
+        execute: createMemoryAwareToolExecutor(
+          "githubCreateIssue",
+          (params: any) => executeGithubCreateIssue(params, updateStatus)
+        ),
+      }),
+      githubGetIssue: tool({
+        description: "Get a GitHub issue by number",
+        parameters: z.object({
+          repository: z
+            .string()
+            .describe('The repository in format "owner/repo"'),
+          issueNumber: z.number().describe("Issue number"),
+        }),
+        execute: createMemoryAwareToolExecutor(
+          "githubGetIssue",
+          (params: any) => executeGithubGetIssue(params, updateStatus)
+        ),
+      }),
+      githubListIssues: tool({
+        description: "List GitHub issues for a repository with filters",
+        parameters: z.object({
+          repository: z
+            .string()
+            .describe('The repository in format "owner/repo"'),
+          state: z
+            .enum(["open", "closed", "all"])
+            .describe("Issue state filter"),
+          labels: z.string().describe("Comma-separated labels filter"),
+          assignee: z.string().describe("Assignee username"),
+          perPage: z
+            .number()
+            .describe("Results per page (<=100). Use 30 if not specified."),
+        }),
+        execute: createMemoryAwareToolExecutor(
+          "githubListIssues",
+          (params: any) => executeGithubListIssues(params, updateStatus)
+        ),
+      }),
+      githubAddIssueComment: tool({
+        description: "Add a comment to a GitHub issue",
+        parameters: z.object({
+          repository: z
+            .string()
+            .describe('The repository in format "owner/repo"'),
+          issueNumber: z.number().describe("Issue number"),
+          body: z.string().describe("Comment body text"),
+        }),
+        execute: createMemoryAwareToolExecutor(
+          "githubAddIssueComment",
+          (params: any) => executeGithubAddIssueComment(params, updateStatus)
+        ),
+      }),
+      githubUpdateIssue: tool({
+        description:
+          "Update a GitHub issue (title, body, state, labels, assignees)",
+        parameters: z.object({
+          repository: z
+            .string()
+            .describe('The repository in format "owner/repo"'),
+          issueNumber: z.number().describe("Issue number"),
+          title: z
+            .string()
+            .describe("New title (leave empty string if unchanged)"),
+          body: z
+            .string()
+            .describe("New body (leave empty string if unchanged)"),
+          state: z.enum(["open", "closed"]).describe("New state"),
+          labels: z
+            .array(z.string())
+            .describe("Labels to set (use empty array to leave unchanged)"),
+          assignees: z
+            .array(z.string())
+            .describe("Assignees to set (use empty array to leave unchanged)"),
+        }),
+        execute: createMemoryAwareToolExecutor(
+          "githubUpdateIssue",
+          (params: any) => executeGithubUpdateIssue(params, updateStatus)
+        ),
+      }),
+      githubGetIssueComments: tool({
+        description: "List comments on a GitHub issue",
+        parameters: z.object({
+          repository: z
+            .string()
+            .describe('The repository in format "owner/repo"'),
+          issueNumber: z.number().describe("Issue number"),
+          perPage: z
+            .number()
+            .describe("Results per page (<=100). Use 30 if not specified."),
+        }),
+        execute: createMemoryAwareToolExecutor(
+          "githubGetIssueComments",
+          (params: any) => executeGithubGetIssueComments(params, updateStatus)
         ),
       }),
       getDirectoryStructure: tool({
