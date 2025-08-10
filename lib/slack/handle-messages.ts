@@ -14,34 +14,34 @@ import {
   startSlackSession,
   endSlackSession,
 } from './session-manager.js';
-import { setSuggestedPrompts } from './suggested-prompts.js';
+
+const genericPrompts = [
+  'Summarize what you can do for me here',
+  'Draft a status update for my team from this thread',
+  'Create a Linear issue from our plan',
+  'Open a GitHub issue for this bug',
+  'Search our codebase for <thing>',
+  'Review PR #<number> and suggest changes',
+  'Do a quick research scan on <topic> with sources',
+];
 
 export async function assistantThreadMessage(
   event: AssistantThreadStartedEvent,
 ) {
   const { channel_id, thread_ts } = event.assistant_thread;
   console.log(`Thread started: ${channel_id} ${thread_ts}`);
-  console.log(JSON.stringify(event));
 
-  // Set up suggested prompts without sending an automatic greeting
-  await client.assistant.threads.setSuggestedPrompts({
-    channel_id: channel_id,
-    thread_ts: thread_ts,
-    prompts: [
-      {
-        title: 'Get the weather',
-        message: 'What is the current weather in London?',
-      },
-      {
-        title: 'Get the news',
-        message: 'What is the latest Premier League news from the BBC?',
-      },
-      {
-        title: 'Linear context',
-        message: 'Show me recent Linear issues',
-      },
-    ],
-  });
+  // Set up suggested prompts without sending an automatic greeting, only for DMs
+  if (channel_id.startsWith('D')) {
+    await client.assistant.threads.setSuggestedPrompts({
+      channel_id: channel_id,
+      thread_ts: thread_ts,
+      prompts: genericPrompts.map((prompt) => ({
+        title: prompt,
+        message: prompt,
+      })),
+    });
+  }
 }
 
 export async function handleNewAssistantMessage(
@@ -50,15 +50,6 @@ export async function handleNewAssistantMessage(
 ) {
   if (event.subtype === 'bot_message' || !event.user || event.user === botUserId) {
     return;
-  }
-
-  const channel = event.channel;
-  const root = event.thread_ts || event.ts;
-  const isFirst = !event.thread_ts || event.thread_ts === event.ts;
-
-  if (isFirst) {
-    const variant = channel.startsWith('D') ? 'dm' : 'thread';
-    await setSuggestedPrompts(channel, root, variant);
   }
 
   if (!event.thread_ts) {
