@@ -14,8 +14,7 @@
     "watch:types": "tsc --noEmit --incremental --watch",
     "fix": "biome check --write .",
     "fix:formatting": "biome format --write .",
-    "fix:linting": "biome lint --write .",
-    "test": "vitest"
+    "fix:linting": "biome lint --write ."
   },
   "dependencies": {
     "@ai-sdk/anthropic": "^1.2.12",
@@ -43,7 +42,6 @@
     "nodemon": "^3.1.10",
     "ts-node": "^10.9.2",
     "tsx": "^4.19.3",
-    "typescript": "^5.8.3",
-    "vitest": "^2.0.4"
+    "typescript": "^5.8.3"
   }
 }
