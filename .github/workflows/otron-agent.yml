@@ -201,7 +201,7 @@ jobs:
           node-version: 20
 
       - name: Install Codex CLI
-        run: npm i -g @openai/codex-cli
+        run: npm i -g @openai/codex
 
       - name: Run Codex (GPT-5)
         id: run_codex
@@ -218,14 +218,30 @@ jobs:
             echo "OPENAI_API_KEY is not set" >&2
             exit 1
           fi
-          codex run \
-            --repo "${REPOSITORY}" \
-            --issue "${ISSUE_NUMBER}" \
-            --request "${USER_REQUEST}" \
-            --model "gpt-5" \
-            --verbosity "compact" \
-            --reasoning-effort "low" \
-            --open-pr | tee codex.out.md
+          PROMPT=$(cat <<'EOF'
+          You are an autonomous coding agent running in a GitHub Actions runner.
+          Repository: ${REPOSITORY}
+          Issue/PR number: ${ISSUE_NUMBER}
+          Is PR: ${IS_PR}
+
+          User request:
+          ${USER_REQUEST}
+
+          Context description:
+          ${{ steps.get_description.outputs.description }}
+
+          Recent comments:
+          ${{ steps.get_comments.outputs.comments }}
+
+          Task:
+          - Apply the requested changes directly to the working tree of this repository.
+          - Do NOT push or open PRs yourself; just modify files locally. Subsequent steps will commit/push.
+          - Keep changes minimal and focused.
+          - Output a concise summary of edits at the end.
+          EOF
+          )
+
+          codex --approval-mode full-auto "${PROMPT}" | tee codex.out.md
 
       - name: Post result
         if: always()
