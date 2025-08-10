@@ -1,23 +1,23 @@
 import type {
   AssistantThreadStartedEvent,
   GenericMessageEvent,
-} from "@slack/web-api";
+} from '@slack/web-api';
 import {
   client,
   getThread,
-  sendMessage,
   updateStatusUtil,
   getLinearClientForSlack,
-} from "./slack-utils.js";
-import { generateResponse } from "../generate-response.js";
+} from './slack-utils.js';
+import { generateResponse } from '../generate-response.js';
 import {
   makeSlackContextId,
   startSlackSession,
   endSlackSession,
-} from "./session-manager.js";
+} from './session-manager.js';
+import { setSuggestedPrompts } from './suggested-prompts.js';
 
 export async function assistantThreadMessage(
-  event: AssistantThreadStartedEvent
+  event: AssistantThreadStartedEvent,
 ) {
   const { channel_id, thread_ts } = event.assistant_thread;
   console.log(`Thread started: ${channel_id} ${thread_ts}`);
@@ -29,16 +29,16 @@ export async function assistantThreadMessage(
     thread_ts: thread_ts,
     prompts: [
       {
-        title: "Get the weather",
-        message: "What is the current weather in London?",
+        title: 'Get the weather',
+        message: 'What is the current weather in London?',
       },
       {
-        title: "Get the news",
-        message: "What is the latest Premier League news from the BBC?",
+        title: 'Get the news',
+        message: 'What is the latest Premier League news from the BBC?',
       },
       {
-        title: "Linear context",
-        message: "Show me recent Linear issues",
+        title: 'Linear context',
+        message: 'Show me recent Linear issues',
       },
     ],
   });
@@ -46,17 +46,27 @@ export async function assistantThreadMessage(
 
 export async function handleNewAssistantMessage(
   event: GenericMessageEvent,
-  botUserId: string
+  botUserId: string,
 ) {
-  if (
-    event.bot_id ||
-    event.bot_id === botUserId ||
-    event.bot_profile ||
-    !event.thread_ts
-  )
+  if (event.subtype === 'bot_message' || !event.user || event.user === botUserId) {
     return;
+  }
 
-  const { channel, thread_ts } = event;
+  const channel = event.channel;
+  const root = event.thread_ts || event.ts;
+  const isFirst = !event.thread_ts || event.thread_ts === event.ts;
+
+  if (isFirst) {
+    const variant = channel.startsWith('D') ? 'dm' : 'thread';
+    await setSuggestedPrompts(channel, root, variant);
+  }
+
+  if (!event.thread_ts) {
+    // This is not a thread message, so we don't need to do anything else.
+    return;
+  }
+
+  const { thread_ts } = event;
 
   // Get LinearClient for this Slack context
   const linearClient = await getLinearClientForSlack();
@@ -68,7 +78,7 @@ export async function handleNewAssistantMessage(
   };
 
   const updateStatus = updateStatusUtil(channel, thread_ts);
-  await updateStatus("is thinking...");
+  await updateStatus('is thinking...');
 
   const contextId = makeSlackContextId(channel, thread_ts);
   const abortController = startSlackSession(contextId);
@@ -81,11 +91,11 @@ export async function handleNewAssistantMessage(
       updateStatus,
       linearClient,
       slackContext,
-      abortController.signal
+      abortController.signal,
     );
   } finally {
     try {
-      await updateStatus("");
+      await updateStatus('');
     } catch {}
     endSlackSession(contextId, abortController);
   }
