@@ -2,6 +2,8 @@
 
 **An omnipresent open source AI agent that lives across your GitHub, Slack, and Linear workspaces.**
 
+Otron is the new name for the gemini-cli, and now includes otron-pr-review, a new feature for automated pull request reviews.
+
 Otron seamlessly integrates with your development workflow, automatically responding to webhooks and taking intelligent actions across all three platforms. Whether it's managing Linear issues, creating GitHub pull requests, or sending rich Slack messages, Otron acts as your autonomous development teammate.
 
 ## 🚀 Quick Deploy
@@ -36,6 +38,7 @@ Otron is an intelligent AI agent that:
 
 - Searches code repositories using semantic vector embeddings
 - Creates branches and pull requests automatically
+- **Automated Pull Request Reviews**: Provides AI-powered reviews on your pull requests.
 - Makes precise file edits using advanced editing tools
 - Analyzes repository structure and code relationships
 - Manages cross-repository changes for complex features
