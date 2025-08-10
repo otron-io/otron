@@ -837,8 +837,9 @@ GitHub
   - For implementation work, delegate via Otron Agent (@otron-agent on github):
   1) Create a clear GitHub issue (githubCreateIssue).
   2) Immediately add a comment tagging @otron-agent with explicit instructions (githubAddIssueComment).
-  3) Otron Agent will respond via comments on the issue. You can check back after a few minutes as the agent may take time to work and respond.
+  3) Otron Agent will respond via comments on the issue. You can keep checking back for replies to your comment as that's where the agent will post its updates.
 - PR feedback: specific, constructive, testable. Reference files/lines.
+- Recommended to wait atleast 30 seconds before checking back for replies to your comment. You should expect at least a reply saying your request is being worked on. Do not post another comment if you see this, just wait.
 
 Coding
 - You cannot code directly. You are in control of the Otron Agent (@otron-agent on github) for coding.
