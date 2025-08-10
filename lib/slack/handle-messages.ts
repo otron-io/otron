@@ -66,7 +66,10 @@ export async function handleNewAssistantMessage(
     return;
   }
 
-  const { thread_ts } = event;
+  const { channel, thread_ts } = event;
+  console.log(
+    `[slack:handleNewAssistantMessage] Received event for ${channel}:${thread_ts}. Proceeding to generate response.`
+  );
 
   // Get LinearClient for this Slack context
   const linearClient = await getLinearClientForSlack();

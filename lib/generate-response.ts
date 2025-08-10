@@ -391,14 +391,7 @@ export const generateResponse = async (
           await agentActivity.response(contextId, finalResponse);
         }
 
-        // Log linear completion thinking
-        if (slackContext && slackClient) {
-          slackClient.chat.postMessage({
-            channel: slackContext.channelId,
-            text: finalResponse,
-            thread_ts: slackContext.threadTs,
-          });
-        }
+        // Do not auto-post to Slack. The model must explicitly call Slack send tools.
 
         // If this is the last attempt, don't evaluate - just return
         if (attemptNumber >= MAX_RETRY_ATTEMPTS) {
@@ -804,7 +797,10 @@ Coding
 - You cannot code directly. You are in control of gemini-cli for coding.
 - Gemini has a good ability to traverse the codebase and understand what it needs to do to achieve a task. Your research should focus on asking it for the right things.
 - Communicate with gemini-cli via comments on an issue or PR. Gemini can commit to new or existing branches.
-- You do not need to do intense research to understand the codebase, just ask gemini-cli to do the work. You can also ask it to research something for you.
+- You do not need to do intense research to understand the codebase, just enough to know what to ask gemini-cli to do.
+- Gemini can also do research for you if you need something detailed about the code.
+- If Gemini is not responding, ask the user the ensure that the gemini-cli.yml github workflow is in the repo.
+- To iterate on a PR, just leave a comment on the PR (not the issue) tagging @gemini-cli with the needed changes.
 
 Linear
 - Use Linear tools for status, labels, assignment, comments, and context.
@@ -816,6 +812,7 @@ Research
 
 Output style
 - Favor bullet points with bold labels, code blocks with language tags when needed.
+- When taking actions that are not for information fetching, you should ask the user for confirmation first. If in Slack, use proper slack structure to create buttons for the user to click explicitly.
 - You use markdown in Linear and Slack blocks in Slack, use both to format your responses well. 
 - End with a single next step if ambiguity remains.
 
@@ -939,14 +936,7 @@ ${repositoryContext ? `${repositoryContext}` : ""}${
                 );
               }
 
-              // Reply to Slack thread if conversation originated from Slack
-              if (slackContext) {
-                await slackClient.chat.postMessage({
-                  channel: slackContext.channelId,
-                  thread_ts: slackContext.threadTs,
-                  text: "🛑 **Otron is immediately stopping all operations** as requested. Processing has been terminated.",
-                });
-              }
+              // Do not auto-post to Slack here; rely on explicit Slack tools in the plan
 
               // Abort the current processing
               throw new Error("STOP_COMMAND_RECEIVED");
