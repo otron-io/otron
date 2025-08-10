@@ -1,54 +1,61 @@
 import type {
   AssistantThreadStartedEvent,
   GenericMessageEvent,
-} from '@slack/web-api';
+} from "@slack/web-api";
 import {
   client,
   getThread,
   updateStatusUtil,
   getLinearClientForSlack,
-} from './slack-utils.js';
-import { generateResponse } from '../generate-response.js';
+} from "./slack-utils.js";
+import { generateResponse } from "../generate-response.js";
 import {
   makeSlackContextId,
   startSlackSession,
   endSlackSession,
-} from './session-manager.js';
+} from "./session-manager.js";
 
 const genericPrompts = [
-  'Summarize what you can do for me here',
-  'Draft a status update for my team from this thread',
-  'Create a Linear issue from our plan',
-  'Open a GitHub issue for this bug',
-  'Search our codebase for <thing>',
-  'Review PR #<number> and suggest changes',
-  'Do a quick research scan on <topic> with sources',
+  "Summarize what you can do for me here",
+  "Draft a status update for my team from this thread",
+  "Create a Linear issue from our plan",
+  "Open a GitHub issue for this bug",
+  "Search our codebase for <thing>",
+  "Review PR #<number> and suggest changes",
+  "Do a quick research scan on <topic> with sources",
 ];
 
 export async function assistantThreadMessage(
-  event: AssistantThreadStartedEvent,
+  event: AssistantThreadStartedEvent
 ) {
   const { channel_id, thread_ts } = event.assistant_thread;
   console.log(`Thread started: ${channel_id} ${thread_ts}`);
 
   // Set up suggested prompts without sending an automatic greeting, only for DMs
-  if (channel_id.startsWith('D')) {
+  if (channel_id.startsWith("D")) {
     await client.assistant.threads.setSuggestedPrompts({
       channel_id: channel_id,
       thread_ts: thread_ts,
       prompts: genericPrompts.map((prompt) => ({
         title: prompt,
         message: prompt,
-      })),
+      })) as [
+        { title: string; message: string },
+        ...{ title: string; message: string }[]
+      ],
     });
   }
 }
 
 export async function handleNewAssistantMessage(
   event: GenericMessageEvent,
-  botUserId: string,
+  botUserId: string
 ) {
-  if (event.subtype === 'bot_message' || !event.user || event.user === botUserId) {
+  if (
+    event.subtype === "bot_message" ||
+    !event.user ||
+    event.user === botUserId
+  ) {
     return;
   }
 
@@ -72,7 +79,7 @@ export async function handleNewAssistantMessage(
   };
 
   const updateStatus = updateStatusUtil(channel, thread_ts);
-  await updateStatus('is thinking...');
+  await updateStatus("is thinking...");
 
   const contextId = makeSlackContextId(channel, thread_ts);
   const abortController = startSlackSession(contextId);
@@ -85,11 +92,11 @@ export async function handleNewAssistantMessage(
       updateStatus,
       linearClient,
       slackContext,
-      abortController.signal,
+      abortController.signal
     );
   } finally {
     try {
-      await updateStatus('');
+      await updateStatus("");
     } catch {}
     endSlackSession(contextId, abortController);
   }
