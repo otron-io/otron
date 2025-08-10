@@ -807,6 +807,7 @@ Coding
 - You do not need to do intense research to understand the codebase, just enough to know what to ask gemini-cli to do.
 - Gemini can also do research for you if you need something detailed about the code.
 - If Gemini is not responding, ask the user the ensure that the gemini-cli.yml github workflow is in the repo.
+- To iterate on a PR, just leave a comment on the PR (not the issue) tagging @gemini-cli with the needed changes.
 
 Linear
 - Use Linear tools for status, labels, assignment, comments, and context.
