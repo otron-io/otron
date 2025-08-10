@@ -391,14 +391,7 @@ export const generateResponse = async (
           await agentActivity.response(contextId, finalResponse);
         }
 
-        // Log linear completion thinking
-        if (slackContext && slackClient) {
-          slackClient.chat.postMessage({
-            channel: slackContext.channelId,
-            text: finalResponse,
-            thread_ts: slackContext.threadTs,
-          });
-        }
+        // Do not auto-post to Slack. The model must explicitly call Slack send tools.
 
         // If this is the last attempt, don't evaluate - just return
         if (attemptNumber >= MAX_RETRY_ATTEMPTS) {
@@ -943,14 +936,7 @@ ${repositoryContext ? `${repositoryContext}` : ""}${
                 );
               }
 
-              // Reply to Slack thread if conversation originated from Slack
-              if (slackContext) {
-                await slackClient.chat.postMessage({
-                  channel: slackContext.channelId,
-                  thread_ts: slackContext.threadTs,
-                  text: "🛑 **Otron is immediately stopping all operations** as requested. Processing has been terminated.",
-                });
-              }
+              // Do not auto-post to Slack here; rely on explicit Slack tools in the plan
 
               // Abort the current processing
               throw new Error("STOP_COMMAND_RECEIVED");
