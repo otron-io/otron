@@ -76,7 +76,6 @@ import {
 } from "./linear/linear-agent-session-manager.js";
 import { Redis } from "@upstash/redis";
 import { env } from "./env.js";
-import { client as slackClient } from "./slack/slack-utils.js";
 
 // Initialize Redis client for tracking active responses and message queuing
 const redis = new Redis({
