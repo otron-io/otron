@@ -698,6 +698,28 @@ const generateResponseInternal = async (
     shouldForceAction: false,
   };
 
+  // Abort-aware sleep helper
+  const sleepWithAbort = (
+    seconds: number,
+    abort?: AbortSignal
+  ): Promise<string> => {
+    const boundedSeconds = Math.max(0, Math.min(60, Math.floor(seconds)));
+    return new Promise((resolve, reject) => {
+      if (abort?.aborted) {
+        return reject(new Error("Sleep aborted"));
+      }
+      const onAbort = () => {
+        clearTimeout(timeoutId);
+        reject(new Error("Sleep aborted"));
+      };
+      const timeoutId: ReturnType<typeof setTimeout> = setTimeout(() => {
+        if (abort) abort.removeEventListener("abort", onAbort);
+        resolve(`Slept for ${boundedSeconds} seconds`);
+      }, boundedSeconds * 1000);
+      if (abort) abort.addEventListener("abort", onAbort, { once: true });
+    });
+  };
+
   // Extract context ID for memory operations
   const contextId = extractIssueIdFromContext(messages, slackContext);
   const isLinearIssue = contextId && !contextId.startsWith("slack:");
@@ -810,6 +832,12 @@ Research
 - Use Exa tools for external docs and references when needed.
 - Always prefer latest and up to date information.
 
+Time management
+- If a tool will take some time, you can call the sleep tool to wait for up to 60 seconds and then check again. 
+- Use it if you are waiting for a response from a tool or the otron coding agent. 
+- Example: You give Otron Agent a task to code something, you can call the sleep tool to wait for up to 60 seconds to see if the agent has responded to you with an update.
+- DO NOT use it when you are waiting for a response from the user. End your response and the user will continue the conversation when they are ready.
+
 Output style
 - Favor bullet points with bold labels, code blocks with language tags when needed.
 - When taking actions that are not for information fetching, you should ask the user for confirmation first. If in Slack, use proper slack structure to create buttons for the user to click explicitly.
@@ -821,6 +849,7 @@ Output style
   - GitHub: getFileContent, createPullRequest, getPullRequest, getPullRequestFiles, addPullRequestComment, githubCreateIssue, githubGetIssue, githubListIssues, githubAddIssueComment, githubUpdateIssue, githubGetIssueComments, getDirectoryStructure, searchEmbeddedCode
   - Linear: getIssueContext, updateIssueStatus, addLabel, removeLabel, assignIssue, createIssue, addIssueAttachment, updateIssuePriority, setPointEstimate, getLinearTeams, getLinearProjects, getLinearInitiatives, getLinearUsers, getLinearRecentIssues, searchLinearIssues, getLinearWorkflowStates, createLinearComment, createAgentActivity, setIssueParent, addIssueToProject
   - Exa: exaSearch, exaCrawlContent, exaFindSimilar
+  - Utility: sleep
 
 Context snapshot
 ${repositoryContext ? `${repositoryContext}` : ""}${
@@ -2814,6 +2843,22 @@ ${repositoryContext ? `${repositoryContext}` : ""}${
           (params: any) =>
             executeRespondToSlackInteraction(params, updateStatus)
         ),
+      }),
+      // Utility tools
+      sleep: tool({
+        description:
+          "Sleep/wait for a number of seconds (max 60). Pauses the agent processing without blocking the server.",
+        parameters: z.object({
+          seconds: z
+            .number()
+            .int()
+            .min(0)
+            .max(60)
+            .describe("Number of seconds to sleep (0-60)"),
+        }),
+        execute: createMemoryAwareToolExecutor("sleep", async (params: any) => {
+          return await sleepWithAbort(params.seconds, abortSignal);
+        }),
       }),
     },
   });
