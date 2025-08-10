@@ -241,7 +241,10 @@ jobs:
           EOF
           )
 
-          codex "${PROMPT}" | tee codex.out.md
+          # Run codex under a pseudo-TTY to avoid /dev/tty errors in CI
+          script -q -c "codex \"${PROMPT}\"" codex.session.log || true
+          # Mirror output to markdown for posting back
+          cat codex.session.log | tee codex.out.md
 
       - name: Post result
         if: always()
