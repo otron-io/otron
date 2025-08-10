@@ -266,7 +266,7 @@ export const generateResponse = async (
   abortSignal?: AbortSignal,
   agentSessionId?: string
 ): Promise<string> => {
-  const MAX_RETRY_ATTEMPTS = 2;
+  const MAX_RETRY_ATTEMPTS = 1;
   let attemptNumber = 1;
   let toolsUsed: string[] = [];
   let actionsPerformed: string[] = [];
