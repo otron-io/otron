@@ -804,6 +804,7 @@ Coding
 - You cannot code directly. You are in control of gemini-cli for coding.
 - Gemini has a good ability to traverse the codebase and understand what it needs to do to achieve a task. Your research should focus on asking it for the right things.
 - Communicate with gemini-cli via comments on an issue or PR. Gemini can commit to new or existing branches.
+- You do not need to do intense research to understand the codebase, just ask gemini-cli to do the work. You can also ask it to research something for you.
 
 Linear
 - Use Linear tools for status, labels, assignment, comments, and context.
