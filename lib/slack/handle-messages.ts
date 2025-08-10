@@ -14,6 +14,7 @@ import {
   startSlackSession,
   endSlackSession,
 } from "./session-manager.js";
+import { LinearClient } from "@linear/sdk";
 
 const genericPrompts = [
   "Summarize what you can do for me here",
@@ -70,7 +71,14 @@ export async function handleNewAssistantMessage(
   );
 
   // Get LinearClient for this Slack context
-  const linearClient = await getLinearClientForSlack();
+  let linearClient: LinearClient | undefined;
+  try {
+    linearClient = await getLinearClientForSlack();
+  } catch (e) {
+    console.error("[slack] handleNewAssistantMessage error:", e);
+    linearClient = undefined;
+    return;
+  }
 
   // Prepare Slack context for the AI
   const slackContext = {

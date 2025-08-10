@@ -50,6 +50,8 @@ export async function POST(request: Request) {
             "view_closed",
           ].includes(payload.type)
         ) {
+          console.log("Interactive payload", payload);
+
           return handleInteractivePayload(request, rawBody, payload);
         }
       } catch {
@@ -60,6 +62,8 @@ export async function POST(request: Request) {
   }
 
   if (contentType.includes("application/json")) {
+    console.log("Slack events", rawBody);
+
     return handleSlackEvents(request, rawBody);
   }
 
@@ -170,14 +174,6 @@ async function handleSlackEvents(request: Request, rawBody: string) {
       return new Response("Success!", { status: 200 });
     }
 
-    // Ignore edits/updates events explicitly
-    if (
-      (event as any).type === "message" &&
-      (event as any).subtype === "message_changed"
-    ) {
-      return new Response("Success!", { status: 200 });
-    }
-
     // Handle new user DM messages: channel IDs for IMs start with 'D'
     if (
       (event as any).type === "message" &&
@@ -189,7 +185,12 @@ async function handleSlackEvents(request: Request, rawBody: string) {
       (event as any).user &&
       (event as any).user !== botUserId
     ) {
-      waitUntil(handleNewAssistantMessage(event as any, botUserId));
+      try {
+        await handleNewAssistantMessage(event as any, botUserId);
+      } catch (e) {
+        console.error("[events] DM handler error", e);
+        return new Response("Handler error", { status: 500 });
+      }
       return new Response("Success!", { status: 200 });
     }
 
