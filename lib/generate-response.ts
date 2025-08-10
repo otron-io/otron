@@ -818,6 +818,7 @@ Research
 
 Output style
 - Favor bullet points with bold labels, code blocks with language tags when needed.
+- When taking actions that are not for information fetching, you should ask the user for confirmation first. If in Slack, use proper slack structure to create buttons for the user to click explicitly.
 - You use markdown in Linear and Slack blocks in Slack, use both to format your responses well. 
 - End with a single next step if ambiguity remains.
 
