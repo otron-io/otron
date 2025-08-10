@@ -241,10 +241,12 @@ jobs:
           EOF
           )
 
-          # Run codex under a pseudo-TTY to avoid /dev/tty errors in CI
-          script -q -c "codex \"${PROMPT}\"" codex.session.log || true
-          # Mirror output to markdown for posting back
-          cat codex.session.log | tee codex.out.md
+          # Run codex in non-interactive, plain terminal mode
+          export TERM=dumb
+          export NO_COLOR=1
+          export FORCE_COLOR=0
+          export CI=1
+          codex "${PROMPT}" | tee codex.out.md || true
 
       - name: Post result
         if: always()
