@@ -1,11 +1,11 @@
-import { CoreMessage, generateText, tool } from "ai";
-import { z } from "zod";
+import { CoreMessage, generateText, tool } from 'ai';
+import { z } from 'zod';
 import {
   // Exa search tools
   executeExaSearch,
   executeExaCrawlContent,
   executeExaFindSimilar,
-} from "./exa/exa-utils.js";
+} from './exa/exa-utils.js';
 import {
   // Linear tools
   executeGetIssueContext,
@@ -28,7 +28,7 @@ import {
   executeCreateAgentActivity,
   executeSetIssueParent,
   executeAddIssueToProject,
-} from "./linear-tools.js";
+} from './linear-tools.js';
 import {
   // Slack tools
   executeAddSlackReaction,
@@ -48,7 +48,7 @@ import {
   executeSendRichDirectMessage,
   executeCreateFormattedSlackMessage,
   executeRespondToSlackInteraction,
-} from "./slack-tools.js";
+} from './slack-tools.js';
 import {
   // GitHub tools
   executeGetFileContent,
@@ -65,17 +65,17 @@ import {
   executeGetIssueComments as executeGithubGetIssueComments,
   // Embedded repository tools
   executeSearchEmbeddedCode,
-} from "./tool-executors.js";
-import { LinearClient } from "@linear/sdk";
-import { memoryManager } from "./memory/memory-manager.js";
-import { goalEvaluator } from "./goal-evaluator.js";
-import { openai } from "@ai-sdk/openai";
+} from './tool-executors.js';
+import { LinearClient } from '@linear/sdk';
+import { memoryManager } from './memory/memory-manager.js';
+import { goalEvaluator } from './goal-evaluator.js';
+import { openai } from '@ai-sdk/openai';
 import {
   linearAgentSessionManager,
   agentActivity,
-} from "./linear/linear-agent-session-manager.js";
-import { Redis } from "@upstash/redis";
-import { env } from "./env.js";
+} from './linear/linear-agent-session-manager.js';
+import { Redis } from '@upstash/redis';
+import { env } from './env.js';
 
 // Initialize Redis client for tracking active responses and message queuing
 const redis = new Redis({
@@ -86,7 +86,7 @@ const redis = new Redis({
 // Interface for queued messages during agent processing
 export interface QueuedMessage {
   timestamp: number;
-  type: "created" | "prompted" | "stop";
+  type: 'created' | 'prompted' | 'stop';
   content: string;
   sessionId: string;
   issueId: string;
@@ -99,8 +99,8 @@ interface ActiveSession {
   sessionId: string;
   contextId: string;
   startTime: number;
-  platform: "slack" | "linear" | "github" | "general";
-  status: "initializing" | "planning" | "gathering" | "acting" | "completing";
+  platform: 'slack' | 'linear' | 'github' | 'general';
+  status: 'initializing' | 'planning' | 'gathering' | 'acting' | 'completing';
   currentTool?: string;
   toolsUsed: string[];
   actionsPerformed: string[];
@@ -120,7 +120,7 @@ function extractIssueIdFromContext(
 ): string {
   // Try to extract issue ID from message content
   for (const message of messages) {
-    if (typeof message.content === "string") {
+    if (typeof message.content === 'string') {
       // Look for Linear issue patterns like OTR-123, ABC-456, etc.
       const issueMatch = message.content.match(/\b([A-Z]{2,}-\d+)\b/);
       if (issueMatch) {
@@ -138,12 +138,12 @@ function extractIssueIdFromContext(
   // If no issue ID found in messages, use Slack context as fallback
   if (slackContext?.channelId) {
     return `slack:${slackContext.channelId}${
-      slackContext.threadTs ? `:${slackContext.threadTs}` : ""
+      slackContext.threadTs ? `:${slackContext.threadTs}` : ''
     }`;
   }
 
   // Default fallback
-  return "general";
+  return 'general';
 }
 
 // Helper function to generate unique session ID
@@ -161,9 +161,9 @@ async function storeActiveSession(session: ActiveSession): Promise<void> {
     );
 
     // Also add to a set for easy listing
-    await redis.sadd("active_sessions_list", session.sessionId);
+    await redis.sadd('active_sessions_list', session.sessionId);
   } catch (error) {
-    console.error("Error storing active session:", error);
+    console.error('Error storing active session:', error);
   }
 }
 
@@ -177,7 +177,7 @@ async function updateActiveSession(
     if (sessionData) {
       // Handle both string and object responses from Redis
       let session: ActiveSession;
-      if (typeof sessionData === "string") {
+      if (typeof sessionData === 'string') {
         session = JSON.parse(sessionData) as ActiveSession;
       } else {
         session = sessionData as ActiveSession;
@@ -191,14 +191,14 @@ async function updateActiveSession(
       );
     }
   } catch (error) {
-    console.error("Error updating active session:", error);
+    console.error('Error updating active session:', error);
   }
 }
 
 // Helper function to store completed session
 async function storeCompletedSession(
   sessionId: string,
-  finalStatus: "completed" | "cancelled" | "error",
+  finalStatus: 'completed' | 'cancelled' | 'error',
   error?: string
 ): Promise<void> {
   try {
@@ -207,7 +207,7 @@ async function storeCompletedSession(
     if (sessionData) {
       // Handle both string and object responses from Redis
       let session: ActiveSession;
-      if (typeof sessionData === "string") {
+      if (typeof sessionData === 'string') {
         session = JSON.parse(sessionData) as ActiveSession;
       } else {
         session = sessionData as ActiveSession;
@@ -229,17 +229,17 @@ async function storeCompletedSession(
       );
 
       // Add to completed sessions list (keep all, but we'll paginate on fetch)
-      await redis.lpush("completed_sessions_list", sessionId);
+      await redis.lpush('completed_sessions_list', sessionId);
     }
   } catch (error) {
-    console.error("Error storing completed session:", error);
+    console.error('Error storing completed session:', error);
   }
 }
 
 // Helper function to remove active session
 async function removeActiveSession(
   sessionId: string,
-  finalStatus: "completed" | "cancelled" | "error" = "completed",
+  finalStatus: 'completed' | 'cancelled' | 'error' = 'completed',
   error?: string
 ): Promise<void> {
   try {
@@ -248,9 +248,9 @@ async function removeActiveSession(
 
     // Remove from active sessions
     await redis.del(`active_session:${sessionId}`);
-    await redis.srem("active_sessions_list", sessionId);
+    await redis.srem('active_sessions_list', sessionId);
   } catch (error) {
-    console.error("Error removing active session:", error);
+    console.error('Error removing active session:', error);
   }
 }
 
@@ -269,7 +269,7 @@ export const generateResponse = async (
   let attemptNumber = 1;
   let toolsUsed: string[] = [];
   let actionsPerformed: string[] = [];
-  let finalResponse = "";
+  let finalResponse = '';
   let endedExplicitly = false;
 
   // Use provided agent session ID or generate unique session ID for tracking
@@ -277,11 +277,11 @@ export const generateResponse = async (
   const contextId = extractIssueIdFromContext(messages, slackContext);
 
   // Determine platform
-  let platform: "slack" | "linear" | "github" | "general" = "general";
+  let platform: 'slack' | 'linear' | 'github' | 'general' = 'general';
   if (slackContext) {
-    platform = "slack";
-  } else if (contextId && !contextId.startsWith("slack:")) {
-    platform = "linear";
+    platform = 'slack';
+  } else if (contextId && !contextId.startsWith('slack:')) {
+    platform = 'linear';
   }
 
   // Create initial active session
@@ -290,7 +290,7 @@ export const generateResponse = async (
     contextId,
     startTime: Date.now(),
     platform,
-    status: "initializing",
+    status: 'initializing',
     toolsUsed: [],
     actionsPerformed: [],
     messages: [...messages],
@@ -305,7 +305,7 @@ export const generateResponse = async (
   await storeActiveSession(activeSession);
 
   // Log session initialization
-  if (contextId && !contextId.startsWith("slack:") && linearClient) {
+  if (contextId && !contextId.startsWith('slack:') && linearClient) {
     await agentActivity.thought(
       contextId,
       `Session initialized for ${contextId}`
@@ -314,7 +314,7 @@ export const generateResponse = async (
 
   // Set up abort handling
   const cleanup = async (
-    status: "completed" | "cancelled" | "error" = "completed",
+    status: 'completed' | 'cancelled' | 'error' = 'completed',
     error?: string
   ) => {
     await removeActiveSession(sessionId, status, error);
@@ -327,15 +327,15 @@ export const generateResponse = async (
           `Completed Linear agent session: ${agentSessionId} with status: ${status}`
         );
       } catch (error) {
-        console.error("Error completing Linear agent session:", error);
+        console.error('Error completing Linear agent session:', error);
       }
     }
   };
 
   // Check if already aborted
   if (abortSignal?.aborted) {
-    await cleanup("cancelled", "Request was aborted before processing started");
-    throw new Error("Request was aborted before processing started");
+    await cleanup('cancelled', 'Request was aborted before processing started');
+    throw new Error('Request was aborted before processing started');
   }
 
   // Store original messages for evaluation
@@ -347,19 +347,19 @@ export const generateResponse = async (
   }
 
   // Extract issue ID and log initial activity if working on a Linear issue
-  const isLinearIssue = contextId && !contextId.startsWith("slack:");
+  const isLinearIssue = contextId && !contextId.startsWith('slack:');
 
   try {
     while (attemptNumber <= MAX_RETRY_ATTEMPTS) {
       // Check for abort before each attempt
       if (abortSignal?.aborted) {
-        await cleanup("cancelled", "Request was aborted during processing");
-        throw new Error("Request was aborted during processing");
+        await cleanup('cancelled', 'Request was aborted during processing');
+        throw new Error('Request was aborted during processing');
       }
 
       try {
         await updateActiveSession(sessionId, {
-          status: "planning",
+          status: 'planning',
         });
 
         updateStatus?.(`is thinking...`);
@@ -399,13 +399,13 @@ export const generateResponse = async (
 
         // Check for abort before evaluation
         if (abortSignal?.aborted) {
-          await cleanup("cancelled", "Request was aborted during evaluation");
-          throw new Error("Request was aborted during processing");
+          await cleanup('cancelled', 'Request was aborted during evaluation');
+          throw new Error('Request was aborted during processing');
         }
 
         // Evaluate goal completion
         await updateActiveSession(sessionId, {
-          status: "completing",
+          status: 'completing',
         });
 
         updateStatus?.(
@@ -450,7 +450,7 @@ export const generateResponse = async (
 
         // Add the retry feedback as a new user message
         messages.push({
-          role: "user",
+          role: 'user',
           content: retryFeedback,
         });
 
@@ -461,7 +461,7 @@ export const generateResponse = async (
         // If this is the last attempt, throw the error
         if (attemptNumber >= MAX_RETRY_ATTEMPTS) {
           await cleanup(
-            "error",
+            'error',
             error instanceof Error ? error.message : String(error)
           );
           throw error;
@@ -488,13 +488,13 @@ export async function getActiveSessionForIssue(
   issueId: string
 ): Promise<string | null> {
   try {
-    const activeSessionsKeys = await redis.smembers("active_sessions_list");
+    const activeSessionsKeys = await redis.smembers('active_sessions_list');
 
     for (const sessionId of activeSessionsKeys) {
       const sessionData = await redis.get(`active_session:${sessionId}`);
       if (sessionData) {
         let session: ActiveSession;
-        if (typeof sessionData === "string") {
+        if (typeof sessionData === 'string') {
           session = JSON.parse(sessionData) as ActiveSession;
         } else {
           session = sessionData as ActiveSession;
@@ -503,7 +503,7 @@ export async function getActiveSessionForIssue(
         // Check if this session is for the same issue and still active
         if (
           session.metadata?.issueId === issueId &&
-          ["initializing", "planning", "gathering", "acting"].includes(
+          ['initializing', 'planning', 'gathering', 'acting'].includes(
             session.status
           )
         ) {
@@ -514,7 +514,7 @@ export async function getActiveSessionForIssue(
 
     return null;
   } catch (error) {
-    console.error("Error checking for active session:", error);
+    console.error('Error checking for active session:', error);
     return null;
   }
 }
@@ -533,7 +533,7 @@ export async function queueMessageForSession(
 
     console.log(`Queued message for session ${sessionId}`);
   } catch (error) {
-    console.error("Error queuing message:", error);
+    console.error('Error queuing message:', error);
   }
 }
 
@@ -553,7 +553,7 @@ export async function getQueuedMessages(
 
       // Parse and return messages (newest first)
       return messages.reverse().map((msg) => {
-        if (typeof msg === "string") {
+        if (typeof msg === 'string') {
           return JSON.parse(msg) as QueuedMessage;
         }
         return msg as QueuedMessage;
@@ -562,7 +562,7 @@ export async function getQueuedMessages(
 
     return [];
   } catch (error) {
-    console.error("Error getting queued messages:", error);
+    console.error('Error getting queued messages:', error);
     return [];
   }
 }
@@ -587,9 +587,9 @@ export interface RepoDefinition {
 async function getRepositoryContext(): Promise<string> {
   try {
     // Get all repository definition IDs
-    const repoIds = await redis.smembers("repo_definitions");
+    const repoIds = await redis.smembers('repo_definitions');
     if (!repoIds || repoIds.length === 0) {
-      return "";
+      return '';
     }
 
     const activeRepos: RepoDefinition[] = [];
@@ -600,7 +600,7 @@ async function getRepositoryContext(): Promise<string> {
         const repoData = await redis.get(`repo_definition:${repoId}`);
         if (repoData) {
           const parsedRepo =
-            typeof repoData === "string"
+            typeof repoData === 'string'
               ? JSON.parse(repoData)
               : (repoData as RepoDefinition);
 
@@ -616,7 +616,7 @@ async function getRepositoryContext(): Promise<string> {
     }
 
     if (activeRepos.length === 0) {
-      return "";
+      return '';
     }
 
     // Sort by name for consistent ordering
@@ -640,7 +640,7 @@ async function getRepositoryContext(): Promise<string> {
       }
 
       if (repo.tags && repo.tags.length > 0) {
-        context += `- **Tags**: ${repo.tags.join(", ")}\n`;
+        context += `- **Tags**: ${repo.tags.join(', ')}\n`;
       }
 
       context += `- **GitHub**: ${repo.githubUrl}\n\n`;
@@ -654,8 +654,8 @@ async function getRepositoryContext(): Promise<string> {
 
     return context;
   } catch (error) {
-    console.error("Error fetching repository context:", error);
-    return "";
+    console.error('Error fetching repository context:', error);
+    return '';
   }
 }
 
@@ -687,7 +687,7 @@ const generateResponseInternal = async (
 
   // Add execution strategy tracking
   const executionStrategy = {
-    phase: "planning" as "planning" | "gathering" | "acting" | "completing",
+    phase: 'planning' as 'planning' | 'gathering' | 'acting' | 'completing',
     toolUsageCounts: new Map<string, number>(),
     searchOperations: 0,
     readOperations: 0,
@@ -706,13 +706,13 @@ const generateResponseInternal = async (
 
     return new Promise((resolve, reject) => {
       if (abort?.aborted) {
-        updateStatus?.("aborted sleep");
-        return reject(new Error("Sleep aborted"));
+        updateStatus?.('aborted sleep');
+        return reject(new Error('Sleep aborted'));
       }
 
       if (boundedSeconds === 0) {
-        updateStatus?.("skipped sleep (0s)");
-        return resolve("Slept for 0 seconds");
+        updateStatus?.('skipped sleep (0s)');
+        return resolve('Slept for 0 seconds');
       }
 
       let remainingSeconds = boundedSeconds;
@@ -721,9 +721,9 @@ const generateResponseInternal = async (
       const onAbort = () => {
         clearTimeout(timeoutId);
         clearInterval(intervalId);
-        if (abort) abort.removeEventListener("abort", onAbort);
-        updateStatus?.("sleep aborted");
-        reject(new Error("Sleep aborted"));
+        if (abort) abort.removeEventListener('abort', onAbort);
+        updateStatus?.('sleep aborted');
+        reject(new Error('Sleep aborted'));
       };
 
       const intervalId: ReturnType<typeof setInterval> = setInterval(() => {
@@ -734,19 +734,19 @@ const generateResponseInternal = async (
       }, 1000);
 
       const timeoutId: ReturnType<typeof setTimeout> = setTimeout(() => {
-        if (abort) abort.removeEventListener("abort", onAbort);
+        if (abort) abort.removeEventListener('abort', onAbort);
         clearInterval(intervalId);
-        updateStatus?.("completed sleep");
+        updateStatus?.('completed sleep');
         resolve(`Slept for ${boundedSeconds} seconds`);
       }, boundedSeconds * 1000);
 
-      if (abort) abort.addEventListener("abort", onAbort, { once: true });
+      if (abort) abort.addEventListener('abort', onAbort, { once: true });
     });
   };
 
   // Extract context ID for memory operations
   const contextId = extractIssueIdFromContext(messages, slackContext);
-  const isLinearIssue = contextId && !contextId.startsWith("slack:");
+  const isLinearIssue = contextId && !contextId.startsWith('slack:');
 
   // Initialize Linear agent session manager if client is available
   if (linearClient) {
@@ -757,37 +757,37 @@ const generateResponseInternal = async (
   try {
     const lastMessage = messages[messages.length - 1];
     const messageContent =
-      typeof lastMessage?.content === "string"
+      typeof lastMessage?.content === 'string'
         ? lastMessage.content
         : Array.isArray(lastMessage?.content)
         ? lastMessage.content
-            .map((part) => ("text" in part ? part.text : JSON.stringify(part)))
-            .join(" ")
-        : "No content";
+            .map((part) => ('text' in part ? part.text : JSON.stringify(part)))
+            .join(' ')
+        : 'No content';
 
-    await memoryManager.storeMemory(contextId, "conversation", {
-      role: "user",
+    await memoryManager.storeMemory(contextId, 'conversation', {
+      role: 'user',
       content: messageContent,
       timestamp: Date.now(),
-      platform: slackContext ? "slack" : "linear",
+      platform: slackContext ? 'slack' : 'linear',
       metadata: slackContext || {},
     });
   } catch (error) {
-    console.error("Error storing user message in memory:", error);
+    console.error('Error storing user message in memory:', error);
   }
 
   // Retrieve memory context with smart relevance filtering
-  let memoryContext = "";
+  let memoryContext = '';
   try {
     const lastMessage = messages[messages.length - 1];
     const currentMessageContent =
-      typeof lastMessage?.content === "string"
+      typeof lastMessage?.content === 'string'
         ? lastMessage.content
         : Array.isArray(lastMessage?.content)
         ? lastMessage.content
-            .map((part) => ("text" in part ? part.text : ""))
-            .join(" ")
-        : "";
+            .map((part) => ('text' in part ? part.text : ''))
+            .join(' ')
+        : '';
 
     const previousConversations = await memoryManager.getPreviousConversations(
       contextId,
@@ -797,7 +797,7 @@ const generateResponseInternal = async (
 
     memoryContext = previousConversations + issueHistory;
   } catch (error) {
-    console.error("Error retrieving memory context:", error);
+    console.error('Error retrieving memory context:', error);
   }
 
   // Fetch repository context for system prompt
@@ -812,19 +812,20 @@ Core identity and tone
 
 Operating context
 - Date: ${new Date().toISOString()}
-- Session: ${sessionId || "unknown"}
+- Session: ${sessionId || 'unknown'}
 - Slack: ${
     slackContext
       ? `${slackContext.channelId}${
-          slackContext.threadTs ? ` (thread ${slackContext.threadTs})` : ""
+          slackContext.threadTs ? ` (thread ${slackContext.threadTs})` : ''
         }`
-      : "n/a"
+      : 'n/a'
   }
 
 General rules
 - Use tools to read truth; don’t guess or fabricate.
 - Prefer replying in the same Slack thread when a thread exists.
 - Keep responses short by default; expand only when it adds real value.
+- You must respond quickly to the user. Do your work fast and get back to the user frequently if there are multiple tasks to do.
 
 Slack
 - Simple reply: short text. For structured output, use rich Block Kit tools.
@@ -879,8 +880,8 @@ Output style
   - Utility: sleep
 
 Context snapshot
-${repositoryContext ? `${repositoryContext}` : ""}${
-    memoryContext ? `\nRecent memory:\n${memoryContext}` : ""
+${repositoryContext ? `${repositoryContext}` : ''}${
+    memoryContext ? `\nRecent memory:\n${memoryContext}` : ''
   }`;
 
   // Create a wrapper for tool execution that tracks usage and enforces limits
@@ -890,7 +891,7 @@ ${repositoryContext ? `${repositoryContext}` : ""}${
   ) => {
     return async (...args: any[]) => {
       let success = false;
-      let response = "";
+      let response = '';
       let detailedOutput: any = null;
 
       // Update current tool in session
@@ -903,7 +904,7 @@ ${repositoryContext ? `${repositoryContext}` : ""}${
 
       // Check for abort signal before executing tool
       if (abortSignal?.aborted) {
-        throw new Error("Request was aborted during tool execution");
+        throw new Error('Request was aborted during tool execution');
       }
 
       // Check for cancellation from external source (Redis)
@@ -914,16 +915,16 @@ ${repositoryContext ? `${repositoryContext}` : ""}${
             // Store as cancelled session before throwing
             await storeCompletedSession(
               sessionId,
-              "cancelled",
-              "Request was cancelled by user"
+              'cancelled',
+              'Request was cancelled by user'
             );
             await redis.del(`active_session:${sessionId}`);
-            await redis.srem("active_sessions_list", sessionId);
-            throw new Error("Request was cancelled by user");
+            await redis.srem('active_sessions_list', sessionId);
+            throw new Error('Request was cancelled by user');
           }
         } catch (redisError) {
           // Don't fail on Redis errors, but log them
-          console.warn("Error checking cancellation status:", redisError);
+          console.warn('Error checking cancellation status:', redisError);
         }
       }
 
@@ -977,7 +978,7 @@ ${repositoryContext ? `${repositoryContext}` : ""}${
 
             // Check for stop commands first
             const stopMessage = queuedMessages.find(
-              (msg) => msg.type === "stop"
+              (msg) => msg.type === 'stop'
             );
             if (stopMessage) {
               console.log(
@@ -988,21 +989,21 @@ ${repositoryContext ? `${repositoryContext}` : ""}${
               if (isLinearIssue && linearClient) {
                 await agentActivity.response(
                   contextId,
-                  "🛑 **Otron is immediately stopping all operations** as requested. Processing has been terminated."
+                  '🛑 **Otron is immediately stopping all operations** as requested. Processing has been terminated.'
                 );
               }
 
               // Do not auto-post to Slack here; rely on explicit Slack tools in the plan
 
               // Abort the current processing
-              throw new Error("STOP_COMMAND_RECEIVED");
+              throw new Error('STOP_COMMAND_RECEIVED');
             }
 
             // Add non-stop queued messages to the conversation context
             for (const queuedMsg of queuedMessages) {
-              if (queuedMsg.type !== "stop") {
+              if (queuedMsg.type !== 'stop') {
                 messages.push({
-                  role: "user",
+                  role: 'user',
                   content: `[INTERJECTION ${new Date(
                     queuedMsg.timestamp
                   ).toISOString()}] ${queuedMsg.content}`,
@@ -1019,7 +1020,7 @@ ${repositoryContext ? `${repositoryContext}` : ""}${
           }
         } catch (messageError) {
           // Don't fail on message polling errors, but log them
-          console.warn("Error checking for queued messages:", messageError);
+          console.warn('Error checking for queued messages:', messageError);
         }
       }
 
@@ -1029,27 +1030,27 @@ ${repositoryContext ? `${repositoryContext}` : ""}${
 
       // Categorize tool types and enforce limits
       const searchTools = [
-        "searchEmbeddedCode",
-        "searchLinearIssues",
-        "searchSlackMessages",
+        'searchEmbeddedCode',
+        'searchLinearIssues',
+        'searchSlackMessages',
       ];
-      const readTools = ["getFileContent", "getIssueContext"];
+      const readTools = ['getFileContent', 'getIssueContext'];
       const actionTools = [
-        "createBranch",
-        "createPullRequest",
-        "updateIssueStatus",
-        "createLinearComment",
-        "setIssueParent",
-        "addIssueToProject",
-        "createAgentActivity",
-        "sendSlackMessage",
-        "sendChannelMessage",
-        "sendDirectMessage",
+        'createBranch',
+        'createPullRequest',
+        'updateIssueStatus',
+        'createLinearComment',
+        'setIssueParent',
+        'addIssueToProject',
+        'createAgentActivity',
+        'sendSlackMessage',
+        'sendChannelMessage',
+        'sendDirectMessage',
       ];
       const analysisTools = [
-        "analyzeFileStructure",
-        "getRepositoryStructure",
-        "getDirectoryStructure",
+        'analyzeFileStructure',
+        'getRepositoryStructure',
+        'getDirectoryStructure',
       ];
 
       // Track operations without limits
@@ -1077,7 +1078,7 @@ ${repositoryContext ? `${repositoryContext}` : ""}${
           }
         }
         executionStrategy.hasStartedActions = true;
-        executionStrategy.phase = "acting";
+        executionStrategy.phase = 'acting';
       }
 
       // Update execution phase based on tool usage (without limits)
@@ -1086,9 +1087,9 @@ ${repositoryContext ? `${repositoryContext}` : ""}${
           executionStrategy.readOperations +
           executionStrategy.analysisOperations >=
           3 &&
-        executionStrategy.phase === "planning"
+        executionStrategy.phase === 'planning'
       ) {
-        executionStrategy.phase = "gathering";
+        executionStrategy.phase = 'gathering';
         // Log phase transition thinking
         if (isLinearIssue && linearClient) {
           await agentActivity.thought(
@@ -1107,57 +1108,57 @@ ${repositoryContext ? `${repositoryContext}` : ""}${
         toolName: string,
         params: any
       ): string => {
-        if (!params) return "No parameters";
+        if (!params) return 'No parameters';
 
         switch (toolName) {
-          case "searchEmbeddedCode":
+          case 'searchEmbeddedCode':
             return `Query: "${params.query}", Repository: ${params.repository}${
-              params.fileFilter ? `, Filter: ${params.fileFilter}` : ""
+              params.fileFilter ? `, Filter: ${params.fileFilter}` : ''
             }`;
-          case "searchLinearIssues":
+          case 'searchLinearIssues':
             return `Query: "${params.query}", Limit: ${params.limit || 10}`;
-          case "getFileContent":
-          case "readFileWithContext":
+          case 'getFileContent':
+          case 'readFileWithContext':
             return `Path: ${params.path}, Repository: ${params.repository}${
               params.startLine
-                ? `, Lines: ${params.startLine}-${params.maxLines || "end"}`
-                : ""
+                ? `, Lines: ${params.startLine}-${params.maxLines || 'end'}`
+                : ''
             }`;
-          case "exaSearch":
+          case 'exaSearch':
             return `Mode: ${params.mode}, Query: "${params.query}"${
-              params.numResults ? `, Results: ${params.numResults}` : ""
+              params.numResults ? `, Results: ${params.numResults}` : ''
             }`;
-          case "createBranch":
+          case 'createBranch':
             return `Branch: ${params.branch}, Repository: ${params.repository}`;
-          case "createPullRequest":
+          case 'createPullRequest':
             return `Title: "${params.title}", ${params.head} → ${params.base}`;
-          case "editCode":
-          case "addCode":
-          case "removeCode":
+          case 'editCode':
+          case 'addCode':
+          case 'removeCode':
             return `Path: ${params.path}, Repository: ${params.repository}, Branch: ${params.branch}`;
-          case "createAgentActivity":
+          case 'createAgentActivity':
             return `Session: ${params.sessionId}, Type: ${params.activityType}${
               params.body
                 ? `, Body: "${params.body?.substring(0, 1000)}${
-                    params.body?.length > 1000 ? "..." : ""
+                    params.body?.length > 1000 ? '...' : ''
                   }"`
-                : ""
-            }${params.action ? `, Action: "${params.action}"` : ""}`;
-          case "setIssueParent":
+                : ''
+            }${params.action ? `, Action: "${params.action}"` : ''}`;
+          case 'setIssueParent':
             return `Child: ${params.issueId}, Parent: ${params.parentIssueId}`;
-          case "addIssueToProject":
+          case 'addIssueToProject':
             return `Issue: ${params.issueId}, Project: ${params.projectId}`;
           default:
             return Object.keys(params)
               .map(
                 (key) =>
                   `${key}: ${
-                    typeof params[key] === "string"
+                    typeof params[key] === 'string'
                       ? params[key].substring(0, 50)
                       : params[key]
                   }`
               )
-              .join(", ");
+              .join(', ');
         }
       };
 
@@ -1171,13 +1172,13 @@ ${repositoryContext ? `${repositoryContext}` : ""}${
       try {
         const result = await originalExecutor(...args);
         success = true;
-        response = typeof result === "string" ? result : JSON.stringify(result);
+        response = typeof result === 'string' ? result : JSON.stringify(result);
         const reasoning = result.reasoning;
 
         // Extract detailed output for specific tools
-        if (typeof result === "object" && result !== null) {
+        if (typeof result === 'object' && result !== null) {
           detailedOutput = result;
-        } else if (typeof result === "string") {
+        } else if (typeof result === 'string') {
           // Try to extract structured data from string responses
           detailedOutput = extractDetailedOutput(
             toolName,
@@ -1195,58 +1196,58 @@ ${repositoryContext ? `${repositoryContext}` : ""}${
             input: any
           ): string => {
             switch (toolName) {
-              case "searchEmbeddedCode":
+              case 'searchEmbeddedCode':
                 // Try to extract result count and key findings
                 const resultText =
-                  typeof result === "string" ? result : JSON.stringify(result);
+                  typeof result === 'string' ? result : JSON.stringify(result);
                 const resultMatch = resultText.match(/found (\d+) results?/i);
-                const resultCount = resultMatch ? resultMatch[1] : "unknown";
+                const resultCount = resultMatch ? resultMatch[1] : 'unknown';
                 const preview = resultText.substring(0, 150);
                 return `Found ${resultCount} results. Preview: ${preview}${
-                  resultText.length > 150 ? "..." : ""
+                  resultText.length > 150 ? '...' : ''
                 }`;
 
-              case "searchLinearIssues":
+              case 'searchLinearIssues':
                 const linearResults =
-                  typeof result === "string" ? result : JSON.stringify(result);
+                  typeof result === 'string' ? result : JSON.stringify(result);
                 const linearPreview = linearResults.substring(0, 150);
                 return `Search completed. Results: ${linearPreview}${
-                  linearResults.length > 150 ? "..." : ""
+                  linearResults.length > 150 ? '...' : ''
                 }`;
 
-              case "getFileContent":
-              case "readFileWithContext":
+              case 'getFileContent':
+              case 'readFileWithContext':
                 const fileResult =
-                  typeof result === "string" ? result : JSON.stringify(result);
-                const lines = fileResult.split("\n").length;
+                  typeof result === 'string' ? result : JSON.stringify(result);
+                const lines = fileResult.split('\n').length;
                 const chars = fileResult.length;
                 return `Read ${lines} lines (${chars} characters) from ${input?.path}`;
 
-              case "exaSearch":
+              case 'exaSearch':
                 const exaResult =
-                  typeof result === "string" ? result : JSON.stringify(result);
+                  typeof result === 'string' ? result : JSON.stringify(result);
                 const exaPreview = exaResult.substring(0, 200);
                 return `${
                   input?.mode
                 } search completed. Results: ${exaPreview}${
-                  exaResult.length > 200 ? "..." : ""
+                  exaResult.length > 200 ? '...' : ''
                 }`;
 
-              case "createBranch":
+              case 'createBranch':
                 return `Created branch ${input?.branch} in ${input?.repository}`;
 
-              case "createPullRequest":
+              case 'createPullRequest':
                 const prResult = detailedOutput || {};
                 return `Created PR #${
-                  prResult.pullRequestNumber || "unknown"
+                  prResult.pullRequestNumber || 'unknown'
                 }: ${input?.title}`;
 
               default:
                 const defaultResult =
-                  typeof result === "string" ? result : JSON.stringify(result);
+                  typeof result === 'string' ? result : JSON.stringify(result);
                 return (
                   defaultResult.substring(0, 150) +
-                  (defaultResult.length > 150 ? "..." : "")
+                  (defaultResult.length > 150 ? '...' : '')
                 );
             }
           };
@@ -1282,7 +1283,7 @@ ${repositoryContext ? `${repositoryContext}` : ""}${
         );
 
         // Check if this is an endActions call
-        if (toolName === "endActions") {
+        if (toolName === 'endActions') {
           executionTracker.endedExplicitly = true;
         }
 
@@ -1306,13 +1307,13 @@ ${repositoryContext ? `${repositoryContext}` : ""}${
           input: any
         ): string => {
           switch (toolName) {
-            case "searchEmbeddedCode":
+            case 'searchEmbeddedCode':
               return `Search failed for "${input?.query}" in ${input?.repository}: ${error}`;
-            case "editCode":
+            case 'editCode':
               return `Code edit failed in ${input?.file_path}: ${error}`;
-            case "createPullRequest":
+            case 'createPullRequest':
               return `PR creation failed (${input?.head} → ${input?.base}): ${error}`;
-            case "createBranch":
+            case 'createBranch':
               return `Branch creation failed for ${input?.branch}: ${error}`;
             default:
               return `${toolName} failed: ${error}`;
@@ -1325,21 +1326,21 @@ ${repositoryContext ? `${repositoryContext}` : ""}${
           input: any
         ): string => {
           switch (toolName) {
-            case "editCode":
-              if (error.includes("similar pattern detected at line")) {
-                return "Read the current file content around the mentioned line number and use the exact current code as old_string.";
+            case 'editCode':
+              if (error.includes('similar pattern detected at line')) {
+                return 'Read the current file content around the mentioned line number and use the exact current code as old_string.';
               }
-              if (error.includes("Old code not found")) {
-                return "Read the current file content first to get the exact code that exists, then retry with that exact code.";
+              if (error.includes('Old code not found')) {
+                return 'Read the current file content first to get the exact code that exists, then retry with that exact code.';
               }
-              return "Read the current file content to understand the current state before making edits.";
-            case "createPullRequest":
-              if (error.includes("No commits found")) {
-                return "Make sure code changes were successfully committed before creating a PR. Check if editCode actually worked.";
+              return 'Read the current file content to understand the current state before making edits.';
+            case 'createPullRequest':
+              if (error.includes('No commits found')) {
+                return 'Make sure code changes were successfully committed before creating a PR. Check if editCode actually worked.';
               }
-              return "Verify that commits exist on the branch before creating a pull request.";
+              return 'Verify that commits exist on the branch before creating a pull request.';
             default:
-              return "Review the error message and try an alternative approach.";
+              return 'Review the error message and try an alternative approach.';
           }
         };
 
@@ -1384,24 +1385,24 @@ ${repositoryContext ? `${repositoryContext}` : ""}${
       try {
         // The reasoning field contains the model's thought process
         const reasoningText =
-          typeof reasoning === "string"
+          typeof reasoning === 'string'
             ? reasoning
             : Array.isArray(reasoning)
-            ? (reasoning as any[]).join("\n")
+            ? (reasoning as any[]).join('\n')
             : JSON.stringify(reasoning);
 
         if (reasoningText && reasoningText.trim()) {
           agentActivity.thought(contextId, `Thought: ${reasoningText}`);
         }
       } catch (error) {
-        console.error("Error logging LLM reasoning to Linear:", error);
+        console.error('Error logging LLM reasoning to Linear:', error);
       }
     } else if (reasoning) {
-      console.log("Reasoning:", reasoning);
+      console.log('Reasoning:', reasoning);
     }
 
     switch (toolName) {
-      case "createPullRequest":
+      case 'createPullRequest':
         // Extract PR number and URL from response
         const prMatch =
           response.match(/PR #(\d+)/i) ||
@@ -1413,27 +1414,27 @@ ${repositoryContext ? `${repositoryContext}` : ""}${
         if (urlMatch) output.url = urlMatch[0];
         break;
 
-      case "createBranch":
+      case 'createBranch':
         // Branch creation is usually just a success message
         output.branchName = input?.branch;
         output.repository = input?.repository;
         break;
 
-      case "createIssue":
+      case 'createIssue':
         // Try to extract issue ID from Linear responses
         const issueMatch = response.match(/([A-Z]{2,}-\d+)/);
         if (issueMatch) output.issueId = issueMatch[1];
         break;
 
-      case "searchEmbeddedCode":
+      case 'searchEmbeddedCode':
         // Extract search result count
         const resultMatch = response.match(/found (\d+) results?/i);
         if (resultMatch) output.resultCount = parseInt(resultMatch[1]);
         break;
 
-      case "sendSlackMessage":
-      case "sendChannelMessage":
-      case "sendDirectMessage":
+      case 'sendSlackMessage':
+      case 'sendChannelMessage':
+      case 'sendDirectMessage':
         // Extract message timestamp if available
         const tsMatch = response.match(/timestamp[:\s]+([0-9.]+)/i);
         if (tsMatch) output.messageTimestamp = tsMatch[1];
@@ -1455,11 +1456,11 @@ ${repositoryContext ? `${repositoryContext}` : ""}${
   };
 
   const { text, reasoning } = await generateText({
-    model: openai.responses("gpt-5"),
+    model: openai.responses('gpt-5'),
     providerOptions: {
       openai: {
-        reasoningEffort: "low",
-        reasoningSummary: "auto", // Enable reasoning summaries to capture LLM thought process
+        reasoningEffort: 'low',
+        reasoningSummary: 'auto', // Enable reasoning summaries to capture LLM thought process
       },
     },
     system: systemPrompt,
@@ -1470,26 +1471,26 @@ ${repositoryContext ? `${repositoryContext}` : ""}${
       // Enhanced Exa Web Search, Answer, and Research Tools
       exaSearch: tool({
         description:
-          "Comprehensive web search, answer generation, and research using Exa AI. Supports three modes: search (find web content), answer (get AI-powered answers with sources), and research (comprehensive analysis). This is the primary tool for web-based information gathering.",
+          'Comprehensive web search, answer generation, and research using Exa AI. Supports three modes: search (find web content), answer (get AI-powered answers with sources), and research (comprehensive analysis). This is the primary tool for web-based information gathering.',
         parameters: z.object({
-          query: z.string().describe("The search query or question to ask"),
+          query: z.string().describe('The search query or question to ask'),
           mode: z
-            .enum(["search", "answer", "research"])
+            .enum(['search', 'answer', 'research'])
             .describe(
               'Mode: "search" for finding web content, "answer" for AI-powered answers with sources, "research" for comprehensive analysis with multiple sources'
             ),
           numResults: z
             .number()
             .describe(
-              "Number of results to return (default: 5 for search/answer, 10 for research). Use 5 if not specified."
+              'Number of results to return (default: 5 for search/answer, 10 for research). Use 5 if not specified.'
             ),
           includeContent: z
             .boolean()
             .describe(
-              "Whether to include full content/text from sources (default: true for research, false for search). Use true for research mode."
+              'Whether to include full content/text from sources (default: true for research, false for search). Use true for research mode.'
             ),
           livecrawl: z
-            .enum(["always", "never", "when-necessary"])
+            .enum(['always', 'never', 'when-necessary'])
             .describe(
               'Live crawling behavior: "always" for fresh content, "never" for cached only, "when-necessary" for smart crawling (default). Use "when-necessary" if not specified.'
             ),
@@ -1511,201 +1512,201 @@ ${repositoryContext ? `${repositoryContext}` : ""}${
           category: z
             .string()
             .describe(
-              "Optional content category filter. Leave empty for all categories."
+              'Optional content category filter. Leave empty for all categories.'
             ),
           useAutoprompt: z
             .boolean()
             .describe(
-              "Whether to use Exa autoprompt for improved query understanding (default: true). Use true if not specified."
+              'Whether to use Exa autoprompt for improved query understanding (default: true). Use true if not specified.'
             ),
         }),
-        execute: createMemoryAwareToolExecutor("exaSearch", (params: any) =>
+        execute: createMemoryAwareToolExecutor('exaSearch', (params: any) =>
           executeExaSearch(params, updateStatus)
         ),
       }),
 
       exaCrawlContent: tool({
         description:
-          "Crawl and extract content from specific URLs using Exa. Get full text, HTML, links, and metadata from web pages.",
+          'Crawl and extract content from specific URLs using Exa. Get full text, HTML, links, and metadata from web pages.',
         parameters: z.object({
           urls: z
             .array(z.string())
-            .describe("Array of URLs to crawl and extract content from"),
+            .describe('Array of URLs to crawl and extract content from'),
           includeLinks: z
             .boolean()
             .describe(
-              "Whether to extract links from the pages (default: false). Use false if not specified."
+              'Whether to extract links from the pages (default: false). Use false if not specified.'
             ),
           includeImages: z
             .boolean()
             .describe(
-              "Whether to extract image information (default: false). Use false if not specified."
+              'Whether to extract image information (default: false). Use false if not specified.'
             ),
           includeMetadata: z
             .boolean()
             .describe(
-              "Whether to extract page metadata (default: true). Use true if not specified."
+              'Whether to extract page metadata (default: true). Use true if not specified.'
             ),
           textOnly: z
             .boolean()
             .describe(
-              "Whether to return only text content without HTML (default: false). Use false if not specified."
+              'Whether to return only text content without HTML (default: false). Use false if not specified.'
             ),
         }),
         execute: createMemoryAwareToolExecutor(
-          "exaCrawlContent",
+          'exaCrawlContent',
           (params: any) => executeExaCrawlContent(params, updateStatus)
         ),
       }),
 
       exaFindSimilar: tool({
         description:
-          "Find content similar to a given URL using Exa semantic search. Great for discovering related articles, papers, or content.",
+          'Find content similar to a given URL using Exa semantic search. Great for discovering related articles, papers, or content.',
         parameters: z.object({
-          url: z.string().describe("The URL to find similar content for"),
+          url: z.string().describe('The URL to find similar content for'),
           numResults: z
             .number()
             .describe(
-              "Number of similar results to return (default: 5). Use 5 if not specified."
+              'Number of similar results to return (default: 5). Use 5 if not specified.'
             ),
           includeContent: z
             .boolean()
             .describe(
-              "Whether to include full content from similar pages (default: false). Use false if not specified."
+              'Whether to include full content from similar pages (default: false). Use false if not specified.'
             ),
           livecrawl: z
-            .enum(["always", "never", "when-necessary"])
+            .enum(['always', 'never', 'when-necessary'])
             .describe(
               'Live crawling behavior for similar content (default: "when-necessary"). Use "when-necessary" if not specified.'
             ),
           excludeSourceDomain: z
             .boolean()
             .describe(
-              "Whether to exclude results from the same domain as the source URL (default: true). Use true if not specified."
+              'Whether to exclude results from the same domain as the source URL (default: true). Use true if not specified.'
             ),
         }),
         execute: createMemoryAwareToolExecutor(
-          "exaFindSimilar",
+          'exaFindSimilar',
           (params: any) => executeExaFindSimilar(params, updateStatus)
         ),
       }),
 
       // Slack tools (rich variants only)
       addSlackReaction: tool({
-        description: "Add a reaction emoji to a Slack message",
+        description: 'Add a reaction emoji to a Slack message',
         parameters: z.object({
-          channel: z.string().describe("The channel ID"),
-          timestamp: z.string().describe("The message timestamp"),
+          channel: z.string().describe('The channel ID'),
+          timestamp: z.string().describe('The message timestamp'),
           emoji: z
             .string()
             .describe('The emoji name (without colons, e.g., "thumbsup")'),
         }),
         execute: createMemoryAwareToolExecutor(
-          "addSlackReaction",
+          'addSlackReaction',
           (params: any) => executeAddSlackReaction(params, updateStatus)
         ),
       }),
       removeSlackReaction: tool({
-        description: "Remove a reaction emoji from a Slack message",
+        description: 'Remove a reaction emoji from a Slack message',
         parameters: z.object({
-          channel: z.string().describe("The channel ID"),
-          timestamp: z.string().describe("The message timestamp"),
+          channel: z.string().describe('The channel ID'),
+          timestamp: z.string().describe('The message timestamp'),
           emoji: z
             .string()
             .describe('The emoji name (without colons, e.g., "thumbsup")'),
         }),
         execute: createMemoryAwareToolExecutor(
-          "removeSlackReaction",
+          'removeSlackReaction',
           (params: any) => executeRemoveSlackReaction(params, updateStatus)
         ),
       }),
       getSlackChannelHistory: tool({
-        description: "Get recent message history from a Slack channel",
+        description: 'Get recent message history from a Slack channel',
         parameters: z.object({
-          channel: z.string().describe("The channel ID"),
+          channel: z.string().describe('The channel ID'),
           limit: z
             .number()
             .describe(
-              "Number of messages to retrieve (default: 10). Use 10 if not specified."
+              'Number of messages to retrieve (default: 10). Use 10 if not specified.'
             ),
         }),
         execute: createMemoryAwareToolExecutor(
-          "getSlackChannelHistory",
+          'getSlackChannelHistory',
           (params: any) => executeGetSlackChannelHistory(params, updateStatus)
         ),
       }),
       getSlackThread: tool({
-        description: "Get all messages in a Slack thread",
+        description: 'Get all messages in a Slack thread',
         parameters: z.object({
-          channel: z.string().describe("The channel ID"),
-          threadTs: z.string().describe("The thread timestamp"),
+          channel: z.string().describe('The channel ID'),
+          threadTs: z.string().describe('The thread timestamp'),
         }),
         execute: createMemoryAwareToolExecutor(
-          "getSlackThread",
+          'getSlackThread',
           (params: any) => executeGetSlackThread(params, updateStatus)
         ),
       }),
       updateSlackMessage: tool({
-        description: "Update an existing Slack message",
+        description: 'Update an existing Slack message',
         parameters: z.object({
-          channel: z.string().describe("The channel ID"),
-          timestamp: z.string().describe("The message timestamp"),
-          text: z.string().describe("The new message text"),
+          channel: z.string().describe('The channel ID'),
+          timestamp: z.string().describe('The message timestamp'),
+          text: z.string().describe('The new message text'),
         }),
         execute: createMemoryAwareToolExecutor(
-          "updateSlackMessage",
+          'updateSlackMessage',
           (params: any) => executeUpdateSlackMessage(params, updateStatus)
         ),
       }),
       deleteSlackMessage: tool({
-        description: "Delete a Slack message",
+        description: 'Delete a Slack message',
         parameters: z.object({
-          channel: z.string().describe("The channel ID"),
-          timestamp: z.string().describe("The message timestamp"),
+          channel: z.string().describe('The channel ID'),
+          timestamp: z.string().describe('The message timestamp'),
         }),
         execute: createMemoryAwareToolExecutor(
-          "deleteSlackMessage",
+          'deleteSlackMessage',
           (params: any) => executeDeleteSlackMessage(params, updateStatus)
         ),
       }),
       getSlackUserInfo: tool({
-        description: "Get information about a Slack user",
+        description: 'Get information about a Slack user',
         parameters: z.object({
           userIdOrEmail: z
             .string()
-            .describe("User ID or email address to look up"),
+            .describe('User ID or email address to look up'),
         }),
         execute: createMemoryAwareToolExecutor(
-          "getSlackUserInfo",
+          'getSlackUserInfo',
           (params: any) => executeGetSlackUserInfo(params, updateStatus)
         ),
       }),
       getSlackChannelInfo: tool({
-        description: "Get information about a Slack channel",
+        description: 'Get information about a Slack channel',
         parameters: z.object({
           channelNameOrId: z
             .string()
-            .describe("Channel name (with or without #) or channel ID"),
+            .describe('Channel name (with or without #) or channel ID'),
         }),
         execute: createMemoryAwareToolExecutor(
-          "getSlackChannelInfo",
+          'getSlackChannelInfo',
           (params: any) => executeGetSlackChannelInfo(params, updateStatus)
         ),
       }),
       joinSlackChannel: tool({
-        description: "Join a Slack channel",
+        description: 'Join a Slack channel',
         parameters: z.object({
-          channelId: z.string().describe("The channel ID to join"),
+          channelId: z.string().describe('The channel ID to join'),
         }),
         execute: createMemoryAwareToolExecutor(
-          "joinSlackChannel",
+          'joinSlackChannel',
           (params: any) => executeJoinSlackChannel(params, updateStatus)
         ),
       }),
       setSlackStatus: tool({
-        description: "Set the bot user status in Slack",
+        description: 'Set the bot user status in Slack',
         parameters: z.object({
-          statusText: z.string().describe("The status text to set"),
+          statusText: z.string().describe('The status text to set'),
           statusEmoji: z
             .string()
             .describe(
@@ -1714,50 +1715,50 @@ ${repositoryContext ? `${repositoryContext}` : ""}${
           statusExpiration: z
             .number()
             .describe(
-              "Optional expiration timestamp (Unix timestamp). Use 0 if no expiration."
+              'Optional expiration timestamp (Unix timestamp). Use 0 if no expiration.'
             ),
         }),
         execute: createMemoryAwareToolExecutor(
-          "setSlackStatus",
+          'setSlackStatus',
           (params: any) => executeSetSlackStatus(params, updateStatus)
         ),
       }),
       pinSlackMessage: tool({
-        description: "Pin a message to a Slack channel",
+        description: 'Pin a message to a Slack channel',
         parameters: z.object({
-          channel: z.string().describe("The channel ID"),
-          timestamp: z.string().describe("The message timestamp"),
+          channel: z.string().describe('The channel ID'),
+          timestamp: z.string().describe('The message timestamp'),
         }),
         execute: createMemoryAwareToolExecutor(
-          "pinSlackMessage",
+          'pinSlackMessage',
           (params: any) => executePinSlackMessage(params, updateStatus)
         ),
       }),
       unpinSlackMessage: tool({
-        description: "Unpin a message from a Slack channel",
+        description: 'Unpin a message from a Slack channel',
         parameters: z.object({
-          channel: z.string().describe("The channel ID"),
-          timestamp: z.string().describe("The message timestamp"),
+          channel: z.string().describe('The channel ID'),
+          timestamp: z.string().describe('The message timestamp'),
         }),
         execute: createMemoryAwareToolExecutor(
-          "unpinSlackMessage",
+          'unpinSlackMessage',
           (params: any) => executeUnpinSlackMessage(params, updateStatus)
         ),
       }),
       sendRichSlackMessage: tool({
         description:
-          "Send a rich formatted message using Slack Block Kit to a specific channel. Use this for complex layouts, buttons, images, and structured content.",
+          'Send a rich formatted message using Slack Block Kit to a specific channel. Use this for complex layouts, buttons, images, and structured content.',
         parameters: z.object({
-          channel: z.string().describe("The channel ID to send the message to"),
+          channel: z.string().describe('The channel ID to send the message to'),
           blocks: z
             .array(
               z.union([
                 // Section block with text
                 z
                   .object({
-                    type: z.literal("section"),
+                    type: z.literal('section'),
                     text: z.object({
-                      type: z.enum(["mrkdwn", "plain_text"]),
+                      type: z.enum(['mrkdwn', 'plain_text']),
                       text: z.string(),
                     }),
                   })
@@ -1765,10 +1766,10 @@ ${repositoryContext ? `${repositoryContext}` : ""}${
                 // Section block with fields
                 z
                   .object({
-                    type: z.literal("section"),
+                    type: z.literal('section'),
                     fields: z.array(
                       z.object({
-                        type: z.enum(["mrkdwn", "plain_text"]),
+                        type: z.enum(['mrkdwn', 'plain_text']),
                         text: z.string(),
                       })
                     ),
@@ -1777,9 +1778,9 @@ ${repositoryContext ? `${repositoryContext}` : ""}${
                 // Header block
                 z
                   .object({
-                    type: z.literal("header"),
+                    type: z.literal('header'),
                     text: z.object({
-                      type: z.literal("plain_text"),
+                      type: z.literal('plain_text'),
                       text: z.string(),
                     }),
                   })
@@ -1787,16 +1788,16 @@ ${repositoryContext ? `${repositoryContext}` : ""}${
                 // Divider block
                 z
                   .object({
-                    type: z.literal("divider"),
+                    type: z.literal('divider'),
                   })
                   .strict(),
                 // Context block
                 z
                   .object({
-                    type: z.literal("context"),
+                    type: z.literal('context'),
                     elements: z.array(
                       z.object({
-                        type: z.enum(["mrkdwn", "plain_text"]),
+                        type: z.enum(['mrkdwn', 'plain_text']),
                         text: z.string(),
                       })
                     ),
@@ -1805,16 +1806,16 @@ ${repositoryContext ? `${repositoryContext}` : ""}${
                 // Actions block
                 z
                   .object({
-                    type: z.literal("actions"),
+                    type: z.literal('actions'),
                     elements: z.array(
                       z.object({
-                        type: z.literal("button"),
+                        type: z.literal('button'),
                         text: z.object({
-                          type: z.literal("plain_text"),
+                          type: z.literal('plain_text'),
                           text: z.string(),
                         }),
                         action_id: z.string(),
-                        style: z.enum(["primary", "danger"]),
+                        style: z.enum(['primary', 'danger']),
                       })
                     ),
                   })
@@ -1822,7 +1823,7 @@ ${repositoryContext ? `${repositoryContext}` : ""}${
                 // Image block
                 z
                   .object({
-                    type: z.literal("image"),
+                    type: z.literal('image'),
                     image_url: z.string(),
                     alt_text: z.string(),
                   })
@@ -1830,40 +1831,40 @@ ${repositoryContext ? `${repositoryContext}` : ""}${
               ])
             )
             .describe(
-              "Array of Slack Block Kit blocks for rich formatting. Supported types: section, header, divider, context, actions, image"
+              'Array of Slack Block Kit blocks for rich formatting. Supported types: section, header, divider, context, actions, image'
             ),
           text: z
             .string()
             .describe(
-              "Fallback text for notifications (leave empty string if not needed)"
+              'Fallback text for notifications (leave empty string if not needed)'
             ),
           threadTs: z
             .string()
             .describe(
-              "Thread timestamp to reply in a thread (leave empty string if not replying to a thread)"
+              'Thread timestamp to reply in a thread (leave empty string if not replying to a thread)'
             ),
         }),
         execute: createMemoryAwareToolExecutor(
-          "sendRichSlackMessage",
+          'sendRichSlackMessage',
           (params: any) => executeSendRichSlackMessage(params, updateStatus)
         ),
       }),
       sendRichChannelMessage: tool({
         description:
-          "Send a rich formatted message using Slack Block Kit to a channel by name or ID. Use this for complex layouts, buttons, images, and structured content.",
+          'Send a rich formatted message using Slack Block Kit to a channel by name or ID. Use this for complex layouts, buttons, images, and structured content.',
         parameters: z.object({
           channelNameOrId: z
             .string()
-            .describe("Channel name (with or without #) or channel ID"),
+            .describe('Channel name (with or without #) or channel ID'),
           blocks: z
             .array(
               z.union([
                 // Section block with text
                 z
                   .object({
-                    type: z.literal("section"),
+                    type: z.literal('section'),
                     text: z.object({
-                      type: z.enum(["mrkdwn", "plain_text"]),
+                      type: z.enum(['mrkdwn', 'plain_text']),
                       text: z.string(),
                     }),
                   })
@@ -1871,10 +1872,10 @@ ${repositoryContext ? `${repositoryContext}` : ""}${
                 // Section block with fields
                 z
                   .object({
-                    type: z.literal("section"),
+                    type: z.literal('section'),
                     fields: z.array(
                       z.object({
-                        type: z.enum(["mrkdwn", "plain_text"]),
+                        type: z.enum(['mrkdwn', 'plain_text']),
                         text: z.string(),
                       })
                     ),
@@ -1883,9 +1884,9 @@ ${repositoryContext ? `${repositoryContext}` : ""}${
                 // Header block
                 z
                   .object({
-                    type: z.literal("header"),
+                    type: z.literal('header'),
                     text: z.object({
-                      type: z.literal("plain_text"),
+                      type: z.literal('plain_text'),
                       text: z.string(),
                     }),
                   })
@@ -1893,16 +1894,16 @@ ${repositoryContext ? `${repositoryContext}` : ""}${
                 // Divider block
                 z
                   .object({
-                    type: z.literal("divider"),
+                    type: z.literal('divider'),
                   })
                   .strict(),
                 // Context block
                 z
                   .object({
-                    type: z.literal("context"),
+                    type: z.literal('context'),
                     elements: z.array(
                       z.object({
-                        type: z.enum(["mrkdwn", "plain_text"]),
+                        type: z.enum(['mrkdwn', 'plain_text']),
                         text: z.string(),
                       })
                     ),
@@ -1911,16 +1912,16 @@ ${repositoryContext ? `${repositoryContext}` : ""}${
                 // Actions block
                 z
                   .object({
-                    type: z.literal("actions"),
+                    type: z.literal('actions'),
                     elements: z.array(
                       z.object({
-                        type: z.literal("button"),
+                        type: z.literal('button'),
                         text: z.object({
-                          type: z.literal("plain_text"),
+                          type: z.literal('plain_text'),
                           text: z.string(),
                         }),
                         action_id: z.string(),
-                        style: z.enum(["primary", "danger"]),
+                        style: z.enum(['primary', 'danger']),
                       })
                     ),
                   })
@@ -1928,7 +1929,7 @@ ${repositoryContext ? `${repositoryContext}` : ""}${
                 // Image block
                 z
                   .object({
-                    type: z.literal("image"),
+                    type: z.literal('image'),
                     image_url: z.string(),
                     alt_text: z.string(),
                   })
@@ -1936,40 +1937,40 @@ ${repositoryContext ? `${repositoryContext}` : ""}${
               ])
             )
             .describe(
-              "Array of Slack Block Kit blocks for rich formatting. Supported types: section, header, divider, context, actions, image"
+              'Array of Slack Block Kit blocks for rich formatting. Supported types: section, header, divider, context, actions, image'
             ),
           text: z
             .string()
             .describe(
-              "Fallback text for notifications (leave empty string if not needed)"
+              'Fallback text for notifications (leave empty string if not needed)'
             ),
           threadTs: z
             .string()
             .describe(
-              "Thread timestamp to reply in a thread (leave empty string if not replying to a thread)"
+              'Thread timestamp to reply in a thread (leave empty string if not replying to a thread)'
             ),
         }),
         execute: createMemoryAwareToolExecutor(
-          "sendRichChannelMessage",
+          'sendRichChannelMessage',
           (params: any) => executeSendRichChannelMessage(params, updateStatus)
         ),
       }),
       sendRichDirectMessage: tool({
         description:
-          "Send a rich formatted direct message using Slack Block Kit to a user. Use this for complex layouts, buttons, images, and structured content.",
+          'Send a rich formatted direct message using Slack Block Kit to a user. Use this for complex layouts, buttons, images, and structured content.',
         parameters: z.object({
           userIdOrEmail: z
             .string()
-            .describe("User ID or email address of the recipient"),
+            .describe('User ID or email address of the recipient'),
           blocks: z
             .array(
               z.union([
                 // Section block with text
                 z
                   .object({
-                    type: z.literal("section"),
+                    type: z.literal('section'),
                     text: z.object({
-                      type: z.enum(["mrkdwn", "plain_text"]),
+                      type: z.enum(['mrkdwn', 'plain_text']),
                       text: z.string(),
                     }),
                   })
@@ -1977,10 +1978,10 @@ ${repositoryContext ? `${repositoryContext}` : ""}${
                 // Section block with fields
                 z
                   .object({
-                    type: z.literal("section"),
+                    type: z.literal('section'),
                     fields: z.array(
                       z.object({
-                        type: z.enum(["mrkdwn", "plain_text"]),
+                        type: z.enum(['mrkdwn', 'plain_text']),
                         text: z.string(),
                       })
                     ),
@@ -1989,9 +1990,9 @@ ${repositoryContext ? `${repositoryContext}` : ""}${
                 // Header block
                 z
                   .object({
-                    type: z.literal("header"),
+                    type: z.literal('header'),
                     text: z.object({
-                      type: z.literal("plain_text"),
+                      type: z.literal('plain_text'),
                       text: z.string(),
                     }),
                   })
@@ -1999,16 +2000,16 @@ ${repositoryContext ? `${repositoryContext}` : ""}${
                 // Divider block
                 z
                   .object({
-                    type: z.literal("divider"),
+                    type: z.literal('divider'),
                   })
                   .strict(),
                 // Context block
                 z
                   .object({
-                    type: z.literal("context"),
+                    type: z.literal('context'),
                     elements: z.array(
                       z.object({
-                        type: z.enum(["mrkdwn", "plain_text"]),
+                        type: z.enum(['mrkdwn', 'plain_text']),
                         text: z.string(),
                       })
                     ),
@@ -2017,16 +2018,16 @@ ${repositoryContext ? `${repositoryContext}` : ""}${
                 // Actions block
                 z
                   .object({
-                    type: z.literal("actions"),
+                    type: z.literal('actions'),
                     elements: z.array(
                       z.object({
-                        type: z.literal("button"),
+                        type: z.literal('button'),
                         text: z.object({
-                          type: z.literal("plain_text"),
+                          type: z.literal('plain_text'),
                           text: z.string(),
                         }),
                         action_id: z.string(),
-                        style: z.enum(["primary", "danger"]),
+                        style: z.enum(['primary', 'danger']),
                       })
                     ),
                   })
@@ -2034,7 +2035,7 @@ ${repositoryContext ? `${repositoryContext}` : ""}${
                 // Image block
                 z
                   .object({
-                    type: z.literal("image"),
+                    type: z.literal('image'),
                     image_url: z.string(),
                     alt_text: z.string(),
                   })
@@ -2042,66 +2043,66 @@ ${repositoryContext ? `${repositoryContext}` : ""}${
               ])
             )
             .describe(
-              "Array of Slack Block Kit blocks for rich formatting. Supported types: section, header, divider, context, actions, image"
+              'Array of Slack Block Kit blocks for rich formatting. Supported types: section, header, divider, context, actions, image'
             ),
           text: z
             .string()
             .describe(
-              "Fallback text for notifications (leave empty string if not needed)"
+              'Fallback text for notifications (leave empty string if not needed)'
             ),
         }),
         execute: createMemoryAwareToolExecutor(
-          "sendRichDirectMessage",
+          'sendRichDirectMessage',
           (params: any) => executeSendRichDirectMessage(params, updateStatus)
         ),
       }),
       createFormattedSlackMessage: tool({
         description:
-          "Create a beautifully formatted Slack message with structured layout using Block Kit. Perfect for status updates, issue summaries, reports, and rich content.",
+          'Create a beautifully formatted Slack message with structured layout using Block Kit. Perfect for status updates, issue summaries, reports, and rich content.',
         parameters: z.object({
           channel: z
             .string()
-            .describe("The channel ID or name to send the message to"),
+            .describe('The channel ID or name to send the message to'),
           title: z
             .string()
             .describe(
-              "Header title for the message (leave empty string if not needed)"
+              'Header title for the message (leave empty string if not needed)'
             ),
-          content: z.string().describe("Main content text (supports markdown)"),
+          content: z.string().describe('Main content text (supports markdown)'),
           fields: z
             .array(
               z.object({
-                label: z.string().describe("Field label"),
-                value: z.string().describe("Field value"),
+                label: z.string().describe('Field label'),
+                value: z.string().describe('Field value'),
               })
             )
             .describe(
-              "Array of key-value fields to display (use empty array if not needed)"
+              'Array of key-value fields to display (use empty array if not needed)'
             ),
           context: z
             .string()
             .describe(
-              "Context text like timestamps or metadata (leave empty string if not needed)"
+              'Context text like timestamps or metadata (leave empty string if not needed)'
             ),
           actions: z
             .array(
               z.object({
-                text: z.string().describe("Button text"),
-                action_id: z.string().describe("Unique action identifier"),
-                style: z.enum(["primary", "danger"]),
+                text: z.string().describe('Button text'),
+                action_id: z.string().describe('Unique action identifier'),
+                style: z.enum(['primary', 'danger']),
               })
             )
             .describe(
-              "Array of action buttons (use empty array if not needed)"
+              'Array of action buttons (use empty array if not needed)'
             ),
           thread_ts: z
             .string()
             .describe(
-              "Thread timestamp to reply in a thread (leave empty string if not replying to a thread)"
+              'Thread timestamp to reply in a thread (leave empty string if not replying to a thread)'
             ),
         }),
         execute: createMemoryAwareToolExecutor(
-          "createFormattedSlackMessage",
+          'createFormattedSlackMessage',
           (params: any) =>
             executeCreateFormattedSlackMessage(params, updateStatus)
         ),
@@ -2109,7 +2110,7 @@ ${repositoryContext ? `${repositoryContext}` : ""}${
       // Linear tools
       getIssueContext: tool({
         description:
-          "Get the context for a Linear issue including comments, child issues, and parent issue",
+          'Get the context for a Linear issue including comments, child issues, and parent issue',
         parameters: z.object({
           issueId: z
             .string()
@@ -2117,11 +2118,11 @@ ${repositoryContext ? `${repositoryContext}` : ""}${
           commentId: z
             .string()
             .describe(
-              "Optional comment ID to highlight. Leave empty if not highlighting a specific comment."
+              'Optional comment ID to highlight. Leave empty if not highlighting a specific comment.'
             ),
         }),
         execute: createMemoryAwareToolExecutor(
-          "getIssueContext",
+          'getIssueContext',
           (params: any) =>
             executeGetIssueContext(
               params as { issueId: string; commentId: string },
@@ -2131,7 +2132,7 @@ ${repositoryContext ? `${repositoryContext}` : ""}${
         ),
       }),
       updateIssueStatus: tool({
-        description: "Update the status of a Linear issue",
+        description: 'Update the status of a Linear issue',
         parameters: z.object({
           issueId: z
             .string()
@@ -2143,7 +2144,7 @@ ${repositoryContext ? `${repositoryContext}` : ""}${
             ),
         }),
         execute: createMemoryAwareToolExecutor(
-          "updateIssueStatus",
+          'updateIssueStatus',
           (params: any) =>
             executeUpdateIssueStatus(
               params as { issueId: string; statusName: string },
@@ -2153,14 +2154,14 @@ ${repositoryContext ? `${repositoryContext}` : ""}${
         ),
       }),
       addLabel: tool({
-        description: "Add a label to a Linear issue",
+        description: 'Add a label to a Linear issue',
         parameters: z.object({
           issueId: z
             .string()
             .describe('The Linear issue ID or identifier (e.g., "OTR-123")'),
-          labelName: z.string().describe("The name of the label to add"),
+          labelName: z.string().describe('The name of the label to add'),
         }),
-        execute: createMemoryAwareToolExecutor("addLabel", (params: any) =>
+        execute: createMemoryAwareToolExecutor('addLabel', (params: any) =>
           executeAddLabel(
             params as { issueId: string; labelName: string },
             updateStatus,
@@ -2169,14 +2170,14 @@ ${repositoryContext ? `${repositoryContext}` : ""}${
         ),
       }),
       removeLabel: tool({
-        description: "Remove a label from a Linear issue",
+        description: 'Remove a label from a Linear issue',
         parameters: z.object({
           issueId: z
             .string()
             .describe('The Linear issue ID or identifier (e.g., "OTR-123")'),
-          labelName: z.string().describe("The name of the label to remove"),
+          labelName: z.string().describe('The name of the label to remove'),
         }),
-        execute: createMemoryAwareToolExecutor("removeLabel", (params: any) =>
+        execute: createMemoryAwareToolExecutor('removeLabel', (params: any) =>
           executeRemoveLabel(
             params as { issueId: string; labelName: string },
             updateStatus,
@@ -2185,16 +2186,16 @@ ${repositoryContext ? `${repositoryContext}` : ""}${
         ),
       }),
       assignIssue: tool({
-        description: "Assign a Linear issue to a team member",
+        description: 'Assign a Linear issue to a team member',
         parameters: z.object({
           issueId: z
             .string()
             .describe('The Linear issue ID or identifier (e.g., "OTR-123")'),
           assigneeEmail: z
             .string()
-            .describe("The email address of the person to assign the issue to"),
+            .describe('The email address of the person to assign the issue to'),
         }),
-        execute: createMemoryAwareToolExecutor("assignIssue", (params: any) =>
+        execute: createMemoryAwareToolExecutor('assignIssue', (params: any) =>
           executeAssignIssue(
             params as { issueId: string; assigneeEmail: string },
             updateStatus,
@@ -2203,27 +2204,27 @@ ${repositoryContext ? `${repositoryContext}` : ""}${
         ),
       }),
       createIssue: tool({
-        description: "Create a new Linear issue",
+        description: 'Create a new Linear issue',
         parameters: z.object({
           teamId: z
             .string()
             .describe(
               'The Linear team ID (UUID), team key (e.g., "OTR"), or team name'
             ),
-          title: z.string().describe("The title of the new issue"),
-          description: z.string().describe("The description of the new issue"),
-          status: z.string().describe("Status name for the new issue."),
+          title: z.string().describe('The title of the new issue'),
+          description: z.string().describe('The description of the new issue'),
+          status: z.string().describe('Status name for the new issue.'),
           priority: z
             .number()
-            .describe("Priority level (1-4, where 1 is highest)."),
+            .describe('Priority level (1-4, where 1 is highest).'),
           parentIssueId: z
             .string()
             .describe(
-              "Parent issue ID to create this as a child issue. Only leave empty if this is not a child issue."
+              'Parent issue ID to create this as a child issue. Only leave empty if this is not a child issue.'
             ),
-          projectId: z.string().describe("Project ID to create this issue in."),
+          projectId: z.string().describe('Project ID to create this issue in.'),
         }),
-        execute: createMemoryAwareToolExecutor("createIssue", (params: any) =>
+        execute: createMemoryAwareToolExecutor('createIssue', (params: any) =>
           executeCreateIssue(
             params as {
               teamId: string;
@@ -2240,16 +2241,16 @@ ${repositoryContext ? `${repositoryContext}` : ""}${
         ),
       }),
       addIssueAttachment: tool({
-        description: "Add a URL attachment to a Linear issue",
+        description: 'Add a URL attachment to a Linear issue',
         parameters: z.object({
           issueId: z
             .string()
             .describe('The Linear issue ID or identifier (e.g., "OTR-123")'),
-          url: z.string().describe("The URL to attach"),
-          title: z.string().describe("The title for the attachment"),
+          url: z.string().describe('The URL to attach'),
+          title: z.string().describe('The title for the attachment'),
         }),
         execute: createMemoryAwareToolExecutor(
-          "addIssueAttachment",
+          'addIssueAttachment',
           (params: any) =>
             executeAddIssueAttachment(
               params as { issueId: string; url: string; title: string },
@@ -2259,17 +2260,17 @@ ${repositoryContext ? `${repositoryContext}` : ""}${
         ),
       }),
       updateIssuePriority: tool({
-        description: "Update the priority of a Linear issue",
+        description: 'Update the priority of a Linear issue',
         parameters: z.object({
           issueId: z
             .string()
             .describe('The Linear issue ID or identifier (e.g., "OTR-123")'),
           priority: z
             .number()
-            .describe("The priority level (1-4, where 1 is highest)"),
+            .describe('The priority level (1-4, where 1 is highest)'),
         }),
         execute: createMemoryAwareToolExecutor(
-          "updateIssuePriority",
+          'updateIssuePriority',
           (params: any) =>
             executeUpdateIssuePriority(
               params as { issueId: string; priority: number },
@@ -2279,15 +2280,15 @@ ${repositoryContext ? `${repositoryContext}` : ""}${
         ),
       }),
       setPointEstimate: tool({
-        description: "Set the point estimate for a Linear issue",
+        description: 'Set the point estimate for a Linear issue',
         parameters: z.object({
           issueId: z
             .string()
             .describe('The Linear issue ID or identifier (e.g., "OTR-123")'),
-          pointEstimate: z.number().describe("The point estimate value"),
+          pointEstimate: z.number().describe('The point estimate value'),
         }),
         execute: createMemoryAwareToolExecutor(
-          "setPointEstimate",
+          'setPointEstimate',
           (params: any) =>
             executeSetPointEstimate(
               params as { issueId: string; pointEstimate: number },
@@ -2299,18 +2300,18 @@ ${repositoryContext ? `${repositoryContext}` : ""}${
       // Linear context gathering tools
       getLinearTeams: tool({
         description:
-          "Get all teams in the Linear workspace with details about members and active issues",
+          'Get all teams in the Linear workspace with details about members and active issues',
         parameters: z.object({}),
-        execute: createMemoryAwareToolExecutor("getLinearTeams", async () => {
+        execute: createMemoryAwareToolExecutor('getLinearTeams', async () => {
           return await executeGetLinearTeams(updateStatus, linearClient);
         }),
       }),
       getLinearProjects: tool({
         description:
-          "Get all projects in the Linear workspace with their IDs, status, progress, and team information",
+          'Get all projects in the Linear workspace with their IDs, status, progress, and team information',
         parameters: z.object({}),
         execute: createMemoryAwareToolExecutor(
-          "getLinearProjects",
+          'getLinearProjects',
           async () => {
             return await executeGetLinearProjects(updateStatus, linearClient);
           }
@@ -2318,10 +2319,10 @@ ${repositoryContext ? `${repositoryContext}` : ""}${
       }),
       getLinearInitiatives: tool({
         description:
-          "Get all initiatives in the Linear workspace with their IDs, associated projects and progress",
+          'Get all initiatives in the Linear workspace with their IDs, associated projects and progress',
         parameters: z.object({}),
         execute: createMemoryAwareToolExecutor(
-          "getLinearInitiatives",
+          'getLinearInitiatives',
           async () => {
             return await executeGetLinearInitiatives(
               updateStatus,
@@ -2332,29 +2333,29 @@ ${repositoryContext ? `${repositoryContext}` : ""}${
       }),
       getLinearUsers: tool({
         description:
-          "Get all users in the Linear workspace with their IDs, details and status",
+          'Get all users in the Linear workspace with their IDs, details and status',
         parameters: z.object({}),
-        execute: createMemoryAwareToolExecutor("getLinearUsers", async () => {
+        execute: createMemoryAwareToolExecutor('getLinearUsers', async () => {
           return await executeGetLinearUsers(updateStatus, linearClient);
         }),
       }),
       getLinearRecentIssues: tool({
         description:
-          "Get recent issues from the Linear workspace, optionally filtered by team",
+          'Get recent issues from the Linear workspace, optionally filtered by team',
         parameters: z.object({
           limit: z
             .number()
             .describe(
-              "Number of issues to retrieve (default: 20). Use 20 if not specified."
+              'Number of issues to retrieve (default: 20). Use 20 if not specified.'
             ),
           teamId: z
             .string()
             .describe(
-              "Optional team ID to filter issues. Leave empty to get issues from all teams."
+              'Optional team ID to filter issues. Leave empty to get issues from all teams.'
             ),
         }),
         execute: createMemoryAwareToolExecutor(
-          "getLinearRecentIssues",
+          'getLinearRecentIssues',
           async (params: any) => {
             return await executeGetLinearRecentIssues(
               params,
@@ -2366,21 +2367,21 @@ ${repositoryContext ? `${repositoryContext}` : ""}${
       }),
       searchLinearIssues: tool({
         description:
-          "Search for Linear issues by text query in title and description",
+          'Search for Linear issues by text query in title and description',
         parameters: z.object({
           query: z
             .string()
             .describe(
-              "The search query to find in issue titles and descriptions"
+              'The search query to find in issue titles and descriptions'
             ),
           limit: z
             .number()
             .describe(
-              "Number of results to return (default: 10). Use 10 if not specified."
+              'Number of results to return (default: 10). Use 10 if not specified.'
             ),
         }),
         execute: createMemoryAwareToolExecutor(
-          "searchLinearIssues",
+          'searchLinearIssues',
           async (params: any) => {
             return await executeSearchLinearIssues(
               params,
@@ -2392,16 +2393,16 @@ ${repositoryContext ? `${repositoryContext}` : ""}${
       }),
       getLinearWorkflowStates: tool({
         description:
-          "Get workflow states (statuses) for teams in the Linear workspace",
+          'Get workflow states (statuses) for teams in the Linear workspace',
         parameters: z.object({
           teamId: z
             .string()
             .describe(
-              "Optional team ID to filter workflow states. Leave empty to get states for all teams."
+              'Optional team ID to filter workflow states. Leave empty to get states for all teams.'
             ),
         }),
         execute: createMemoryAwareToolExecutor(
-          "getLinearWorkflowStates",
+          'getLinearWorkflowStates',
           async (params: any) => {
             return await executeGetLinearWorkflowStates(
               params,
@@ -2412,15 +2413,15 @@ ${repositoryContext ? `${repositoryContext}` : ""}${
         ),
       }),
       createLinearComment: tool({
-        description: "Create a comment on a Linear issue",
+        description: 'Create a comment on a Linear issue',
         parameters: z.object({
           issueId: z
             .string()
             .describe('The Linear issue ID or identifier (e.g., "OTR-123")'),
-          body: z.string().describe("The comment text to add"),
+          body: z.string().describe('The comment text to add'),
         }),
         execute: createMemoryAwareToolExecutor(
-          "createLinearComment",
+          'createLinearComment',
           async (params: any) => {
             return await executeCreateLinearComment(
               params,
@@ -2432,7 +2433,7 @@ ${repositoryContext ? `${repositoryContext}` : ""}${
       }),
       setIssueParent: tool({
         description:
-          "Set an issue as a child of another issue (parent-child relationship)",
+          'Set an issue as a child of another issue (parent-child relationship)',
         parameters: z.object({
           issueId: z
             .string()
@@ -2446,7 +2447,7 @@ ${repositoryContext ? `${repositoryContext}` : ""}${
             ),
         }),
         execute: createMemoryAwareToolExecutor(
-          "setIssueParent",
+          'setIssueParent',
           async (params: any) => {
             return await executeSetIssueParent(
               params,
@@ -2457,7 +2458,7 @@ ${repositoryContext ? `${repositoryContext}` : ""}${
         ),
       }),
       addIssueToProject: tool({
-        description: "Add an issue to a Linear project",
+        description: 'Add an issue to a Linear project',
         parameters: z.object({
           issueId: z
             .string()
@@ -2466,10 +2467,10 @@ ${repositoryContext ? `${repositoryContext}` : ""}${
             ),
           projectId: z
             .string()
-            .describe("The ID of the project to add the issue to"),
+            .describe('The ID of the project to add the issue to'),
         }),
         execute: createMemoryAwareToolExecutor(
-          "addIssueToProject",
+          'addIssueToProject',
           async (params: any) => {
             return await executeAddIssueToProject(
               params,
@@ -2481,35 +2482,35 @@ ${repositoryContext ? `${repositoryContext}` : ""}${
       }),
       createAgentActivity: tool({
         description:
-          "Create a Linear agent activity (thought, action, response, error, or elicitation). Use response for any output to the user in the chat.",
+          'Create a Linear agent activity (thought, action, response, error, or elicitation). Use response for any output to the user in the chat.',
         parameters: z.object({
-          sessionId: z.string().describe("The Linear agent session ID"),
+          sessionId: z.string().describe('The Linear agent session ID'),
           activityType: z
-            .enum(["thought", "action", "response", "error", "elicitation"])
-            .describe("The type of activity to create"),
+            .enum(['thought', 'action', 'response', 'error', 'elicitation'])
+            .describe('The type of activity to create'),
           body: z
             .string()
             .describe(
-              "The body text (required for thought, response, error, elicitation types, use empty string if not needed)"
+              'The body text (required for thought, response, error, elicitation types, use empty string if not needed)'
             ),
           action: z
             .string()
             .describe(
-              "The action description (required for action type, use empty string if not needed)"
+              'The action description (required for action type, use empty string if not needed)'
             ),
           parameter: z
             .string()
             .describe(
-              "The action parameter (required for action type, use empty string if not needed)"
+              'The action parameter (required for action type, use empty string if not needed)'
             ),
           result: z
             .string()
             .describe(
-              "The action result (optional for action type, use empty string if not provided)"
+              'The action result (optional for action type, use empty string if not provided)'
             ),
         }),
         execute: createMemoryAwareToolExecutor(
-          "createAgentActivity",
+          'createAgentActivity',
           async (params: any) => {
             return await executeCreateAgentActivity(
               params,
@@ -2521,202 +2522,202 @@ ${repositoryContext ? `${repositoryContext}` : ""}${
       }),
       // GitHub tools
       getFileContent: tool({
-        description: "Get the content of a file from a GitHub repository",
+        description: 'Get the content of a file from a GitHub repository',
         parameters: z.object({
-          path: z.string().describe("The file path in the repository"),
+          path: z.string().describe('The file path in the repository'),
           repository: z
             .string()
             .describe('The repository in format "owner/repo"'),
           startLine: z
             .number()
             .describe(
-              "Starting line number (default: 1). Use 1 if not specified."
+              'Starting line number (default: 1). Use 1 if not specified.'
             ),
           maxLines: z
             .number()
             .describe(
-              "Maximum number of lines to return (default: 200). Use 200 if not specified."
+              'Maximum number of lines to return (default: 200). Use 200 if not specified.'
             ),
           branch: z
             .string()
             .describe(
-              "Branch name (default: repository default branch). Leave empty to use default branch."
+              'Branch name (default: repository default branch). Leave empty to use default branch.'
             ),
         }),
         execute: createMemoryAwareToolExecutor(
-          "getFileContent",
+          'getFileContent',
           (params: any) => executeGetFileContent(params, updateStatus)
         ),
       }),
 
       createPullRequest: tool({
-        description: "Create a pull request in a GitHub repository",
+        description: 'Create a pull request in a GitHub repository',
         parameters: z.object({
-          title: z.string().describe("The title of the pull request"),
-          body: z.string().describe("The body/description of the pull request"),
-          head: z.string().describe("The branch containing the changes"),
-          base: z.string().describe("The branch to merge into"),
+          title: z.string().describe('The title of the pull request'),
+          body: z.string().describe('The body/description of the pull request'),
+          head: z.string().describe('The branch containing the changes'),
+          base: z.string().describe('The branch to merge into'),
           repository: z
             .string()
             .describe('The repository in format "owner/repo"'),
         }),
         execute: createMemoryAwareToolExecutor(
-          "createPullRequest",
+          'createPullRequest',
           (params: any) => executeCreatePullRequest(params, updateStatus)
         ),
       }),
       getPullRequest: tool({
-        description: "Get details of a pull request including comments",
+        description: 'Get details of a pull request including comments',
         parameters: z.object({
           repository: z
             .string()
             .describe('The repository in format "owner/repo"'),
-          pullNumber: z.number().describe("The pull request number"),
+          pullNumber: z.number().describe('The pull request number'),
         }),
         execute: createMemoryAwareToolExecutor(
-          "getPullRequest",
+          'getPullRequest',
           (params: any) => executeGetPullRequest(params, updateStatus)
         ),
       }),
       addPullRequestComment: tool({
-        description: "Add a comment to a pull request",
+        description: 'Add a comment to a pull request',
         parameters: z.object({
           repository: z
             .string()
             .describe('The repository in format "owner/repo"'),
-          pullNumber: z.number().describe("The pull request number"),
-          body: z.string().describe("The comment text"),
+          pullNumber: z.number().describe('The pull request number'),
+          body: z.string().describe('The comment text'),
         }),
         execute: createMemoryAwareToolExecutor(
-          "addPullRequestComment",
+          'addPullRequestComment',
           (params: any) => executeAddPullRequestComment(params, updateStatus)
         ),
       }),
       getPullRequestFiles: tool({
-        description: "Get the files changed in a pull request",
+        description: 'Get the files changed in a pull request',
         parameters: z.object({
           repository: z
             .string()
             .describe('The repository in format "owner/repo"'),
-          pullNumber: z.number().describe("The pull request number"),
+          pullNumber: z.number().describe('The pull request number'),
         }),
         execute: createMemoryAwareToolExecutor(
-          "getPullRequestFiles",
+          'getPullRequestFiles',
           (params: any) => executeGetPullRequestFiles(params, updateStatus)
         ),
       }),
       githubCreateIssue: tool({
-        description: "Create a GitHub issue",
+        description: 'Create a GitHub issue',
         parameters: z.object({
           repository: z
             .string()
             .describe('The repository in format "owner/repo"'),
-          title: z.string().describe("Issue title"),
-          body: z.string().describe("Issue body/description"),
+          title: z.string().describe('Issue title'),
+          body: z.string().describe('Issue body/description'),
           labels: z
             .array(z.string())
-            .describe("Labels to add (use empty array if none)"),
+            .describe('Labels to add (use empty array if none)'),
           assignees: z
             .array(z.string())
-            .describe("Assignees (use empty array if none)"),
+            .describe('Assignees (use empty array if none)'),
         }),
         execute: createMemoryAwareToolExecutor(
-          "githubCreateIssue",
+          'githubCreateIssue',
           (params: any) => executeGithubCreateIssue(params, updateStatus)
         ),
       }),
       githubGetIssue: tool({
-        description: "Get a GitHub issue by number",
+        description: 'Get a GitHub issue by number',
         parameters: z.object({
           repository: z
             .string()
             .describe('The repository in format "owner/repo"'),
-          issueNumber: z.number().describe("Issue number"),
+          issueNumber: z.number().describe('Issue number'),
         }),
         execute: createMemoryAwareToolExecutor(
-          "githubGetIssue",
+          'githubGetIssue',
           (params: any) => executeGithubGetIssue(params, updateStatus)
         ),
       }),
       githubListIssues: tool({
-        description: "List GitHub issues for a repository with filters",
+        description: 'List GitHub issues for a repository with filters',
         parameters: z.object({
           repository: z
             .string()
             .describe('The repository in format "owner/repo"'),
           state: z
-            .enum(["open", "closed", "all"])
-            .describe("Issue state filter"),
-          labels: z.string().describe("Comma-separated labels filter"),
-          assignee: z.string().describe("Assignee username"),
+            .enum(['open', 'closed', 'all'])
+            .describe('Issue state filter'),
+          labels: z.string().describe('Comma-separated labels filter'),
+          assignee: z.string().describe('Assignee username'),
           perPage: z
             .number()
-            .describe("Results per page (<=100). Use 30 if not specified."),
+            .describe('Results per page (<=100). Use 30 if not specified.'),
         }),
         execute: createMemoryAwareToolExecutor(
-          "githubListIssues",
+          'githubListIssues',
           (params: any) => executeGithubListIssues(params, updateStatus)
         ),
       }),
       githubAddIssueComment: tool({
-        description: "Add a comment to a GitHub issue",
+        description: 'Add a comment to a GitHub issue',
         parameters: z.object({
           repository: z
             .string()
             .describe('The repository in format "owner/repo"'),
-          issueNumber: z.number().describe("Issue number"),
-          body: z.string().describe("Comment body text"),
+          issueNumber: z.number().describe('Issue number'),
+          body: z.string().describe('Comment body text'),
         }),
         execute: createMemoryAwareToolExecutor(
-          "githubAddIssueComment",
+          'githubAddIssueComment',
           (params: any) => executeGithubAddIssueComment(params, updateStatus)
         ),
       }),
       githubUpdateIssue: tool({
         description:
-          "Update a GitHub issue (title, body, state, labels, assignees)",
+          'Update a GitHub issue (title, body, state, labels, assignees)',
         parameters: z.object({
           repository: z
             .string()
             .describe('The repository in format "owner/repo"'),
-          issueNumber: z.number().describe("Issue number"),
+          issueNumber: z.number().describe('Issue number'),
           title: z
             .string()
-            .describe("New title (leave empty string if unchanged)"),
+            .describe('New title (leave empty string if unchanged)'),
           body: z
             .string()
-            .describe("New body (leave empty string if unchanged)"),
-          state: z.enum(["open", "closed"]).describe("New state"),
+            .describe('New body (leave empty string if unchanged)'),
+          state: z.enum(['open', 'closed']).describe('New state'),
           labels: z
             .array(z.string())
-            .describe("Labels to set (use empty array to leave unchanged)"),
+            .describe('Labels to set (use empty array to leave unchanged)'),
           assignees: z
             .array(z.string())
-            .describe("Assignees to set (use empty array to leave unchanged)"),
+            .describe('Assignees to set (use empty array to leave unchanged)'),
         }),
         execute: createMemoryAwareToolExecutor(
-          "githubUpdateIssue",
+          'githubUpdateIssue',
           (params: any) => executeGithubUpdateIssue(params, updateStatus)
         ),
       }),
       githubGetIssueComments: tool({
-        description: "List comments on a GitHub issue",
+        description: 'List comments on a GitHub issue',
         parameters: z.object({
           repository: z
             .string()
             .describe('The repository in format "owner/repo"'),
-          issueNumber: z.number().describe("Issue number"),
+          issueNumber: z.number().describe('Issue number'),
           perPage: z
             .number()
-            .describe("Results per page (<=100). Use 30 if not specified."),
+            .describe('Results per page (<=100). Use 30 if not specified.'),
         }),
         execute: createMemoryAwareToolExecutor(
-          "githubGetIssueComments",
+          'githubGetIssueComments',
           (params: any) => executeGithubGetIssueComments(params, updateStatus)
         ),
       }),
       getDirectoryStructure: tool({
-        description: "Get the directory structure of a GitHub repository",
+        description: 'Get the directory structure of a GitHub repository',
         parameters: z.object({
           repository: z
             .string()
@@ -2724,19 +2725,19 @@ ${repositoryContext ? `${repositoryContext}` : ""}${
           directoryPath: z
             .string()
             .describe(
-              "Optional directory path (default: root directory). Leave empty for root directory."
+              'Optional directory path (default: root directory). Leave empty for root directory.'
             ),
         }),
         execute: createMemoryAwareToolExecutor(
-          "getDirectoryStructure",
+          'getDirectoryStructure',
           (params: any) => executeGetDirectoryStructure(params, updateStatus)
         ),
       }),
       searchEmbeddedCode: tool({
         description:
-          "Search for code in a repository using semantic vector search. This is the primary code search tool and works best for finding relevant code based on meaning and context.",
+          'Search for code in a repository using semantic vector search. This is the primary code search tool and works best for finding relevant code based on meaning and context.',
         parameters: z.object({
-          query: z.string().describe("The search query"),
+          query: z.string().describe('The search query'),
           repository: z
             .string()
             .describe('The repository in format "owner/repo"'),
@@ -2748,25 +2749,25 @@ ${repositoryContext ? `${repositoryContext}` : ""}${
           maxResults: z
             .number()
             .describe(
-              "Maximum number of results (default: 10). Use 10 if not specified."
+              'Maximum number of results (default: 10). Use 10 if not specified.'
             ),
         }),
         execute: createMemoryAwareToolExecutor(
-          "searchEmbeddedCode",
+          'searchEmbeddedCode',
           (params: any) => executeSearchEmbeddedCode(params, updateStatus)
         ),
       }),
       respondToSlackInteraction: tool({
         description:
-          "Respond to a Slack interactive component (button click, etc.) using the response URL. Use this when responding to button clicks or other interactive elements.",
+          'Respond to a Slack interactive component (button click, etc.) using the response URL. Use this when responding to button clicks or other interactive elements.',
         parameters: z.object({
           responseUrl: z
             .string()
-            .describe("The response URL provided by Slack for the interaction"),
+            .describe('The response URL provided by Slack for the interaction'),
           text: z
             .string()
             .describe(
-              "Optional response text (leave empty string if not needed)"
+              'Optional response text (leave empty string if not needed)'
             ),
           blocks: z
             .array(
@@ -2774,9 +2775,9 @@ ${repositoryContext ? `${repositoryContext}` : ""}${
                 // Section block with text
                 z
                   .object({
-                    type: z.literal("section"),
+                    type: z.literal('section'),
                     text: z.object({
-                      type: z.enum(["mrkdwn", "plain_text"]),
+                      type: z.enum(['mrkdwn', 'plain_text']),
                       text: z.string(),
                     }),
                   })
@@ -2784,10 +2785,10 @@ ${repositoryContext ? `${repositoryContext}` : ""}${
                 // Section block with fields
                 z
                   .object({
-                    type: z.literal("section"),
+                    type: z.literal('section'),
                     fields: z.array(
                       z.object({
-                        type: z.enum(["mrkdwn", "plain_text"]),
+                        type: z.enum(['mrkdwn', 'plain_text']),
                         text: z.string(),
                       })
                     ),
@@ -2796,9 +2797,9 @@ ${repositoryContext ? `${repositoryContext}` : ""}${
                 // Header block
                 z
                   .object({
-                    type: z.literal("header"),
+                    type: z.literal('header'),
                     text: z.object({
-                      type: z.literal("plain_text"),
+                      type: z.literal('plain_text'),
                       text: z.string(),
                     }),
                   })
@@ -2806,16 +2807,16 @@ ${repositoryContext ? `${repositoryContext}` : ""}${
                 // Divider block
                 z
                   .object({
-                    type: z.literal("divider"),
+                    type: z.literal('divider'),
                   })
                   .strict(),
                 // Context block
                 z
                   .object({
-                    type: z.literal("context"),
+                    type: z.literal('context'),
                     elements: z.array(
                       z.object({
-                        type: z.enum(["mrkdwn", "plain_text"]),
+                        type: z.enum(['mrkdwn', 'plain_text']),
                         text: z.string(),
                       })
                     ),
@@ -2824,16 +2825,16 @@ ${repositoryContext ? `${repositoryContext}` : ""}${
                 // Actions block
                 z
                   .object({
-                    type: z.literal("actions"),
+                    type: z.literal('actions'),
                     elements: z.array(
                       z.object({
-                        type: z.literal("button"),
+                        type: z.literal('button'),
                         text: z.object({
-                          type: z.literal("plain_text"),
+                          type: z.literal('plain_text'),
                           text: z.string(),
                         }),
                         action_id: z.string(),
-                        style: z.enum(["primary", "danger"]),
+                        style: z.enum(['primary', 'danger']),
                       })
                     ),
                   })
@@ -2841,7 +2842,7 @@ ${repositoryContext ? `${repositoryContext}` : ""}${
                 // Image block
                 z
                   .object({
-                    type: z.literal("image"),
+                    type: z.literal('image'),
                     image_url: z.string(),
                     alt_text: z.string(),
                   })
@@ -2849,24 +2850,24 @@ ${repositoryContext ? `${repositoryContext}` : ""}${
               ])
             )
             .describe(
-              "Optional Block Kit blocks for rich formatting (use empty array if not needed)"
+              'Optional Block Kit blocks for rich formatting (use empty array if not needed)'
             ),
           replaceOriginal: z
             .boolean()
             .describe(
-              "Whether to replace the original message (true) or send a new message (false)"
+              'Whether to replace the original message (true) or send a new message (false)'
             ),
           deleteOriginal: z
             .boolean()
-            .describe("Whether to delete the original message"),
+            .describe('Whether to delete the original message'),
           responseType: z
-            .enum(["ephemeral", "in_channel"])
+            .enum(['ephemeral', 'in_channel'])
             .describe(
               'Whether the response should be ephemeral (only visible to the user) or in_channel (visible to everyone). Use "ephemeral" if not specified.'
             ),
         }),
         execute: createMemoryAwareToolExecutor(
-          "respondToSlackInteraction",
+          'respondToSlackInteraction',
           (params: any) =>
             executeRespondToSlackInteraction(params, updateStatus)
         ),
@@ -2874,16 +2875,16 @@ ${repositoryContext ? `${repositoryContext}` : ""}${
       // Utility tools
       sleep: tool({
         description:
-          "Sleep/wait for a number of seconds (max 60). Pauses the agent processing without blocking the server.",
+          'Sleep/wait for a number of seconds (max 60). Pauses the agent processing without blocking the server.',
         parameters: z.object({
           seconds: z
             .number()
             .int()
             .min(0)
             .max(60)
-            .describe("Number of seconds to sleep (0-60)"),
+            .describe('Number of seconds to sleep (0-60)'),
         }),
-        execute: createMemoryAwareToolExecutor("sleep", async (params: any) => {
+        execute: createMemoryAwareToolExecutor('sleep', async (params: any) => {
           return await sleepWithAbort(params.seconds, abortSignal);
         }),
       }),
@@ -2895,28 +2896,28 @@ ${repositoryContext ? `${repositoryContext}` : ""}${
     try {
       // The reasoning field contains the model's thought process
       const reasoningText =
-        typeof reasoning === "string"
+        typeof reasoning === 'string'
           ? reasoning
           : Array.isArray(reasoning)
-          ? (reasoning as any[]).join("\n")
+          ? (reasoning as any[]).join('\n')
           : JSON.stringify(reasoning);
 
       if (reasoningText && reasoningText.trim()) {
         await agentActivity.thought(contextId, `Thought: ${reasoningText}`);
       }
     } catch (error) {
-      console.error("Error logging LLM reasoning to Linear:", error);
+      console.error('Error logging LLM reasoning to Linear:', error);
     }
   }
 
   // Store the assistant's response in memory
   try {
-    await memoryManager.storeMemory(contextId, "conversation", {
-      role: "assistant",
-      content: [{ type: "text", text }],
+    await memoryManager.storeMemory(contextId, 'conversation', {
+      role: 'assistant',
+      content: [{ type: 'text', text }],
     });
   } catch (error) {
-    console.error("Error storing assistant response in memory:", error);
+    console.error('Error storing assistant response in memory:', error);
   }
 
   return {
