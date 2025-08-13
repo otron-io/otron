@@ -282,4 +282,4 @@ jobs:
           )
           export CI=true
           printf "%s\n" "$PROMPT" > prompt.txt
-          script -q -c "codex --full-auto -m gpt-5 < prompt.txt" /dev/null
+          TERM=dumb NO_COLOR=1 FORCE_COLOR=0 codex --full-auto -m gpt-5 < prompt.txt
