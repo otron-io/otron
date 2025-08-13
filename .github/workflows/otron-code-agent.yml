@@ -213,6 +213,10 @@ jobs:
         run: |-
           npm install -g @openai/codex
 
+      - name: 'Verify Codex CLI'
+        run: |-
+          codex --version || (echo "Codex CLI not found after install" && exit 1)
+
       - name: 'Run Otron Agent (Codex)'
         id: 'run_codex'
         env:
@@ -226,7 +230,9 @@ jobs:
           COMMENTS: '${{ steps.get_comments.outputs.comments }}'
         run: |-
           set -euo pipefail
-          PROMPT=$(cat <<EOF
+          export CI=true
+          TERM=xterm COLUMNS=120 LINES=40 NO_COLOR=1 FORCE_COLOR=0 \
+            script -q -e -c "bash -lc 'codex --full-auto -m gpt-5'" /dev/null <<EOF
           ## Role
 
           You are a helpful AI assistant invoked via a CLI interface in a GitHub workflow. You have access to tools to interact with the repository and respond to the user.
@@ -279,7 +285,3 @@ jobs:
           - If unsure, explain reasoning and ask clarifying questions.
           - Follow project conventions and best practices.
           EOF
-          )
-          export CI=true
-          printf "%s\n" "$PROMPT" > prompt.txt
-          TERM=dumb NO_COLOR=1 FORCE_COLOR=0 codex --full-auto -m gpt-5 < prompt.txt
