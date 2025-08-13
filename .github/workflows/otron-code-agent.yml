@@ -280,4 +280,5 @@ jobs:
           - Follow project conventions and best practices.
           EOF
           )
-          codex --full-auto -m gpt-5 "$PROMPT"
+          export CI=true
+          script -q -c "codex --full-auto -m gpt-5 \"$PROMPT\"" /dev/null
