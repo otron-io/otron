@@ -48,6 +48,15 @@ Otron is an intelligent AI agent that:
 - Provides real-time updates on development progress
 - Creates beautifully formatted status reports
 
+#### 🖼️ Image Generation
+
+- **`generateImage`**: Generate images using DALL-E 3 and upload them directly to Slack.
+  - **`prompt`**: The text prompt for the image.
+  - **`size`**: The size of the image (e.g., "1024x1024").
+  - **`aspect_ratio`**: The aspect ratio of the image (e.g., "16:9").
+  - **`background`**: The background of the image ("transparent" or "white").
+  - **`format`**: The image format ("png", "webp", or "jpeg").
+
 #### 🧠 Intelligent Features
 
 - **Semantic Code Search**: Vector-based code understanding that goes beyond keyword matching

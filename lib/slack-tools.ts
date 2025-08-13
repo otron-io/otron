@@ -1,6 +1,92 @@
 import * as slackUtils from './slack/slack-utils.js';
+import { openai } from '@ai-sdk/openai';
+import { env } from './env.js';
+import { generateText } from 'ai';
+
+// Helper function to slugify a string
+const slugify = (text: string) => {
+  return text
+    .toString()
+    .toLowerCase()
+    .replace(/\s+/g, '-') // Replace spaces with -
+    .replace(/[^\w-]+/g, '') // Remove all non-word chars
+    .replace(/--+/g, '-') // Replace multiple - with single -
+    .replace(/^-+/, '') // Trim - from start of text
+    .replace(/-+$/, '') // Trim - from end of text
+    .substring(0, 16); // Limit to 16 chars
+};
 
 // Slack tool execution functions
+
+export const executeGenerateImage = async (
+  {
+    prompt,
+    size,
+    aspect_ratio,
+    background,
+    format,
+  }: {
+    prompt: string;
+    size?: '1024x1024' | '512x512' | '256x256' | '1792x1024' | '1024x1792';
+    aspect_ratio?: '1:1' | '16:9' | '9:16';
+    background?: 'transparent' | 'white';
+    format?: 'png' | 'webp' | 'jpeg';
+  },
+  updateStatus?: (status: string) => void
+) => {
+  updateStatus?.(`is generating image with prompt: "${prompt}"...`);
+
+  let finalSize = size || '1024x1024';
+  if (!size && aspect_ratio) {
+    if (aspect_ratio === '1:1') finalSize = '1024x1024';
+    if (aspect_ratio === '16:9') finalSize = '1792x1024';
+    if (aspect_ratio === '9:16') finalSize = '1024x1792';
+  }
+
+  try {
+    const { image } = await generateText({
+      model: openai.image('dall-e-3'),
+      prompt,
+      imageGenerationOptions: {
+        size: finalSize,
+        responseFormat: 'b64_json',
+        quality: 'hd',
+        style: 'vivid',
+      },
+    });
+
+    if (!image) {
+      throw new Error('Image generation failed, no image returned.');
+    }
+
+    const buffer = Buffer.from(await image.toImage(), 'base64');
+    const slug = slugify(prompt);
+    const filename = `image-${Date.now()}-${slug}.${format || 'png'}`;
+
+    const uploadedFile = await slackUtils.uploadFile(
+      buffer,
+      filename,
+      `Image generated from prompt: "${prompt}"`
+    );
+
+    if (!uploadedFile.file?.permalink) {
+      throw new Error('File uploaded to Slack, but no permalink was returned.');
+    }
+
+    return {
+      image_url: uploadedFile.file.permalink,
+      file_id: uploadedFile.file.id,
+      permalink: uploadedFile.file.permalink,
+    };
+  } catch (error) {
+    console.error('Error generating image:', error);
+    return {
+      success: false,
+      error: error instanceof Error ? error.message : 'Unknown error',
+      message: 'Failed to generate image',
+    };
+  }
+};
 
 export const executeSendSlackMessage = async (
   {
@@ -370,7 +456,7 @@ export async function executeCreateFormattedSlackMessage(
     content: string;
     fields: Array<{ label: string; value: string }>;
     context: string;
-    actions: Array<{
+    actions: Array<{ 
       text: string;
       action_id: string;
       style: 'primary' | 'danger';
@@ -462,9 +548,7 @@ export async function executeCreateFormattedSlackMessage(
     return `Formatted message sent successfully to ${channel}`;
   } catch (error) {
     console.error('Error sending formatted Slack message:', error);
-    return `Error sending formatted message: ${
-      error instanceof Error ? error.message : 'Unknown error'
-    }`;
+    return `Error sending formatted message: ${error instanceof Error ? error.message : 'Unknown error'}`;
   }
 }
 

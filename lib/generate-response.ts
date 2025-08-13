@@ -48,6 +48,7 @@ import {
   executeSendRichDirectMessage,
   executeCreateFormattedSlackMessage,
   executeRespondToSlackInteraction,
+  executeGenerateImage,
 } from './slack-tools.js';
 import {
   // GitHub tools
@@ -1956,7 +1957,7 @@ ${repositoryContext ? `${repositoryContext}` : ''}${
           (params: any) => executeSendRichChannelMessage(params, updateStatus)
         ),
       }),
-      sendRichDirectMessage: tool({
+            sendRichDirectMessage: tool({
         description:
           'Send a rich formatted direct message using Slack Block Kit to a user. Use this for complex layouts, buttons, images, and structured content.',
         parameters: z.object({
@@ -2055,6 +2056,73 @@ ${repositoryContext ? `${repositoryContext}` : ''}${
         execute: createMemoryAwareToolExecutor(
           'sendRichDirectMessage',
           (params: any) => executeSendRichDirectMessage(params, updateStatus)
+        ),
+      }),
+      generateImage: tool({
+        description: 'Generate an image using DALL-E 3 and upload it to Slack.',
+        parameters: z.object({
+          prompt: z.string().describe('The prompt for the image generation.'),
+          size: z
+            .enum([
+              '1024x1024',
+              '512x512',
+              '256x256',
+              '1792x1024',
+              '1024x1792',
+            ])
+            .optional()
+            .default('1024x1024')
+            .describe('The size of the generated image.'),
+          aspect_ratio: z
+            .enum(['1:1', '16:9', '9:16'])
+            .optional()
+            .describe(
+              'The aspect ratio of the image. Overridden by size if both are provided.'
+            ),
+          background: z
+            .enum(['transparent', 'white'])
+            .optional()
+            .default('white')
+            .describe('The background of the image.'),
+          format: z
+            .enum(['png', 'webp', 'jpeg'])
+            .optional()
+            .default('png')
+            .describe('The format of the image.'),
+        }),
+        execute: createMemoryAwareToolExecutor(
+          'generateImage',
+          (params: any) => executeGenerateImage(params, updateStatus)
+        ),
+      }),
+      createFormattedSlackMessage: tool({
+        description:
+          'Create a formatted Slack message with sections, headers, and dividers. Returns a JSON string of the blocks.',
+        parameters: z.object({
+          messageTitle: z
+            .string()
+            .describe(
+              'Optional title for the message (becomes a header block). Leave empty if no title is needed.'
+            ),
+          sections: z
+            .array(
+              z.object({
+                text: z.string(),
+                type: z.enum(['mrkdwn', 'plain_text']),
+              })
+            )
+            .describe(
+              'Array of section blocks, each with text and type (mrkdwn or plain_text)'
+            ),
+          addDivider: z
+            .boolean()
+            .describe(
+              'Whether to add a divider after the last section. Use false if not specified.'
+            ),
+        }),
+        execute: createMemoryAwareToolExecutor(
+          'createFormattedSlackMessage',
+          (params: any) => executeCreateFormattedSlackMessage(params, updateStatus)
         ),
       }),
       createFormattedSlackMessage: tool({
