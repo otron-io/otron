@@ -281,4 +281,5 @@ jobs:
           EOF
           )
           export CI=true
-          script -q -c "codex --full-auto -m gpt-5 \"$PROMPT\"" /dev/null
+          printf "%s\n" "$PROMPT" > prompt.txt
+          script -q -c "codex --full-auto -m gpt-5 < prompt.txt" /dev/null
