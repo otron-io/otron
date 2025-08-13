@@ -70,7 +70,8 @@ runs:
         # linux builds differentiate between musl and gnu.
         if [[ "$os" == "linux" ]]; then
           if [[ "$arch" == "x86_64" ]]; then
-            triple="${arch}-unknown-linux-musl"
+            # Use glibc build on Ubuntu runners
+            triple="${arch}-unknown-linux-gnu"
           else
             # Only other supported linux build is aarch64 gnu.
             triple="${arch}-unknown-linux-gnu"

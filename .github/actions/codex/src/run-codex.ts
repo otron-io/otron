@@ -20,7 +20,9 @@ export async function runCodex(
 
   // Use the unified CLI and its `exec` subcommand instead of the old
   // standalone `codex-exec` binary.
-  const args = ["/usr/local/bin/codex", "exec"];
+  // Prefer PATH-resolved codex binary; fallback to absolute if needed
+  const codexBin = "/usr/local/bin/codex";
+  const args = ["codex", "exec"];
 
   const inputCodexArgs = ctx.tryGet("INPUT_CODEX_ARGS")?.trim();
   if (inputCodexArgs) {
@@ -36,11 +38,22 @@ export async function runCodex(
   }
 
   console.log(`Running Codex: ${JSON.stringify(args)}`);
-  const result = Bun.spawnSync(args, {
+  let result = Bun.spawnSync(args, {
     stdout: "inherit",
     stderr: "inherit",
     env,
   });
+
+  // Retry with absolute path if PATH resolution failed
+  if (!result.success) {
+    const absArgs = [codexBin, ...args.slice(1)];
+    console.log(`Retrying with absolute binary: ${JSON.stringify(absArgs)}`);
+    result = Bun.spawnSync(absArgs, {
+      stdout: "inherit",
+      stderr: "inherit",
+      env,
+    });
+  }
 
   if (!result.success) {
     fail(`Codex failed: see above for details.`);
