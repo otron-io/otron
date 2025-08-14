@@ -1,4 +1,13 @@
 import * as slackUtils from './slack/slack-utils.js';
+import {
+  generateImageBytes,
+  mimeTypeForFormat,
+  normalizeParams,
+  type AspectRatio,
+  type ImageBackground,
+  type ImageFormat,
+  type ImageSize,
+} from './slack/image-utils.js';
 
 // Slack tool execution functions
 
@@ -228,6 +237,48 @@ export const executeSetSlackStatus = async (
     success: true,
     message: `Set status to "${statusText}"`,
   };
+};
+
+export const executeGenerateSlackImage = async (
+  args: {
+    prompt: string;
+    size?: ImageSize;
+    aspect_ratio?: AspectRatio;
+    background?: ImageBackground;
+    format?: ImageFormat;
+    channel?: string;
+    filename?: string;
+    title?: string;
+    initialComment?: string;
+  },
+  updateStatus?: (status: string) => void,
+  slackContext?: { channelId?: string }
+) => {
+  const { prompt } = args;
+  const { size, background, format } = normalizeParams(args);
+  const channel = args.channel || slackContext?.channelId;
+  if (!channel) {
+    throw new Error('channel is required when no Slack context is available');
+  }
+
+  updateStatus?.('is generating image with gpt-image-1...');
+  const bytes = await generateImageBytes({ prompt, size, background, format });
+
+  const ext = format === 'jpeg' ? 'jpg' : format;
+  const filename = args.filename || `image_${Date.now()}.${ext}`;
+
+  updateStatus?.('is uploading image to Slack...');
+  const file = await slackUtils.uploadFile(bytes, filename, [channel], args.title, args.initialComment);
+  if (!file) {
+    throw new Error('Slack file upload failed');
+  }
+
+  // Prefer url_private for embedding in Slack image blocks
+  const image_url = (file as any).url_private as string;
+  const permalink = (file as any).permalink as string;
+  const file_id = (file as any).id as string;
+
+  return { image_url, file_id, permalink, size, background, format, mime: mimeTypeForFormat(format) };
 };
 
 export const executePinSlackMessage = async (

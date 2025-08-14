@@ -48,6 +48,27 @@ Otron is an intelligent AI agent that:
 - Provides real-time updates on development progress
 - Creates beautifully formatted status reports
 
+##### Tool: generateSlackImage
+
+Generates an image with OpenAI `gpt-image-1`, uploads it to Slack Files (private), and returns a Slack-hosted URL that renders natively in Slack image blocks.
+
+- Model: `gpt-image-1` (n=1 enforced)
+- Storage: Slack Files; auto-visible in the provided channel (or invoking Slack context)
+
+Inputs
+- prompt: required
+- size: one of `256x256`, `512x512`, `1024x1024`, `1792x1024`, `1024x1792` (default `1024x1024`)
+- aspect_ratio: helper mapping → `1:1`→`1024x1024`, `16:9`→`1792x1024`, `9:16`→`1024x1792` (if both provided, size wins)
+- background: `transparent | white` (default `white`)
+- format: `png | webp | jpeg` (default `png`)
+- channel: optional Slack channel ID; defaults to the invoking Slack context channel if available
+
+Return shape: `{ image_url, file_id, permalink }`
+
+Notes
+- Uses OpenAI Images API for `gpt-image-1` with `response_format=b64_json`
+- Ensures exactly one image is generated and uploaded
+- Avoids double-encoding/decoding of image bytes
 #### 🧠 Intelligent Features
 
 - **Semantic Code Search**: Vector-based code understanding that goes beyond keyword matching

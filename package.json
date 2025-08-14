@@ -7,6 +7,7 @@
     "build": "tsc",
     "start": "node ./dist/api/index.js",
     "dev": "tsx watch ./api/index.ts",
+    "test": "tsx scripts/run-tests.ts",
     "check": "biome check .",
     "check:formatting": "biome format --write=false .",
     "check:linting": "biome lint .",

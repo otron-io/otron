@@ -48,6 +48,7 @@ import {
   executeSendRichDirectMessage,
   executeCreateFormattedSlackMessage,
   executeRespondToSlackInteraction,
+  executeGenerateSlackImage,
 } from './slack-tools.js';
 import {
   // GitHub tools
@@ -1747,6 +1748,49 @@ ${repositoryContext ? `${repositoryContext}` : ''}${
         execute: createMemoryAwareToolExecutor(
           'unpinSlackMessage',
           (params: any) => executeUnpinSlackMessage(params, updateStatus)
+        ),
+      }),
+      generateSlackImage: tool({
+        description:
+          'Generate an image with OpenAI gpt-image-1, upload to Slack Files, and return a Slack-hosted URL suitable for Slack image blocks.',
+        parameters: z.object({
+          prompt: z.string().describe('Image prompt (required)'),
+          size: z
+            .enum(['256x256', '512x512', '1024x1024', '1792x1024', '1024x1792'])
+            .describe(
+              'Image size. If omitted, defaults to 1024x1024 or derived from aspect_ratio.'
+            )
+            .optional(),
+          aspect_ratio: z
+            .enum(['1:1', '16:9', '9:16'])
+            .describe(
+              'Helper aspect ratio mapping: 1:1→1024x1024, 16:9→1792x1024, 9:16→1024x1792. If both size and aspect_ratio are provided, size wins.'
+            )
+            .optional(),
+          background: z
+            .enum(['transparent', 'white'])
+            .describe('Background color for transparent-capable formats (default white)')
+            .optional(),
+          format: z
+            .enum(['png', 'webp', 'jpeg'])
+            .describe('Image format (default png)')
+            .optional(),
+          channel: z
+            .string()
+            .describe(
+              'Slack channel ID to share file in. Optional if running inside Slack context.'
+            )
+            .optional(),
+        }),
+        execute: createMemoryAwareToolExecutor(
+          'generateSlackImage',
+          async (params: any) => {
+            return await executeGenerateSlackImage(
+              params,
+              updateStatus,
+              slackContext
+            );
+          }
         ),
       }),
       sendRichSlackMessage: tool({
