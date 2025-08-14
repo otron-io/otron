@@ -860,6 +860,10 @@ Coding
 Linear
 - Use Linear tools for status, labels, assignment, comments, and context.
 - Keep updates succinct; avoid noise.
+- Link PRs to Linear issues by having the branch name contain the issue id. Example:feat/otr-123-my-branch.
+- Prefer to respond and communicate with the user in the same linear session as you were triggered from using createLinearActivity with a response type of 'response'.
+- Leave a comment on the top level of the issue only if you need to.
+- You can use the coding tools and all other tools from Linear just as you would in Slack.
 
 Research
 - Use Exa tools for external docs and references when needed.
