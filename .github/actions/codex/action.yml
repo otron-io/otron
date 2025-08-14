@@ -36,11 +36,21 @@ runs:
       run: |
         set -euo pipefail
 
+        SENDER_TYPE=$(jq -r '.sender.type // ""' "$GITHUB_EVENT_PATH")
+        SENDER_LOGIN=$(jq -r '.sender.login // ""' "$GITHUB_EVENT_PATH")
+
+        # Allow our bot to trigger runs regardless of collaborator permissions.
+        if [[ "$SENDER_TYPE" == "Bot" && "$SENDER_LOGIN" == "otron-agent[bot]" ]]; then
+          echo "Sender is allowed bot ($SENDER_LOGIN); skipping write-access check."
+          exit 0
+        fi
+
         PERMISSION=$(gh api \
-          "/repos/${GITHUB_REPOSITORY}/collaborators/${{ github.event.sender.login }}/permission" \
+          "/repos/${GITHUB_REPOSITORY}/collaborators/${SENDER_LOGIN}/permission" \
           | jq -r '.permission')
 
         if [[ "$PERMISSION" != "admin" && "$PERMISSION" != "write" ]]; then
+          echo "Sender '$SENDER_LOGIN' lacks write/admin permission ($PERMISSION)."
           exit 1
         fi
 

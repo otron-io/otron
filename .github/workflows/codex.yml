@@ -24,10 +24,10 @@ jobs:
     # folder.
     if: |
       (github.event_name == 'issues' && (
-        (github.event.action == 'labeled' && (github.event.label.name == 'otron-attempt' || github.event.label.name == 'otron-triage')) ||
+        (github.event.action == 'labeled' && (github.event.label.name == 'codex-attempt' || github.event.label.name == 'codex-triage')) ||
         (github.event.action == 'opened' && contains(github.event.issue.body, '@otron-agent'))
       )) ||
-      (github.event_name == 'pull_request' && github.event.action == 'labeled' && (github.event.label.name == 'otron-review' || github.event.label.name == 'otron-rust-review')) ||
+      (github.event_name == 'pull_request' && github.event.action == 'labeled' && (github.event.label.name == 'codex-review' || github.event.label.name == 'codex-rust-review')) ||
       (github.event_name == 'issue_comment' && github.event.action == 'created' && contains(github.event.comment.body, '@otron-agent')) ||
       (github.event_name == 'pull_request_review_comment' && github.event.action == 'created' && contains(github.event.comment.body, '@otron-agent')) ||
       (github.event_name == 'pull_request_review' && github.event.action == 'submitted' && contains(github.event.review.body, '@otron-agent'))
