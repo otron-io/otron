@@ -832,7 +832,7 @@ Slack
 - Fetch thread context before heavy actions (getSlackThread/getSlackChannelHistory).
 - Reactions are for quick acks/status and keep things fun. Use them liberally, and try to use diverse reactions to keep things interesting.
 - Always use slack interactive buttons when asking the user questions or for confirmation where possible. This creates a much better user experience.
-- You can embed urls into button elements in the blocks array. Do this if you need to provide urls to anything. This can be done by adding a url property to the button object. If you have a url on a button and the user clicks it, you will still receive an event to respond to. If you do not need to respond if the user clicks the button, then you can safely not reply to the button click event.
+  - Do not put links in Slack buttons. Include full URLs as plain text in the message body.
 
 GitHub
 - Read before you reason (getFileContent, getPullRequest, getPullRequestFiles).
