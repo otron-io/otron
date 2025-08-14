@@ -46,8 +46,21 @@ jobs:
       # 2. It saves resources by skipping the clone and setup steps below if
       #    Codex is not going to run.
 
+      - name: Generate GitHub App Token
+        id: generate_token
+        env:
+          OTRON_APP_ID_VAL: ${{ secrets.OTRON_APP_ID }}
+          OTRON_APP_KEY_VAL: ${{ secrets.OTRON_APP_PRIVATE_KEY }}
+        if: ${{ env.OTRON_APP_ID_VAL != '' && env.OTRON_APP_KEY_VAL != '' }}
+        uses: actions/create-github-app-token@df432ceedc7162793a195dd1713ff69aefc7379e
+        with:
+          app-id: ${{ env.OTRON_APP_ID_VAL }}
+          private-key: ${{ env.OTRON_APP_KEY_VAL }}
+
       - name: Checkout repository
         uses: actions/checkout@v4
+        with:
+          token: ${{ steps.generate_token.outputs.token || secrets.GITHUB_TOKEN }}
 
       - uses: dtolnay/rust-toolchain@1.88
         with:
@@ -70,6 +83,6 @@ jobs:
         uses: ./.github/actions/codex
         with:
           openai_api_key: ${{ secrets.OPENAI_API_KEY }}
-          github_token: ${{ secrets.GITHUB_TOKEN }}
+          github_token: ${{ steps.generate_token.outputs.token || secrets.GITHUB_TOKEN }}
           codex_home: ./.github/codex/home
           trigger_phrase: '@otron-agent'
