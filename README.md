@@ -580,6 +580,41 @@ Otron follows a structured execution approach:
 
 We welcome contributions from the community! Otron is designed to be extensible and we'd love your help making it even better.
 
+## Using the Otron Coding Agent
+
+We use the Otron Coding Agent (@otron-agent) to implement code changes via issues and pull requests. This section explains how to trigger the agent, how it behaves, and the minimal GitHub Action secrets required.
+
+### Workflow
+
+- Create a GitHub issue describing the change.
+- Add the label `codex-attempt` to trigger the agent. Do not leave a comment at the same time as adding the label (prevents a double-run).
+- The agent will:
+  - Traverse the codebase and push a branch with changes.
+  - Post updates as issue comments and change the label to `codex-attempt-in-progress`, then `codex-attempt-completed` when done.
+- Create a PR from the agent branch. For iterative changes:
+  - Leave review comments on the PR with requested edits (don’t tag the agent).
+  - Add the `codex-attempt` label to the PR to have the agent apply the requested fixes.
+- Be patient: allow ~30–60s between checks; the GitHub Action needs time to run.
+- A human is responsible for reviewing and merging. The agent won’t merge.
+
+### Required repository secrets (GitHub Actions)
+
+Add the following repository secrets under Settings → Secrets and variables → Actions:
+
+- OPENAI_API_KEY — OpenAI API key for the agent.
+- OTRON_APP_ID — GitHub App ID used by the agent.
+- OTRON_APP_PRIVATE_KEY — GitHub App private key (full PEM). If adding via GitHub Secrets UI, paste the PEM as-is, including BEGIN/END lines.
+
+### Quickstart
+
+- Trigger on an issue:
+  - Open or edit an issue describing the change.
+  - Add the `codex-attempt` label (do not also comment at the same time).
+- Trigger on a PR iteration:
+  - Create a PR from the agent’s branch (or your branch).
+  - Leave review comments with requested edits.
+  - Add the `codex-attempt` label to the PR to have the agent apply the requested fixes.
+
 ### 🌟 Ways to Contribute
 
 - **🐛 Bug Reports**: Found a bug? Please open an issue with detailed reproduction steps
