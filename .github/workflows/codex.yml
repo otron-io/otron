@@ -79,6 +79,60 @@ jobs:
         uses: actions/checkout@v4
         with:
           token: ${{ steps.generate_token.outputs.token || secrets.GITHUB_TOKEN }}
+          fetch-depth: 0
+          # If this is a PR event, check out the PR head repo/ref so pushes go to the right place
+          repository: ${{ github.event.pull_request.head.repo.full_name || github.repository }}
+          ref: ${{ github.event.pull_request.head.ref || github.ref }}
+          persist-credentials: true
+
+      - name: Ensure PR head branch is checked out (handles PR comments too)
+        shell: bash
+        env:
+          GH_TOKEN: ${{ steps.generate_token.outputs.token || secrets.GITHUB_TOKEN }}
+          TOKEN: ${{ steps.generate_token.outputs.token || secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          EVENT_PATH="$GITHUB_EVENT_PATH"
+          IS_PR=$(jq -r 'has("pull_request")' "$EVENT_PATH")
+          HEAD_REF=""
+          HEAD_REPO=""
+
+          if [[ "$IS_PR" == "true" ]]; then
+            HEAD_REF=$(jq -r '.pull_request.head.ref' "$EVENT_PATH")
+            HEAD_REPO=$(jq -r '.pull_request.head.repo.full_name' "$EVENT_PATH")
+          else
+            # For issue_comment events on PRs, resolve PR details via API
+            HAS_PR=$(jq -r 'try .issue.pull_request // empty | type' "$EVENT_PATH" || true)
+            if [[ "$HAS_PR" == "object" ]]; then
+              PR_NUMBER=$(jq -r '.issue.number' "$EVENT_PATH")
+              PR_JSON=$(gh api "/repos/${GITHUB_REPOSITORY}/pulls/${PR_NUMBER}")
+              HEAD_REF=$(echo "$PR_JSON" | jq -r '.head.ref')
+              HEAD_REPO=$(echo "$PR_JSON" | jq -r '.head.repo.full_name')
+            fi
+          fi
+
+          if [[ -z "$HEAD_REF" || -z "$HEAD_REPO" ]]; then
+            echo "No PR head context detected; keeping current checkout."
+            exit 0
+          fi
+
+          echo "Ensuring head branch '${HEAD_REPO}:${HEAD_REF}' is checked out"
+          git config --global advice.detachedHead false
+          git remote -v
+
+          if [[ "$HEAD_REPO" == "$GITHUB_REPOSITORY" ]]; then
+            git fetch --no-tags origin "$HEAD_REF"
+            git checkout -B "$HEAD_REF" "origin/${HEAD_REF}" || git checkout -B "$HEAD_REF"
+          else
+            # Fork: ensure authenticated remote to the fork exists
+            git remote remove pr 2>/dev/null || true
+            git remote add pr "https://x-access-token:${TOKEN}@github.com/${HEAD_REPO}.git"
+            git fetch --no-tags pr "$HEAD_REF"
+            git checkout -B "$HEAD_REF" "pr/${HEAD_REF}" || git checkout -B "$HEAD_REF"
+          fi
+
+          echo "Checked out branch: $(git rev-parse --abbrev-ref HEAD)"
+          git status -sb
 
       - name: Determine intent (work/review/research/auto)
         id: intent
