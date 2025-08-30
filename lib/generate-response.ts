@@ -48,8 +48,6 @@ import {
   executeSendRichDirectMessage,
   executeCreateFormattedSlackMessage,
   executeRespondToSlackInteraction,
-  executeCreateSlackWorkflowWithSchedule,
-  executeDeleteSlackWorkflowAndTriggers,
 } from "./slack-tools.js";
 import {
   // GitHub tools
@@ -2114,110 +2112,7 @@ ${repositoryContext ? `${repositoryContext}` : ""}${
             executeCreateFormattedSlackMessage(params, updateStatus)
         ),
       }),
-      createSlackWorkflowWithSchedule: tool({
-        description:
-          "Create a static Slack workflow with a trigger_otron step and a scheduled trigger (cron).",
-        parameters: z.object({
-          workflowName: z.string().describe("Human-readable workflow title"),
-          callbackId: z
-            .string()
-            .describe(
-              "Unique callback_id for the workflow (stable identifier)"
-            ),
-          description: z
-            .string()
-            .describe(
-              "Optional description for the workflow (use empty string if not needed)"
-            ),
-          instruction: z
-            .string()
-            .describe("Instruction Otron will use when the workflow runs"),
-          channelId: z
-            .string()
-            .describe("Target channel ID for Otron to act in"),
-          human: z
-            .string()
-            .describe(
-              "Optional user ID responsible/requesting (use empty string if none)"
-            ),
-          cron: z
-            .string()
-            .describe(
-              "5-field cron expression in workspace timezone, e.g. '0 9 * * 1-5'"
-            ),
-          timezone: z
-            .string()
-            .describe("IANA timezone like 'America/Los_Angeles'"),
-          startTime: z
-            .string()
-            .describe(
-              "ISO8601 start time for the schedule (use empty to start now)"
-            ),
-          endTime: z
-            .string()
-            .describe(
-              "ISO8601 end time for the schedule (use empty to run indefinitely)"
-            ),
-        }),
-        execute: createMemoryAwareToolExecutor(
-          "createSlackWorkflowWithSchedule",
-          (params: any) =>
-            executeCreateSlackWorkflowWithSchedule(
-              {
-                ...params,
-                description: params.description || "",
-                human: params.human || undefined,
-                startTime: params.startTime || undefined,
-              },
-              updateStatus
-            )
-        ),
-      }),
-      deleteSlackWorkflowAndTriggers: tool({
-        description: "Delete a Slack workflow and/or its scheduled triggers.",
-        parameters: z.object({
-          callbackId: z
-            .string()
-            .describe(
-              "Workflow callback_id (optional if workflowId provided). Use empty string if not provided."
-            ),
-          workflowId: z
-            .string()
-            .describe(
-              "Workflow id (optional if callbackId provided). Use empty string if not provided."
-            ),
-          triggerIds: z
-            .array(z.string())
-            .describe(
-              "Trigger IDs to delete (optional; use empty array to skip)"
-            ),
-          deleteWorkflow: z
-            .boolean()
-            .describe("Whether to delete the workflow object (default true)"),
-          deleteTriggers: z
-            .boolean()
-            .describe(
-              "Whether to delete triggers (default true if triggerIds provided)"
-            ),
-        }),
-        execute: createMemoryAwareToolExecutor(
-          "deleteSlackWorkflowAndTriggers",
-          (params: any) =>
-            executeDeleteSlackWorkflowAndTriggers(
-              {
-                callbackId: params.callbackId || undefined,
-                workflowId: params.workflowId || undefined,
-                triggerIds:
-                  params.triggerIds && params.triggerIds.length > 0
-                    ? params.triggerIds
-                    : undefined,
-                deleteWorkflow: params.deleteWorkflow,
-                deleteTriggers: params.deleteTriggers,
-              },
-              updateStatus
-            )
-        ),
-      }),
+
       // Linear tools
       getIssueContext: tool({
         description:
