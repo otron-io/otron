@@ -110,3 +110,5 @@ runs:
         GITHUB_EVENT_PULL_REQUEST_BODY: ${{ github.event.pull_request.body || '' }}
         GITHUB_EVENT_REVIEW_BODY: ${{ github.event.review.body || '' }}
         GITHUB_EVENT_COMMENT_BODY: ${{ github.event.comment.body || '' }}
+        # Enable network for Codex subprocesses explicitly
+        CODEX_NETWORK: enable

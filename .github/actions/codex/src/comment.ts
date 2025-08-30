@@ -3,6 +3,7 @@ import { runCodex } from "./run-codex";
 import { postComment } from "./post-comment";
 import { addEyesReaction } from "./add-reaction";
 import * as github from "@actions/github";
+import { maybePublishPRForIssue } from "./git-helpers";
 
 /**
  * Handle `issue_comment` and `pull_request_review_comment` events once we know
@@ -65,7 +66,22 @@ export async function onComment(ctx: EnvContext): Promise<void> {
 
   try {
     // Run Codex and post the response as a new comment.
-    const lastMessage = await runCodex(effectivePrompt, ctx);
+    let lastMessage = await runCodex(effectivePrompt, ctx);
+
+    // If we're in work/auto mode, attempt to publish any local changes as a PR
+    const intent = ctx.tryGet("OTRON_INTENT") ?? "";
+    if (intent === "work" || intent === "auto") {
+      try {
+        const prUrl = await maybePublishPRForIssue(0, lastMessage, ctx);
+        if (prUrl) {
+          lastMessage += `\n\n---\nOpened pull request: ${prUrl}`;
+        }
+      } catch (e) {
+        // Best-effort: log and continue
+        console.warn(`PR publish attempt failed: ${e}`);
+      }
+    }
+
     await postComment(lastMessage, ctx);
   } finally {
     // Best-effort cleanup of the working label

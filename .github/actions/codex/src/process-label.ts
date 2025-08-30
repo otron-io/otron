@@ -167,9 +167,18 @@ Review rules
   // Always run Codex and post the resulting message as a comment.
   let commentBody = await runCodex(populatedTemplate, ctx);
 
-  // Current heuristic: only try to create a PR if "attempt" or "fix" is in the
-  // label name. (Yes, we plan to evolve this.)
-  if (label.indexOf("fix") !== -1 || label.indexOf("attempt") !== -1) {
+  // Heuristic: attempt to publish a PR for fix/attempt labels, and also when
+  // the declared intent is "work" (including @otron-agent auto mode) or the
+  // label is our simplified intent label.
+  const intent = ctx.tryGet("OTRON_INTENT") || "";
+  const shouldAttemptPublish =
+    label.indexOf("fix") !== -1 ||
+    label.indexOf("attempt") !== -1 ||
+    label === "otron:work" ||
+    intent === "work" ||
+    intent === "auto";
+
+  if (shouldAttemptPublish) {
     console.info(`label ${label} indicates we should attempt to create a PR`);
     const prUrl = await maybeFixIssue(ctx, commentBody);
     if (prUrl) {
