@@ -14,12 +14,52 @@ export async function onLabeled(
   ctx: EnvContext,
 ): Promise<void> {
   const GITHUB_EVENT_LABEL_NAME = ctx.get("GITHUB_EVENT_LABEL_NAME");
-  const labelConfig = config.labels[GITHUB_EVENT_LABEL_NAME] as
+  let labelConfig = config.labels[GITHUB_EVENT_LABEL_NAME] as
     | LabelConfig
     | undefined;
+
+  if (!labelConfig) {
+    // Attempt to gracefully handle high-level intent labels without requiring
+    // a matching file under .github/codex/labels.
+    const intent = ctx.tryGet("OTRON_INTENT");
+
+    const prefer = (name: string): LabelConfig | undefined =>
+      config.labels[name] as LabelConfig | undefined;
+
+    const fromTemplate = (template: string): LabelConfig => ({
+      getPromptTemplate: () => template,
+    });
+
+    if (intent === "work" || GITHUB_EVENT_LABEL_NAME === "otron:work") {
+      labelConfig =
+        prefer("codex-attempt") ||
+        prefer("otron-attempt") ||
+        fromTemplate(
+          `Act as an autonomous engineer. If this is an issue, implement the fix or feature described and open a PR with the changes. If this is a PR, resolve review comments and make necessary edits to get it ready to merge. Include a concise status update summarizing what you did.`,
+        );
+    } else if (
+      intent === "review" ||
+      GITHUB_EVENT_LABEL_NAME === "otron:review"
+    ) {
+      labelConfig =
+        prefer("codex-review") ||
+        prefer("otron-review") ||
+        fromTemplate(
+          `Perform a thorough PR review. Focus on correctness, clarity, security, performance, and style. Provide granular, actionable feedback with suggested code changes where applicable. Keep an executive summary concise.`,
+        );
+    } else if (
+      intent === "research" ||
+      GITHUB_EVENT_LABEL_NAME === "otron:research"
+    ) {
+      labelConfig = fromTemplate(
+        `Research the request in detail and respond with a structured, thorough answer or technical plan. Do not make code changes. Provide references and tradeoffs where relevant.`,
+      );
+    }
+  }
+
   if (!labelConfig) {
     fail(
-      `Label \`${GITHUB_EVENT_LABEL_NAME}\` not found in config: ${JSON.stringify(config)}`,
+      `Label \`${GITHUB_EVENT_LABEL_NAME}\` not found and no fallback available. Please add a template under .github/codex/labels or use a supported intent label (otron:work, otron:review, otron:research).`,
     );
   }
 

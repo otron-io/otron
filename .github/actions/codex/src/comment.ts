@@ -20,7 +20,8 @@ export async function onComment(ctx: EnvContext): Promise<void> {
   const commentBody =
     ctx.tryGetNonEmpty("GITHUB_EVENT_COMMENT_BODY") ??
     ctx.tryGetNonEmpty("GITHUB_EVENT_REVIEW_BODY") ??
-    ctx.tryGetNonEmpty("GITHUB_EVENT_ISSUE_BODY");
+    ctx.tryGetNonEmpty("GITHUB_EVENT_ISSUE_BODY") ??
+    ctx.tryGetNonEmpty("GITHUB_EVENT_PULL_REQUEST_BODY");
 
   if (!commentBody) {
     console.warn("Comment body not found in environment: skipping.");
@@ -39,15 +40,26 @@ export async function onComment(ctx: EnvContext): Promise<void> {
   // occurrence to keep any additional occurrences that might be meaningful.
   const prompt = commentBody.replace(triggerPhrase, "").trim();
 
-  if (prompt.length === 0) {
-    console.warn("Prompt is empty after removing trigger phrase: skipping");
-    return;
+  let effectivePrompt = prompt;
+  if (effectivePrompt.length === 0) {
+    const intent = ctx.tryGet("OTRON_INTENT") ?? "auto";
+    if (intent === "review") {
+      effectivePrompt =
+        "Perform a thorough PR review. Provide granular, actionable feedback with suggested code changes where helpful. Keep an executive summary concise.";
+    } else if (intent === "research") {
+      effectivePrompt =
+        "Research the request in detail and respond with a structured, thorough answer or technical plan. Do not make code changes.";
+    } else {
+      // work/auto default
+      effectivePrompt =
+        "Act as an autonomous engineer. If this is an issue, implement the fix/feature and open a PR. If this is a PR, resolve review comments and make necessary edits to get it ready to merge. Include a concise status update.";
+    }
   }
 
   // Provide immediate feedback that we are working on the request.
   await addEyesReaction(ctx);
 
   // Run Codex and post the response as a new comment.
-  const lastMessage = await runCodex(prompt, ctx);
+  const lastMessage = await runCodex(effectivePrompt, ctx);
   await postComment(lastMessage, ctx);
 }

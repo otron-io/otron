@@ -131,5 +131,6 @@ runs:
         GITHUB_EVENT_LABEL_NAME: ${{ github.event.label.name || '' }}
         GITHUB_EVENT_ISSUE_NUMBER: ${{ github.event.issue.number || '' }}
         GITHUB_EVENT_ISSUE_BODY: ${{ github.event.issue.body || '' }}
+        GITHUB_EVENT_PULL_REQUEST_BODY: ${{ github.event.pull_request.body || '' }}
         GITHUB_EVENT_REVIEW_BODY: ${{ github.event.review.body || '' }}
         GITHUB_EVENT_COMMENT_BODY: ${{ github.event.comment.body || '' }}
