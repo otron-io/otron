@@ -1848,6 +1848,11 @@ ${repositoryContext ? `${repositoryContext}` : ""}${
             .describe(
               "Thread timestamp to reply in a thread (leave empty string if not replying to a thread)"
             ),
+          postTimes: z
+            .array(z.number())
+            .describe(
+              "Optional array of Unix seconds to schedule this message multiple times (max 10). Provide empty array to send immediately."
+            ),
         }),
         execute: createMemoryAwareToolExecutor(
           "sendRichSlackMessage",
@@ -1954,6 +1959,11 @@ ${repositoryContext ? `${repositoryContext}` : ""}${
             .describe(
               "Thread timestamp to reply in a thread (leave empty string if not replying to a thread)"
             ),
+          postTimes: z
+            .array(z.number())
+            .describe(
+              "Optional array of Unix seconds to schedule this message multiple times (max 10). Provide empty array to send immediately."
+            ),
         }),
         execute: createMemoryAwareToolExecutor(
           "sendRichChannelMessage",
@@ -2054,6 +2064,11 @@ ${repositoryContext ? `${repositoryContext}` : ""}${
             .string()
             .describe(
               "Fallback text for notifications (leave empty string if not needed)"
+            ),
+          postTimes: z
+            .array(z.number())
+            .describe(
+              "Optional array of Unix seconds to schedule this DM multiple times (max 10). Provide empty array to send immediately."
             ),
         }),
         execute: createMemoryAwareToolExecutor(

@@ -7,11 +7,28 @@ export const executeSendSlackMessage = async (
     channel,
     text,
     threadTs,
-  }: { channel: string; text: string; threadTs: string },
+    postTimes,
+  }: { channel: string; text: string; threadTs: string; postTimes?: number[] },
   updateStatus?: (status: string) => void
 ) => {
   updateStatus?.(`is sending message to ${channel}...`);
-
+  const times: number[] = (postTimes as any[]) || [];
+  if (times.length > 0) {
+    let scheduled = 0;
+    for (const ts of times.slice(0, 10)) {
+      await slackUtils.scheduleMessage(
+        channel,
+        text,
+        ts,
+        threadTs || undefined
+      );
+      scheduled++;
+    }
+    return {
+      success: true,
+      message: `Scheduled ${scheduled} messages to ${channel}`,
+    };
+  }
   await slackUtils.sendMessage(channel, text, threadTs || undefined);
   return {
     success: true,
@@ -37,11 +54,39 @@ export const executeSendChannelMessage = async (
     channelNameOrId,
     text,
     threadTs,
-  }: { channelNameOrId: string; text: string; threadTs: string },
+    postTimes,
+  }: {
+    channelNameOrId: string;
+    text: string;
+    threadTs: string;
+    postTimes?: number[];
+  },
   updateStatus?: (status: string) => void
 ) => {
   updateStatus?.(`is sending message to channel ${channelNameOrId}...`);
 
+  const times: number[] = (postTimes as any[]) || [];
+  if (times.length > 0) {
+    let scheduled = 0;
+    let channelId = channelNameOrId;
+    if (channelNameOrId.startsWith("#")) {
+      const ch = await slackUtils.getChannelByName(channelNameOrId.slice(1));
+      channelId = ch.id as string;
+    }
+    for (const ts of times.slice(0, 10)) {
+      await slackUtils.scheduleMessage(
+        channelId,
+        text,
+        ts,
+        threadTs || undefined
+      );
+      scheduled++;
+    }
+    return {
+      success: true,
+      message: `Scheduled ${scheduled} messages to ${channelNameOrId}`,
+    };
+  }
   await slackUtils.sendChannelMessage(
     channelNameOrId,
     text,
@@ -262,16 +307,35 @@ export const executeSendRichSlackMessage = async (
     blocks,
     text,
     threadTs,
+    postTimes,
   }: {
     channel: string;
     blocks: any[];
     text: string;
     threadTs: string;
+    postTimes?: number[];
   },
   updateStatus?: (status: string) => void
 ) => {
   updateStatus?.(`is sending rich message to ${channel}...`);
-
+  const times: number[] = (postTimes as any[]) || [];
+  if (times.length > 0) {
+    let scheduled = 0;
+    for (const ts of times.slice(0, 10)) {
+      await slackUtils.scheduleMessage(
+        channel,
+        text || "Rich message",
+        ts,
+        threadTs || undefined,
+        blocks
+      );
+      scheduled++;
+    }
+    return {
+      success: true,
+      message: `Scheduled ${scheduled} rich messages to ${channel}`,
+    };
+  }
   await slackUtils.sendRichMessage(
     channel,
     blocks,
@@ -290,11 +354,13 @@ export const executeSendRichChannelMessage = async (
     blocks,
     text,
     threadTs,
+    postTimes,
   }: {
     channelNameOrId: string;
     blocks: any[];
     text: string;
     threadTs: string;
+    postTimes?: number[];
   },
   updateStatus?: (status: string) => void
 ) => {
@@ -311,6 +377,24 @@ export const executeSendRichChannelMessage = async (
     channelId = channelInfo.id;
   }
 
+  const times: number[] = (postTimes as any[]) || [];
+  if (times.length > 0) {
+    let scheduled = 0;
+    for (const ts of times.slice(0, 10)) {
+      await slackUtils.scheduleMessage(
+        channelId,
+        text || "Rich message",
+        ts,
+        threadTs || undefined,
+        blocks
+      );
+      scheduled++;
+    }
+    return {
+      success: true,
+      message: `Scheduled ${scheduled} rich messages to ${channelNameOrId}`,
+    };
+  }
   await slackUtils.sendRichMessage(
     channelId,
     blocks,
@@ -328,10 +412,12 @@ export const executeSendRichDirectMessage = async (
     userIdOrEmail,
     blocks,
     text,
+    postTimes,
   }: {
     userIdOrEmail: string;
     blocks: any[];
     text: string;
+    postTimes?: number[];
   },
   updateStatus?: (status: string) => void
 ) => {
@@ -356,6 +442,24 @@ export const executeSendRichDirectMessage = async (
     throw new Error("Failed to open DM channel");
   }
 
+  const times: number[] = (postTimes as any[]) || [];
+  if (times.length > 0) {
+    let scheduled = 0;
+    for (const ts of times.slice(0, 10)) {
+      await slackUtils.scheduleMessage(
+        channel.id,
+        text || "Rich message",
+        ts,
+        undefined,
+        blocks
+      );
+      scheduled++;
+    }
+    return {
+      success: true,
+      message: `Scheduled ${scheduled} rich DMs to ${userIdOrEmail}`,
+    };
+  }
   await slackUtils.sendRichMessage(channel.id, blocks, text || undefined);
   return {
     success: true,
