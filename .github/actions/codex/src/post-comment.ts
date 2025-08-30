@@ -12,9 +12,11 @@ export async function postComment(
   commentBody: string,
   ctx: EnvContext,
 ): Promise<void> {
+  // Avoid self-trigger loops: strip @otron-agent mentions from bot comments
+  const sanitizedBody = commentBody.replace(/@otron-agent/gi, "otron-agent");
   // Append a footer with a link back to the workflow run, if available.
   const footer = buildWorkflowRunFooter(ctx);
-  const bodyWithFooter = footer ? `${commentBody}${footer}` : commentBody;
+  const bodyWithFooter = footer ? `${sanitizedBody}${footer}` : sanitizedBody;
 
   const octokit = ctx.getOctokit();
   console.info("Got Octokit instance for posting comment");
