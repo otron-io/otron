@@ -69,10 +69,54 @@ function commitIfNeeded(issueNumber: number) {
 }
 
 function pushBranch(branch: string, githubToken: string, ctx: EnvContext) {
-  const repoSlug = ctx.get("GITHUB_REPOSITORY"); // owner/repo
-  const remoteUrl = `https://x-access-token:${githubToken}@github.com/${repoSlug}.git`;
+  // Prefer pushing to PR head repo when available (supports forks)
+  try {
+    const eventPath = ctx.get("GITHUB_EVENT_PATH");
+    // eslint-disable-next-line @typescript-eslint/no-var-requires
+    const event = require(eventPath);
+    const headRepo = event?.pull_request?.head?.repo?.full_name as
+      | string
+      | undefined;
+    const headRef = event?.pull_request?.head?.ref as string | undefined;
+    const baseRef = event?.pull_request?.base?.ref as string | undefined;
 
-  runGit(["push", "--force-with-lease", "-u", remoteUrl, `HEAD:${branch}`]);
+    if (headRepo && headRef) {
+      // Never push to protected branches (default or common names)
+      const protectedBranches = new Set(
+        ["main", "master", baseRef || ""].filter(Boolean),
+      );
+      let targetRef = headRef;
+      if (protectedBranches.has(headRef)) {
+        targetRef = `codex-fix-${Date.now()}`;
+        // Ensure local branch exists to match the new remote ref
+        try {
+          runGit(["checkout", "-B", targetRef]);
+        } catch {}
+      }
+      const headRemote = `https://x-access-token:${githubToken}@github.com/${headRepo}.git`;
+      runGit(["remote", "remove", "pr"], true);
+      try {
+        runGit(["remote", "add", "pr", headRemote], true);
+      } catch {}
+      runGit(["fetch", "--no-tags", "pr", headRef], true);
+      runGit(["push", "--force-with-lease", "-u", "pr", `HEAD:${targetRef}`]);
+      return;
+    }
+  } catch {
+    // Fall back to repo slug push below
+  }
+
+  const repoSlug = ctx.get("GITHUB_REPOSITORY"); // owner/repo
+  // Protect common default branches
+  let pushRef = branch;
+  if (pushRef === "main" || pushRef === "master") {
+    pushRef = `codex-fix-${Date.now()}`;
+    try {
+      runGit(["checkout", "-B", pushRef]);
+    } catch {}
+  }
+  const remoteUrl = `https://x-access-token:${githubToken}@github.com/${repoSlug}.git`;
+  runGit(["push", "--force-with-lease", "-u", remoteUrl, `HEAD:${pushRef}`]);
 }
 
 /**
@@ -112,7 +156,11 @@ export async function maybePublishPRForIssue(
 
   const sanitizedMessage = lastMessage.replace(/\u2022/g, "-");
   const [summaryLine] = sanitizedMessage.split(/\r?\n/);
-  const branch = ensureOnBranch(issueNumber, [defaultBranch, "master"], summaryLine);
+  const branch = ensureOnBranch(
+    issueNumber,
+    [defaultBranch, "master"],
+    summaryLine,
+  );
   commitIfNeeded(issueNumber);
   pushBranch(branch, githubToken, ctx);
 
