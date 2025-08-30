@@ -14,6 +14,7 @@ import {
   handleSlackInteractive,
   type SlackInteractivePayload,
 } from "../lib/slack/handle-interactive.js";
+import { handleFunctionExecuted } from "../lib/slack/handle-function-executed.js";
 import { Redis } from "@upstash/redis";
 import { env } from "../lib/env.js";
 
@@ -171,6 +172,12 @@ async function handleSlackEvents(request: Request, rawBody: string) {
 
     if ((event as any).type === "assistant_thread_started") {
       waitUntil(assistantThreadMessage(event as any));
+      return new Response("Success!", { status: 200 });
+    }
+
+    // Slack workflow function executed event
+    if ((event as any).type === "function_executed") {
+      waitUntil(handleFunctionExecuted(event as any, botUserId));
       return new Response("Success!", { status: 200 });
     }
 
