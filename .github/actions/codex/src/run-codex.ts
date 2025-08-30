@@ -20,6 +20,7 @@ export async function runCodex(
 
   // Use the unified CLI and its `exec` subcommand instead of the old
   // standalone `codex-exec` binary.
+  // Run Codex with no hard-coded mode flags; allow full tool/network usage.
   const args = ["/usr/local/bin/codex", "exec"];
 
   const inputCodexArgs = ctx.tryGet("INPUT_CODEX_ARGS")?.trim();
