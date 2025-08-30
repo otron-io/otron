@@ -206,4 +206,6 @@ jobs:
           trigger_phrase: "@otron-agent"
           codex_args: ${{ steps.args.outputs.codex_args }}
         env:
+          # Explicitly allow network for Codex CLI if the action supports it
+          CODEX_NETWORK: enable
           OTRON_INTENT: ${{ env.OTRON_INTENT }}
