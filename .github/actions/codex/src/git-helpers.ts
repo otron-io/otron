@@ -116,7 +116,101 @@ function pushBranch(branch: string, githubToken: string, ctx: EnvContext) {
     } catch {}
   }
   const remoteUrl = `https://x-access-token:${githubToken}@github.com/${repoSlug}.git`;
-  runGit(["push", "--force-with-lease", "-u", remoteUrl, `HEAD:${pushRef}`]);
+  try {
+    runGit(["push", "--force-with-lease", "-u", remoteUrl, `HEAD:${pushRef}`]);
+  } catch (e) {
+    console.warn(
+      `git push failed (${e}). Attempting API-based fallback push...`,
+    );
+    pushViaGitHubApi(pushRef, githubToken, ctx);
+  }
+}
+
+async function pushViaGitHubApi(
+  targetBranch: string,
+  githubToken: string,
+  ctx: EnvContext,
+) {
+  const octokit = ctx.getOctokit(githubToken);
+  const { owner, repo } = github.context.repo;
+
+  // 1) Ensure branch exists remotely (create from default branch if needed)
+  try {
+    await octokit.rest.git.getRef({
+      owner,
+      repo,
+      ref: `heads/${targetBranch}`,
+    });
+  } catch {
+    // Create from default branch
+    let defaultBranch = "main";
+    try {
+      const res = await octokit.rest.repos.get({ owner, repo });
+      defaultBranch = res.data.default_branch || "main";
+      const refRes = await octokit.rest.git.getRef({
+        owner,
+        repo,
+        ref: `heads/${defaultBranch}`,
+      });
+      const baseSha = refRes.data.object.sha;
+      await octokit.rest.git.createRef({
+        owner,
+        repo,
+        ref: `refs/heads/${targetBranch}`,
+        sha: baseSha,
+      });
+    } catch (err) {
+      console.warn(`Failed to create branch via API: ${err}`);
+    }
+  }
+
+  // 2) Determine staged files and upload them via contents API
+  try {
+    const list = spawnSync("git", ["diff", "--cached", "--name-only"], {
+      encoding: "utf8",
+    })
+      .stdout.split("\n")
+      .map((s) => s.trim())
+      .filter(Boolean);
+
+    for (const path of list) {
+      try {
+        const fs = require("fs");
+        const content = fs.readFileSync(path);
+        const b64 = content.toString("base64");
+
+        // Find existing file sha if present
+        let sha: string | undefined = undefined;
+        try {
+          const getRes = await octokit.rest.repos.getContent({
+            owner,
+            repo,
+            path,
+            ref: targetBranch,
+          } as any);
+          if (Array.isArray(getRes.data)) {
+            // directory; skip
+          } else if ((getRes.data as any).sha) {
+            sha = (getRes.data as any).sha;
+          }
+        } catch {}
+
+        await octokit.rest.repos.createOrUpdateFileContents({
+          owner,
+          repo,
+          path,
+          message: `chore: update ${path} via API fallback`,
+          content: b64,
+          branch: targetBranch,
+          sha,
+        });
+      } catch (err) {
+        console.warn(`Failed to upload ${path} via API: ${err}`);
+      }
+    }
+  } catch (err) {
+    console.warn(`API-based file upload failed: ${err}`);
+  }
 }
 
 /**

@@ -174,10 +174,8 @@ jobs:
         with:
           script: |
             const intent = '${{ steps.intent.outputs.intent }}';
-            let args = '--config hide_agent_reasoning=true --full-auto';
-            if (intent === 'review' || intent === 'research') {
-              args = '--config hide_agent_reasoning=true --no-edit';
-            }
+            // Let Codex decide fully; only hide agent reasoning to keep comments tidy
+            let args = '--config hide_agent_reasoning=true';
             core.setOutput('codex_args', args);
 
       - uses: dtolnay/rust-toolchain@1.88

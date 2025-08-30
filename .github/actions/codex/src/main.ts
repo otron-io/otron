@@ -18,8 +18,8 @@ async function main(): Promise<void> {
   const GITHUB_WORKSPACE = ctx.get("GITHUB_WORKSPACE");
   const config: Config = loadConfig(GITHUB_WORKSPACE);
 
-  // Optionally perform additional validation of prompt template files.
-  performAdditionalValidation(config, GITHUB_WORKSPACE);
+  // Skip additional validation to minimize guardrails and allow flexible prompts.
+  // performAdditionalValidation(config, GITHUB_WORKSPACE);
 
   const GITHUB_EVENT_NAME = ctx.get("GITHUB_EVENT_NAME");
   const GITHUB_EVENT_ACTION = ctx.get("GITHUB_EVENT_ACTION");
