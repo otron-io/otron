@@ -2,6 +2,7 @@ import type { EnvContext } from "./env-context";
 import { runCodex } from "./run-codex";
 import { postComment } from "./post-comment";
 import { addEyesReaction } from "./add-reaction";
+import * as github from "@actions/github";
 
 /**
  * Handle `pull_request_review` events. We treat the review body the same way
@@ -29,14 +30,63 @@ export async function onReview(ctx: EnvContext): Promise<void> {
   }
 
   const prompt = reviewBody.replace(triggerPhrase, "").trim();
-
-  if (prompt.length === 0) {
-    console.warn("Prompt is empty after removing trigger phrase: skipping.");
-    return;
-  }
+  const intent = ctx.tryGet("OTRON_INTENT") ?? "auto";
+  const effectivePrompt =
+    prompt.length > 0
+      ? prompt
+      : intent === "review"
+        ? "Perform a thorough PR review. Provide granular, actionable feedback with suggested code changes where helpful. Keep an executive summary concise."
+        : intent === "research"
+          ? "Research the request in detail and respond with a structured, thorough answer or technical plan. Do not make code changes."
+          : "Act as an autonomous engineer. If this is an issue, implement the fix/feature and open a PR. If this is a PR, resolve review comments and make necessary edits to get it ready to merge. Include a concise status update.";
 
   await addEyesReaction(ctx);
 
-  const lastMessage = await runCodex(prompt, ctx);
-  await postComment(lastMessage, ctx);
+  // Add working label on the PR for visibility
+  await addWorkingLabelSafely();
+
+  try {
+    const lastMessage = await runCodex(effectivePrompt, ctx);
+    await postComment(lastMessage, ctx);
+  } finally {
+    await removeWorkingLabelSafely();
+  }
+}
+
+async function addWorkingLabelSafely(): Promise<void> {
+  try {
+    const octokit = github.getOctokit(
+      process.env.GITHUB_TOKEN || process.env.GH_TOKEN || "",
+    );
+    const { owner, repo } = github.context.repo;
+    const issueNumber = github.context.issue.number;
+    if (!issueNumber) return;
+    await octokit.rest.issues.addLabels({
+      owner,
+      repo,
+      issue_number: issueNumber,
+      labels: ["otron:working"],
+    });
+  } catch (e) {
+    console.warn(`Failed to add working label: ${e}`);
+  }
+}
+
+async function removeWorkingLabelSafely(): Promise<void> {
+  try {
+    const octokit = github.getOctokit(
+      process.env.GITHUB_TOKEN || process.env.GH_TOKEN || "",
+    );
+    const { owner, repo } = github.context.repo;
+    const issueNumber = github.context.issue.number;
+    if (!issueNumber) return;
+    await octokit.rest.issues.removeLabel({
+      owner,
+      repo,
+      issue_number: issueNumber,
+      name: "otron:working",
+    });
+  } catch (e) {
+    console.warn(`Failed to remove working label: ${e}`);
+  }
 }

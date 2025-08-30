@@ -134,7 +134,7 @@ export async function ensureBaseAndHeadCommitsForPRAreAvailable(
     return null;
   }
 
-  // Ensure we have the base branch.
+  // Ensure we have the base branch locally and check it out to avoid acting on default branch by mistake.
   await runCommand([
     "git",
     "-C",
@@ -144,6 +144,18 @@ export async function ensureBaseAndHeadCommitsForPRAreAvailable(
     "origin",
     baseRef,
   ]);
+
+  // Ensure HEAD branch exists locally and is checked out for any write operations to land on PR branch
+  await runCommand([
+    "git",
+    "-C",
+    workspace,
+    "fetch",
+    "--no-tags",
+    "origin",
+    headRef,
+  ]);
+  await runCommand(["git", "-C", workspace, "checkout", headRef]);
 
   // Ensure we have the head branch.
   if (headRemoteUrl === baseRemoteUrl) {

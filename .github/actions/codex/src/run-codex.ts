@@ -35,6 +35,23 @@ export async function runCodex(
     env.CODEX_HOME = resolveWorkspacePath(INPUT_CODEX_HOME, ctx);
   }
 
+  // Ensure Codex runs with the current branch context
+  try {
+    const branchResult = Bun.spawnSync(
+      ["git", "rev-parse", "--abbrev-ref", "HEAD"],
+      {
+        stdout: "pipe",
+        stderr: "pipe",
+      },
+    );
+    if (branchResult.success) {
+      const branch = branchResult.stdout.toString().trim();
+      console.log(`Codex executing on branch: ${branch}`);
+    }
+  } catch (e) {
+    console.warn("Unable to read current git branch", e);
+  }
+
   console.log(`Running Codex: ${JSON.stringify(args)}`);
   const result = Bun.spawnSync(args, {
     stdout: "inherit",

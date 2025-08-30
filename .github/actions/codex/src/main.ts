@@ -33,7 +33,10 @@ async function main(): Promise<void> {
       if (GITHUB_EVENT_ACTION === "labeled") {
         await onLabeled(config, ctx);
         return;
-      } else if (GITHUB_EVENT_ACTION === "opened") {
+      } else if (
+        GITHUB_EVENT_ACTION === "opened" ||
+        GITHUB_EVENT_ACTION === "edited"
+      ) {
         await onComment(ctx);
         return;
       }
@@ -50,6 +53,15 @@ async function main(): Promise<void> {
       if (GITHUB_EVENT_ACTION === "labeled") {
         await ensureBaseAndHeadCommitsForPRAreAvailable(ctx);
         await onLabeled(config, ctx);
+        return;
+      } else if (
+        GITHUB_EVENT_ACTION === "opened" ||
+        GITHUB_EVENT_ACTION === "edited" ||
+        GITHUB_EVENT_ACTION === "ready_for_review" ||
+        GITHUB_EVENT_ACTION === "reopened"
+      ) {
+        await ensureBaseAndHeadCommitsForPRAreAvailable(ctx);
+        await onComment(ctx);
         return;
       }
       break;
