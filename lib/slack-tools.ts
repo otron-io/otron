@@ -1,4 +1,4 @@
-import * as slackUtils from './slack/slack-utils.js';
+import * as slackUtils from "./slack/slack-utils.js";
 
 // Slack tool execution functions
 
@@ -148,7 +148,7 @@ export const executeGetSlackUserInfo = async (
   updateStatus?.(`is getting user info for ${userIdOrEmail}...`);
 
   let userInfo;
-  if (userIdOrEmail.includes('@')) {
+  if (userIdOrEmail.includes("@")) {
     userInfo = await slackUtils.getUserByEmail(userIdOrEmail);
   } else {
     userInfo = await slackUtils.getUserInfo(userIdOrEmail);
@@ -164,7 +164,7 @@ export const executeGetSlackChannelInfo = async (
   updateStatus?.(`is getting channel info for ${channelNameOrId}...`);
 
   let channelInfo;
-  if (channelNameOrId.startsWith('#')) {
+  if (channelNameOrId.startsWith("#")) {
     const channelName = channelNameOrId.slice(1);
     channelInfo = await slackUtils.getChannelByName(channelName);
   } else {
@@ -302,7 +302,7 @@ export const executeSendRichChannelMessage = async (
 
   // Handle channel name resolution
   let channelId = channelNameOrId;
-  if (channelNameOrId.startsWith('#')) {
+  if (channelNameOrId.startsWith("#")) {
     const channelName = channelNameOrId.slice(1);
     const channelInfo = await slackUtils.getChannelByName(channelName);
     if (!channelInfo?.id) {
@@ -339,7 +339,7 @@ export const executeSendRichDirectMessage = async (
 
   // Handle user resolution
   let userId = userIdOrEmail;
-  if (userIdOrEmail.includes('@')) {
+  if (userIdOrEmail.includes("@")) {
     const userInfo = await slackUtils.getUserByEmail(userIdOrEmail);
     if (!userInfo?.id) {
       throw new Error(`User with email ${userIdOrEmail} not found`);
@@ -353,7 +353,7 @@ export const executeSendRichDirectMessage = async (
   });
 
   if (!channel?.id) {
-    throw new Error('Failed to open DM channel');
+    throw new Error("Failed to open DM channel");
   }
 
   await slackUtils.sendRichMessage(channel.id, blocks, text || undefined);
@@ -373,7 +373,7 @@ export async function executeCreateFormattedSlackMessage(
     actions: Array<{
       text: string;
       action_id: string;
-      style: 'primary' | 'danger';
+      style: "primary" | "danger";
     }>;
     thread_ts: string;
   },
@@ -390,9 +390,9 @@ export async function executeCreateFormattedSlackMessage(
     // Add header if title provided
     if (title && title.trim()) {
       blocks.push({
-        type: 'header',
+        type: "header",
         text: {
-          type: 'plain_text',
+          type: "plain_text",
           text: title,
         },
       });
@@ -400,9 +400,9 @@ export async function executeCreateFormattedSlackMessage(
 
     // Add main content
     blocks.push({
-      type: 'section',
+      type: "section",
       text: {
-        type: 'mrkdwn',
+        type: "mrkdwn",
         text: content,
       },
     });
@@ -410,9 +410,9 @@ export async function executeCreateFormattedSlackMessage(
     // Add fields if provided
     if (fields && fields.length > 0) {
       blocks.push({
-        type: 'section',
+        type: "section",
         fields: fields.map((field) => ({
-          type: 'mrkdwn',
+          type: "mrkdwn",
           text: `*${field.label}:*\n${field.value}`,
         })),
       });
@@ -420,16 +420,16 @@ export async function executeCreateFormattedSlackMessage(
 
     // Add divider if we have context or actions
     if ((context && context.trim()) || (actions && actions.length > 0)) {
-      blocks.push({ type: 'divider' });
+      blocks.push({ type: "divider" });
     }
 
     // Add context if provided
     if (context && context.trim()) {
       blocks.push({
-        type: 'context',
+        type: "context",
         elements: [
           {
-            type: 'mrkdwn',
+            type: "mrkdwn",
             text: context,
           },
         ],
@@ -439,11 +439,11 @@ export async function executeCreateFormattedSlackMessage(
     // Add actions if provided
     if (actions && actions.length > 0) {
       blocks.push({
-        type: 'actions',
+        type: "actions",
         elements: actions.map((action) => ({
-          type: 'button',
+          type: "button",
           text: {
-            type: 'plain_text',
+            type: "plain_text",
             text: action.text,
           },
           action_id: action.action_id,
@@ -461,9 +461,9 @@ export async function executeCreateFormattedSlackMessage(
 
     return `Formatted message sent successfully to ${channel}`;
   } catch (error) {
-    console.error('Error sending formatted Slack message:', error);
+    console.error("Error sending formatted Slack message:", error);
     return `Error sending formatted message: ${
-      error instanceof Error ? error.message : 'Unknown error'
+      error instanceof Error ? error.message : "Unknown error"
     }`;
   }
 }
@@ -482,12 +482,12 @@ export const executeRespondToSlackInteraction = async (
     blocks?: any[];
     replaceOriginal?: boolean;
     deleteOriginal?: boolean;
-    responseType?: 'ephemeral' | 'in_channel';
+    responseType?: "ephemeral" | "in_channel";
   },
   updateStatus?: (status: string) => void
 ) => {
   try {
-    updateStatus?.('Responding to Slack interaction...');
+    updateStatus?.("Responding to Slack interaction...");
 
     const payload: any = {};
 
@@ -501,9 +501,9 @@ export const executeRespondToSlackInteraction = async (
     }
 
     const response = await fetch(responseUrl, {
-      method: 'POST',
+      method: "POST",
       headers: {
-        'Content-Type': 'application/json',
+        "Content-Type": "application/json",
       },
       body: JSON.stringify(payload),
     });
@@ -514,14 +514,254 @@ export const executeRespondToSlackInteraction = async (
 
     return {
       success: true,
-      message: 'Successfully responded to Slack interaction',
+      message: "Successfully responded to Slack interaction",
     };
   } catch (error) {
-    console.error('Error responding to Slack interaction:', error);
+    console.error("Error responding to Slack interaction:", error);
     return {
       success: false,
-      error: error instanceof Error ? error.message : 'Unknown error',
-      message: 'Failed to respond to Slack interaction',
+      error: error instanceof Error ? error.message : "Unknown error",
+      message: "Failed to respond to Slack interaction",
+    };
+  }
+};
+
+/**
+ * Create a statically defined Slack workflow with one step (trigger_otron)
+ * and a scheduled trigger that runs the workflow on a cron.
+ *
+ * Requirements on the Slack app:
+ * - App has the Automation (workflows) feature enabled
+ * - Token has permissions to create workflows and triggers
+ * - Our backend is subscribed to function_executed and will process the step
+ */
+export const executeCreateSlackWorkflowWithSchedule = async (
+  {
+    workflowName,
+    callbackId,
+    description,
+    instruction,
+    channelId,
+    human,
+    cron,
+    timezone,
+    startTime,
+    endTime,
+  }: {
+    workflowName: string;
+    callbackId: string; // must be unique per workflow in app
+    description?: string;
+    instruction: string;
+    channelId: string;
+    human?: string;
+    cron: string; // standard 5-field cron expression
+    timezone: string; // IANA timezone, e.g. "America/Los_Angeles"
+    startTime?: string; // ISO8601; if omitted, now
+    endTime?: string; // ISO8601; optional automatic expiry of schedule
+  },
+  updateStatus?: (status: string) => void
+) => {
+  const token = process.env.SLACK_BOT_TOKEN as string;
+  if (!token) {
+    return {
+      success: false,
+      error: "Missing SLACK_BOT_TOKEN",
+    };
+  }
+
+  try {
+    updateStatus?.(`is creating workflow ${workflowName}...`);
+
+    // 1) Create workflow with a single step pointing to our custom function id
+    // Note: Slack API shapes may evolve; we keep payload conservative.
+    const wfRes = await fetch("https://slack.com/api/workflows.create", {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${token}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        workflow: {
+          title: workflowName,
+          callback_id: callbackId,
+          description: description || "",
+          input_parameters: {
+            required: ["instruction", "channel"],
+            properties: {
+              instruction: {
+                type: "string",
+                description: "Instruction for Otron",
+              },
+              channel: {
+                type: "slack#/types/channel_id",
+                description: "Target channel",
+              },
+              human: {
+                type: "slack#/types/user_id",
+                description: "Requesting user",
+              },
+            },
+          },
+          steps: [
+            {
+              id: "trigger_otron_step",
+              function_id: "trigger_otron",
+              inputs: {
+                instruction: { value: "{{workflow.inputs.instruction}}" },
+                channel: { value: "{{workflow.inputs.channel}}" },
+                human: { value: "{{workflow.inputs.human}}" },
+              },
+            },
+          ],
+        },
+      }),
+    });
+
+    const wfJson: any = await wfRes.json();
+    if (!wfJson.ok) {
+      throw new Error(
+        `workflows.create failed: ${wfJson.error || wfRes.status}`
+      );
+    }
+
+    const workflowId = wfJson.workflow?.id || wfJson.id || callbackId;
+
+    // 2) Create scheduled trigger for the workflow
+    updateStatus?.("is creating scheduled trigger...");
+
+    const schedule: any = {
+      timezone,
+      start_time: startTime || new Date().toISOString(),
+      frequency: {
+        type: "cron",
+        expression: cron,
+      },
+    } as const;
+    if (endTime) schedule.end_time = endTime;
+
+    const trigRes = await fetch(
+      "https://slack.com/api/workflows.triggers.create",
+      {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${token}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          type: "scheduled",
+          workflow: { callback_id: callbackId },
+          inputs: {
+            instruction: { value: instruction },
+            channel: { value: channelId },
+            ...(human ? { human: { value: human } } : {}),
+          },
+          schedule,
+        }),
+      }
+    );
+
+    const trigJson: any = await trigRes.json();
+    if (!trigJson.ok) {
+      throw new Error(
+        `workflows.triggers.create failed: ${trigJson.error || trigRes.status}`
+      );
+    }
+
+    return {
+      success: true,
+      workflowId,
+      triggerId: trigJson.trigger?.id || trigJson.id,
+      message: `Created workflow ${workflowId} with scheduled trigger`,
+    };
+  } catch (error) {
+    console.error("Error creating Slack workflow and trigger:", error);
+    return {
+      success: false,
+      error: error instanceof Error ? error.message : "Unknown error",
+    };
+  }
+};
+
+/**
+ * Delete a workflow and/or its triggers.
+ */
+export const executeDeleteSlackWorkflowAndTriggers = async (
+  {
+    callbackId,
+    workflowId,
+    triggerIds,
+    deleteWorkflow,
+    deleteTriggers,
+  }: {
+    callbackId?: string;
+    workflowId?: string;
+    triggerIds?: string[];
+    deleteWorkflow?: boolean; // default true if workflowId or callbackId present
+    deleteTriggers?: boolean; // default true if triggerIds present
+  },
+  updateStatus?: (status: string) => void
+) => {
+  const token = process.env.SLACK_BOT_TOKEN as string;
+  if (!token) {
+    return { success: false, error: "Missing SLACK_BOT_TOKEN" };
+  }
+
+  try {
+    const results: any = { deletedTriggers: [], deletedWorkflow: false };
+
+    if (triggerIds && (deleteTriggers ?? true)) {
+      for (const id of triggerIds) {
+        updateStatus?.(`is deleting trigger ${id}...`);
+        const res = await fetch(
+          "https://slack.com/api/workflows.triggers.delete",
+          {
+            method: "POST",
+            headers: {
+              Authorization: `Bearer ${token}`,
+              "Content-Type": "application/json",
+            },
+            body: JSON.stringify({ trigger_id: id }),
+          }
+        );
+        const json: any = await res.json();
+        if (!json.ok) {
+          throw new Error(
+            `workflows.triggers.delete failed for ${id}: ${
+              json.error || res.status
+            }`
+          );
+        }
+        results.deletedTriggers.push(id);
+      }
+    }
+
+    if ((workflowId || callbackId) && (deleteWorkflow ?? true)) {
+      updateStatus?.("is deleting workflow...");
+      const res = await fetch("https://slack.com/api/workflows.delete", {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${token}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          workflow: workflowId
+            ? { id: workflowId }
+            : { callback_id: callbackId },
+        }),
+      });
+      const json: any = await res.json();
+      if (!json.ok) {
+        throw new Error(`workflows.delete failed: ${json.error || res.status}`);
+      }
+      results.deletedWorkflow = true;
+    }
+
+    return { success: true, ...results };
+  } catch (error) {
+    console.error("Error deleting Slack workflow/trigger:", error);
+    return {
+      success: false,
+      error: error instanceof Error ? error.message : "Unknown error",
     };
   }
 };
