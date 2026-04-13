@@ -1,0 +1,22 @@
+{
+  "name": "otron-worker",
+  "version": "1.0.0",
+  "type": "module",
+  "scripts": {
+    "start": "tsx index.ts",
+    "dev": "tsx watch index.ts"
+  },
+  "dependencies": {
+    "@anthropic-ai/claude-agent-sdk": "^0.2.104",
+    "@upstash/redis": "^1.34.8",
+    "@linear/sdk": "^39.1.1",
+    "@octokit/auth-app": "^7.2.1",
+    "@octokit/rest": "^21.1.1",
+    "@slack/web-api": "^7.0.2",
+    "dotenv": "^16.5.0"
+  },
+  "devDependencies": {
+    "tsx": "^4.19.4",
+    "typescript": "^5.8.3"
+  }
+}

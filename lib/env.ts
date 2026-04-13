@@ -8,7 +8,7 @@ export const env = createEnv({
     WEBHOOK_SIGNING_SECRET: z.string().min(1),
     REDIRECT_URI: z.string().url(),
     WEBHOOK_URL: z.string().url(),
-    OPENAI_API_KEY: z.string().min(1),
+    OPENAI_API_KEY: z.string().min(1).optional(),
     KV_REST_API_URL: z.string().url(),
     KV_REST_API_TOKEN: z.string().min(1),
 
