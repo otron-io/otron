@@ -95,3 +95,24 @@ export async function getTaskResult(
   if (!data) return null;
   return typeof data === "string" ? JSON.parse(data) : data;
 }
+
+/**
+ * Check worker availability: heartbeat, active task, and queue depth.
+ */
+export async function getWorkerStatus(): Promise<{
+  isOnline: boolean;
+  isBusy: boolean;
+  queueLength: number;
+}> {
+  const [heartbeat, activeTask, queueLength] = await Promise.all([
+    redis.get("coding_worker_heartbeat"),
+    redis.get("coding_task_active"),
+    redis.llen("coding_tasks"),
+  ]);
+
+  return {
+    isOnline: heartbeat !== null,
+    isBusy: activeTask !== null,
+    queueLength,
+  };
+}

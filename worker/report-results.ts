@@ -131,6 +131,11 @@ async function reportToLinear(
       if (result.error) body += `\n\n**Error:** ${result.error}`;
       body += `\n\n_Duration: ${Math.round(result.duration / 1000)}s_`;
 
+      // Linear can handle longer content — truncate at 4000 chars for readability
+      if (body.length > 4000) {
+        body = body.substring(0, 3950) + "\n\n_(output truncated)_";
+      }
+
       await linearActivity.emitResponse(task.linearSessionId, body);
 
       // Complete the session — this signals Linear that the agent is done
@@ -173,7 +178,15 @@ async function reportToSlack(
   try {
     const statusEmoji =
       result.status === "completed" ? ":white_check_mark:" : ":x:";
-    let text = `${statusEmoji} *Claude Code Worker Result*\n\n${result.summary}`;
+
+    // For Slack, keep the summary concise — it's already been summarized
+    // by the LLM step, but enforce a hard limit for readability
+    let summary = result.summary;
+    if (summary.length > 1800) {
+      summary = summary.substring(0, 1750) + "\n\n_(output truncated)_";
+    }
+
+    let text = `${statusEmoji} *Claude Code Result*\n\n${summary}`;
 
     if (result.prUrl) text += `\n\n*PR:* ${result.prUrl}`;
     if (result.branchName) text += `\n*Branch:* \`${result.branchName}\``;

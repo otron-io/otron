@@ -17,6 +17,9 @@ export const workerEnv = {
   GITHUB_APP_CLIENT_ID: required("GITHUB_APP_CLIENT_ID"),
   GITHUB_APP_CLIENT_SECRET: required("GITHUB_APP_CLIENT_SECRET"),
 
+  // Anthropic API key (for LLM summarization of task output)
+  ANTHROPIC_API_KEY: process.env.ANTHROPIC_API_KEY,
+
   // Slack bot token
   SLACK_BOT_TOKEN: process.env.SLACK_BOT_TOKEN,
 

@@ -110,6 +110,9 @@ async function main(): Promise<never> {
   // Main polling loop — poll every 2s when idle
   while (true) {
     try {
+      // Heartbeat: let dispatchers know we're alive (expires after 15s if worker goes offline)
+      await redis.set("coding_worker_heartbeat", Date.now().toString(), { ex: 15 });
+
       const task = await dequeueCodingTask();
       if (task) {
         await processTask(task);
