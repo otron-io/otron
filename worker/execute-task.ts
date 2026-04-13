@@ -1,4 +1,6 @@
 import { query } from "@anthropic-ai/claude-agent-sdk";
+import Anthropic from "@anthropic-ai/sdk";
+import { workerEnv } from "./env.js";
 import type { CodingTask } from "../lib/task-queue.js";
 
 export interface TaskExecutionResult {
@@ -101,21 +103,91 @@ export async function executeCodingTask(
 
     await onActivity("response", "Claude Code completed.");
 
+    // Summarize the raw output using an LLM for a concise, platform-appropriate response
+    const summary = await summarizeOutput(lastAssistantText, task);
+
     return {
       status: "completed",
-      summary: lastAssistantText || "Task completed (no output)",
+      summary: summary || "Task completed (no output)",
       messagesProcessed,
     };
   } catch (error) {
     const errMsg = error instanceof Error ? error.message : String(error);
     await onActivity("error", errMsg);
 
+    // Still try to summarize whatever output we got before the error
+    const summary = lastAssistantText
+      ? await summarizeOutput(lastAssistantText, task)
+      : "Task failed before producing output";
+
     return {
       status: "failed",
-      summary: lastAssistantText || "Task failed before producing output",
+      summary,
       error: errMsg,
       messagesProcessed,
     };
+  }
+}
+
+/**
+ * Summarize raw Claude Code output into a concise, platform-appropriate response
+ * that directly answers the original question or describes the work done.
+ */
+async function summarizeOutput(
+  rawOutput: string,
+  task: CodingTask
+): Promise<string> {
+  if (!rawOutput) return rawOutput;
+  if (!workerEnv.ANTHROPIC_API_KEY) {
+    console.warn("No ANTHROPIC_API_KEY — skipping summarization");
+    return rawOutput;
+  }
+
+  const intentGuidance: Record<string, string> = {
+    research:
+      "Produce a clear, concise answer to the original question. Focus on directly answering what was asked, using specific details from the agent's findings.",
+    work:
+      "Produce a brief summary of what was done. Mention key changes made, files modified, branches created, and any PRs opened.",
+    review:
+      "Produce a structured review summary with key findings, issues discovered, and actionable recommendations.",
+  };
+
+  const guidance =
+    intentGuidance[task.intent] || intentGuidance.work;
+
+  const maxChars = task.source === "slack" ? 2000 : 4000;
+
+  try {
+    const client = new Anthropic({ apiKey: workerEnv.ANTHROPIC_API_KEY });
+
+    const response = await client.messages.create({
+      model: "claude-sonnet-4-20250514",
+      max_tokens: 1024,
+      messages: [
+        {
+          role: "user",
+          content: `You are summarizing the output of a coding agent. ${guidance}
+
+Original task prompt:
+${task.prompt.substring(0, 2000)}
+
+Raw agent output:
+${rawOutput.substring(0, 8000)}
+
+Produce a concise summary (max ${maxChars} characters) that directly addresses the original request. Do not include meta-commentary about summarizing — just provide the answer or summary directly.`,
+        },
+      ],
+    });
+
+    const text =
+      response.content[0]?.type === "text"
+        ? response.content[0].text
+        : rawOutput;
+
+    return text.substring(0, maxChars);
+  } catch (err) {
+    console.error("Summarization failed, using raw output:", err);
+    return rawOutput.substring(0, maxChars);
   }
 }
 

@@ -1,6 +1,6 @@
 import { tool } from "ai";
 import { z } from "zod";
-import { enqueueCodingTask } from "../task-queue.js";
+import { enqueueCodingTask, getWorkerStatus } from "../task-queue.js";
 
 type ToolExecutorWrapper = (
   name: string,
@@ -58,6 +58,9 @@ export function createCodingTools(
           baseBranch: string;
           context: string;
         }) => {
+          // Check worker availability before enqueuing
+          const workerStatus = await getWorkerStatus();
+
           const taskId = crypto.randomUUID();
 
           await enqueueCodingTask({
@@ -82,6 +85,19 @@ export function createCodingTools(
 
           // Signal that the Linear session should stay open for the worker
           onCodingTaskDispatched?.();
+
+          // Return a status-aware message
+          if (!workerStatus.isOnline) {
+            return `⚠️ The coding worker appears to be offline. Your task has been queued (ID: ${taskId}) but may not be processed until the worker comes back online.`;
+          }
+
+          if (workerStatus.isBusy && workerStatus.queueLength > 0) {
+            return `The coding worker is currently busy. Your task has been queued (position #${workerStatus.queueLength + 1}, ID: ${taskId}) and will be processed when the worker is available.`;
+          }
+
+          if (workerStatus.isBusy) {
+            return `The coding worker is currently busy with another task. Your task has been queued (ID: ${taskId}) and will be processed next.`;
+          }
 
           return `Coding task dispatched (task ID: ${taskId}). The Claude Code worker will pick it up, execute in the ${params.repository} repository, and report results back here.`;
         }
