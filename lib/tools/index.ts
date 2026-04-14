@@ -5,6 +5,7 @@ import { createLinearTools } from "./linear-tool-defs.js";
 import { createGithubTools } from "./github-tool-defs.js";
 import { createUtilityTools } from "./utility-tool-defs.js";
 import { createCodingTools } from "./coding-tool-defs.js";
+import { createCancelCodingTaskTool } from "./cancel-coding-task.js";
 
 type ToolExecutorWrapper = (name: string, fn: Function) => (...args: any[]) => any;
 
@@ -31,5 +32,6 @@ export function createAllTools(options: {
     ...createGithubTools(executor, updateStatus),
     ...createUtilityTools(executor, sleepWithAbort),
     ...createCodingTools(executor, codingContext, onCodingTaskDispatched),
+    ...createCancelCodingTaskTool(executor),
   };
 }

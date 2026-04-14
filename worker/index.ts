@@ -41,6 +41,22 @@ async function processTask(task: CodingTask): Promise<void> {
     `\n${"=".repeat(60)}\nProcessing task ${task.id}\n  Source: ${task.source}\n  Intent: ${task.intent}\n  Repo: ${task.repository}\n  Issue: ${task.linearIssueIdentifier || "n/a"}\n${"=".repeat(60)}`
   );
 
+  // Check if the task was cancelled before we started executing it
+  const isCancelled = await redis.get(`task_cancelled:${task.id}`);
+  if (isCancelled) {
+    console.log(`Task ${task.id} was cancelled before execution — skipping.`);
+    const result: CodingTaskResult = {
+      taskId: task.id,
+      status: "failed",
+      summary: "Task cancelled by user",
+      error: "User requested cancellation",
+      duration: 0,
+    };
+    await setTaskResult(task.id, result);
+    await reportResult(task, result);
+    return;
+  }
+
   try {
     // Clone/update the target repo
     const repoPath = await ensureRepo(task.repository, task.baseBranch);
