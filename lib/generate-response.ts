@@ -527,7 +527,7 @@ export const generateResponse = async (
 
     // Call the model
     const { text } = await generateText({
-      model: anthropic("claude-sonnet-4-6"),
+      model: anthropic("claude-opus-4-7"),
       system: systemPrompt,
       messages,
       maxSteps: 30,
